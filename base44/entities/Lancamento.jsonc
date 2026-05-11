@@ -1,0 +1,61 @@
+{
+  "name": "Lancamento",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "data": {
+      "type": "string",
+      "format": "date",
+      "description": "Data do lan\u00e7amento"
+    },
+    "safrista": {
+      "type": "string",
+      "description": "Nome do safrista"
+    },
+    "talhao": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "tipo_colheita": {
+      "type": "string",
+      "enum": [
+        "Manual",
+        "Derri\u00e7adeira",
+        "Colhedora",
+        "Recolhedora",
+        "Varri\u00e7\u00e3o Manual",
+        "Varri\u00e7\u00e3o Mecanizada"
+      ],
+      "description": "Tipo de colheita"
+    },
+    "medidas_colhidas": {
+      "type": "number",
+      "description": "Medidas colhidas"
+    },
+    "valor_medida": {
+      "type": "number",
+      "description": "Valor por medida (R$)"
+    },
+    "valor_total": {
+      "type": "number",
+      "description": "Valor total (R$)"
+    },
+    "semana": {
+      "type": "string",
+      "description": "Semana (ex: Sem 1 - mai/2026)"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "data",
+    "safrista",
+    "talhao",
+    "medidas_colhidas"
+  ]
+}

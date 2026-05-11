@@ -1,0 +1,33 @@
+{
+  "name": "Safrista",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "nome": {
+      "type": "string",
+      "description": "Nome do safrista"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ATIVO",
+        "INATIVO"
+      ],
+      "default": "ATIVO"
+    },
+    "preco_por_medida": {
+      "type": "number",
+      "description": "Pre\u00e7o por medida (R$)"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "nome"
+  ]
+}

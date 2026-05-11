@@ -1,0 +1,84 @@
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Users, TreePine, UserCheck, ClipboardList, Menu, X, Coffee } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+const navItems = [
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/produtores', label: 'Produtores', icon: Users },
+  { path: '/talhoes', label: 'Talhões', icon: TreePine },
+  { path: '/safristas', label: 'Safristas', icon: UserCheck },
+  { path: '/lancamentos', label: 'Lançamentos', icon: ClipboardList },
+];
+
+export default function Sidebar() {
+  const location = useLocation();
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <>
+      {/* Mobile toggle */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="fixed top-4 left-4 z-50 lg:hidden bg-card shadow-md"
+        onClick={() => setOpen(!open)}
+      >
+        {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+      </Button>
+
+      {/* Overlay */}
+      {open && (
+        <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed top-0 left-0 h-full w-64 bg-sidebar text-sidebar-foreground z-40
+        flex flex-col transition-transform duration-300
+        lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-6 border-b border-sidebar-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sidebar-primary flex items-center justify-center">
+              <Coffee className="w-5 h-5 text-sidebar-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="font-bold text-lg leading-tight">Colheita</h1>
+              <p className="text-xs text-sidebar-foreground/60">Planejamento de Café</p>
+            </div>
+          </div>
+        </div>
+
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map(item => {
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setOpen(false)}
+                className={`
+                  flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
+                  ${isActive
+                    ? 'bg-sidebar-accent text-sidebar-primary'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                  }
+                `}
+              >
+                <item.icon className="w-5 h-5" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-4 border-t border-sidebar-border">
+          <p className="text-xs text-sidebar-foreground/40 text-center">
+            Safra 2025/2026
+          </p>
+        </div>
+      </aside>
+    </>
+  );
+}

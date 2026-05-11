@@ -1,0 +1,90 @@
+{
+  "name": "Talhao",
+  "type": "object",
+  "properties": {
+    "produtor_id": {
+      "type": "string",
+      "description": "ID do produtor"
+    },
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor (ex: P001)"
+    },
+    "nome": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "area_ha": {
+      "type": "number",
+      "description": "\u00c1rea em hectares"
+    },
+    "num_plantas": {
+      "type": "number",
+      "description": "N\u00famero de plantas"
+    },
+    "cultivar": {
+      "type": "string",
+      "description": "Cultivar (ex: Catua\u00ed, Mundo Novo)"
+    },
+    "espacamento": {
+      "type": "string",
+      "description": "Espa\u00e7amento (ex: 3,5x0,7)"
+    },
+    "metodo_colheita": {
+      "type": "string",
+      "enum": [
+        "Manual",
+        "Derri\u00e7adeira",
+        "Colhedora",
+        "Recolhedora",
+        "Varri\u00e7\u00e3o Manual",
+        "Varri\u00e7\u00e3o Mecanizada"
+      ],
+      "description": "M\u00e9todo de colheita"
+    },
+    "litros_por_pe": {
+      "type": "number",
+      "description": "Litros por p\u00e9"
+    },
+    "pct_colher": {
+      "type": "number",
+      "default": 1,
+      "description": "% a colher"
+    },
+    "preco_por_medida": {
+      "type": "number",
+      "description": "Pre\u00e7o por medida (R$)"
+    },
+    "medidas_dia_manual": {
+      "type": "number",
+      "description": "Medidas/dia (manual)"
+    },
+    "horas_dia_maq": {
+      "type": "number",
+      "description": "Horas/dia (m\u00e1quina)"
+    },
+    "metros_hora_maq": {
+      "type": "number",
+      "description": "Metros/hora (m\u00e1quina)"
+    },
+    "medidas_hora_maq": {
+      "type": "number",
+      "description": "Medidas/hora (m\u00e1quina)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ativo",
+        "inativo"
+      ],
+      "default": "ativo"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "nome"
+  ]
+}
