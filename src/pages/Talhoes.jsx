@@ -8,12 +8,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
 
 const emptyTalhao = {
   codigo_produtor: '', nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
   metodo_colheita: 'Manual', litros_por_pe: '', pct_colher: 1, preco_por_medida: '',
-  medidas_dia_manual: '', horas_dia_maq: '', metros_hora_maq: '', medidas_hora_maq: '',
+  seq_colheita: '', medidas_dia_manual: '', horas_dia_maq: '', metros_hora_maq: '', medidas_hora_maq: '',
   status: 'ativo', observacoes: ''
 };
 
@@ -24,17 +25,26 @@ export default function Talhoes() {
   const [form, setForm] = useState(emptyTalhao);
   const [editingId, setEditingId] = useState(null);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: talhoes = [], isLoading } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
 
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.Talhao.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['talhoes'] }); setDialogOpen(false); }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['talhoes'] });
+      setDialogOpen(false);
+      toast({ title: 'Talhão criado com sucesso!' });
+    },
   });
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Talhao.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['talhoes'] }); setDialogOpen(false); }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['talhoes'] });
+      setDialogOpen(false);
+      toast({ title: 'Talhão atualizado com sucesso!' });
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.Talhao.delete(id),
@@ -42,13 +52,22 @@ export default function Talhoes() {
   });
 
   const handleSave = () => {
+    if (!form.codigo_produtor) {
+      toast({ title: 'Selecione o produtor', variant: 'destructive' });
+      return;
+    }
+    if (!form.nome?.trim()) {
+      toast({ title: 'Informe o nome do talhão', variant: 'destructive' });
+      return;
+    }
     const data = {
       ...form,
-      area_ha: form.area_ha ? Number(form.area_ha) : undefined,
-      num_plantas: form.num_plantas ? Number(form.num_plantas) : undefined,
-      litros_por_pe: form.litros_por_pe ? Number(form.litros_por_pe) : undefined,
-      pct_colher: form.pct_colher ? Number(form.pct_colher) : 1,
-      preco_por_medida: form.preco_por_medida ? Number(form.preco_por_medida) : undefined,
+      area_ha: form.area_ha !== '' ? Number(form.area_ha) : undefined,
+      num_plantas: form.num_plantas !== '' ? Number(form.num_plantas) : undefined,
+      litros_por_pe: form.litros_por_pe !== '' ? Number(form.litros_por_pe) : undefined,
+      pct_colher: form.pct_colher !== '' ? Number(form.pct_colher) : 1,
+      preco_por_medida: form.preco_por_medida !== '' ? Number(form.preco_por_medida) : undefined,
+      seq_colheita: form.seq_colheita !== '' ? Number(form.seq_colheita) : undefined,
     };
     if (editingId) updateMutation.mutate({ id: editingId, data });
     else createMutation.mutate(data);
@@ -156,10 +175,19 @@ export default function Talhoes() {
             <div><Label>% a Colher</Label><Input type="number" step="0.1" value={form.pct_colher} onChange={e => setForm({...form, pct_colher: e.target.value})} /></div>
             <div><Label>Preço/Medida (R$)</Label><Input type="number" value={form.preco_por_medida} onChange={e => setForm({...form, preco_por_medida: e.target.value})} /></div>
             <div><Label>Área (ha)</Label><Input type="number" value={form.area_ha} onChange={e => setForm({...form, area_ha: e.target.value})} /></div>
+            <div><Label>Sequência de Colheita</Label><Input type="number" min="1" value={form.seq_colheita} onChange={e => setForm({...form, seq_colheita: e.target.value})} placeholder="Ex: 1, 2, 3..." /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>Salvar</Button>
+            <Button
+              onClick={handleSave}
+              disabled={createMutation.isPending || updateMutation.isPending}
+            >
+              {(createMutation.isPending || updateMutation.isPending)
+                ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</>
+                : 'Salvar'
+              }
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
