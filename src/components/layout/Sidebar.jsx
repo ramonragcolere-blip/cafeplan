@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, TreePine, UserCheck, ClipboardList, Menu, X, Coffee } from 'lucide-react';
+import { LayoutDashboard, Users, TreePine, UserCheck, ClipboardList, Menu, X, Coffee, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { path: '/talhoes', label: 'Talhões', icon: TreePine },
   { path: '/safristas', label: 'Safristas', icon: UserCheck },
   { path: '/lancamentos', label: 'Lançamentos', icon: ClipboardList },
+  { path: '/parametros', label: 'Parâmetros e Talhões', icon: Settings2 },
 ];
 
 export default function Sidebar() {

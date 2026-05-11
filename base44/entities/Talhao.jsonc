@@ -49,7 +49,11 @@
     "pct_colher": {
       "type": "number",
       "default": 1,
-      "description": "% a colher"
+      "description": "% a colher (0 a 1)"
+    },
+    "seq_colheita": {
+      "type": "number",
+      "description": "Sequ\u00eancia de colheita (define a ordem e datas)"
     },
     "preco_por_medida": {
       "type": "number",
