@@ -12,7 +12,7 @@ import { Plus, Search, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 const emptyTalhao = {
-  codigo_produtor: '', nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
+  codigo_produtor: null, nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
   metodo_colheita: 'Manual', litros_por_pe: '', pct_colher: 1, preco_por_medida: '',
   seq_colheita: '', medidas_dia_manual: '', horas_dia_maq: '', metros_hora_maq: '', medidas_hora_maq: '',
   status: 'ativo', observacoes: ''
@@ -52,7 +52,7 @@ export default function Talhoes() {
   });
 
   const handleSave = () => {
-    if (!form.codigo_produtor) {
+    if (!form.codigo_produtor || form.codigo_produtor === 'none') {
       toast({ title: 'Selecione o produtor', variant: 'destructive' });
       return;
     }
@@ -153,9 +153,12 @@ export default function Talhoes() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Produtor</Label>
-              <Select value={form.codigo_produtor} onValueChange={v => setForm({...form, codigo_produtor: v})}>
+              <Select value={form.codigo_produtor || 'none'} onValueChange={v => setForm({...form, codigo_produtor: v === 'none' ? null : v})}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{produtores.map(p => <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  <SelectItem value="none">Selecione um produtor</SelectItem>
+                  {produtores.map(p => <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
             <div><Label>Nome do Talhão</Label><Input value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
