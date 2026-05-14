@@ -68,14 +68,19 @@ export default function Talhoes() {
       toast({ title: 'Informe o nome do talhão', variant: 'destructive' });
       return;
     }
+    const toNum = (v) => (v !== '' && v !== null && v !== undefined) ? Number(v) : undefined;
     const data = {
       ...form,
-      area_ha: form.area_ha !== '' ? Number(form.area_ha) : undefined,
-      num_plantas: form.num_plantas !== '' ? Number(form.num_plantas) : undefined,
-      litros_por_pe: form.litros_por_pe !== '' ? Number(form.litros_por_pe) : undefined,
-      pct_colher: form.pct_colher !== '' ? Number(form.pct_colher) : 1,
-      preco_por_medida: form.preco_por_medida !== '' ? Number(form.preco_por_medida) : undefined,
-      seq_colheita: form.seq_colheita !== '' ? Number(form.seq_colheita) : undefined,
+      area_ha: toNum(form.area_ha),
+      num_plantas: toNum(form.num_plantas),
+      litros_por_pe: toNum(form.litros_por_pe),
+      pct_colher: toNum(form.pct_colher) ?? 1,
+      preco_por_medida: toNum(form.preco_por_medida),
+      seq_colheita: toNum(form.seq_colheita),
+      medidas_dia_manual: toNum(form.medidas_dia_manual),
+      horas_dia_maq: toNum(form.horas_dia_maq),
+      metros_hora_maq: toNum(form.metros_hora_maq),
+      medidas_hora_maq: toNum(form.medidas_hora_maq),
     };
     if (editingId) updateMutation.mutate({ id: editingId, data });
     else createMutation.mutate(data);
