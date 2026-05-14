@@ -37,6 +37,10 @@ export default function Talhoes() {
       setDialogOpen(false);
       toast({ title: 'Talhão criado com sucesso!' });
     },
+    onError: (err) => {
+      console.error('Erro ao criar talhão:', err);
+      toast({ title: 'Erro ao salvar', description: String(err?.message || err), variant: 'destructive' });
+    },
   });
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Talhao.update(id, data),
@@ -44,6 +48,10 @@ export default function Talhoes() {
       queryClient.invalidateQueries({ queryKey: ['talhoes'] });
       setDialogOpen(false);
       toast({ title: 'Talhão atualizado com sucesso!' });
+    },
+    onError: (err) => {
+      console.error('Erro ao atualizar talhão:', err);
+      toast({ title: 'Erro ao salvar', description: String(err?.message || err), variant: 'destructive' });
     },
   });
   const deleteMutation = useMutation({
