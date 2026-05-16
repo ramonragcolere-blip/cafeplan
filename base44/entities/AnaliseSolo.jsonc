@@ -1,0 +1,100 @@
+{
+  "name": "AnaliseSolo",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talh\u00e3o"
+    },
+    "talhao_nome": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra agr\u00edcola (ex: 2026/2027)"
+    },
+    "data_analise": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da an\u00e1lise"
+    },
+    "area_ha": {
+      "type": "number"
+    },
+    "num_plantas": {
+      "type": "number"
+    },
+    "plantas_por_ha": {
+      "type": "number"
+    },
+    "metros_lineares": {
+      "type": "number"
+    },
+    "espacamento": {
+      "type": "string",
+      "description": "Espa\u00e7amento/estande (ex: 3x1)"
+    },
+    "ph": {
+      "type": "number"
+    },
+    "materia_organica": {
+      "type": "number"
+    },
+    "fosforo": {
+      "type": "number",
+      "description": "F\u00f3sforo (mg/dm\u00b3)"
+    },
+    "potassio": {
+      "type": "number",
+      "description": "Pot\u00e1ssio (mg/dm\u00b3)"
+    },
+    "calcio": {
+      "type": "number",
+      "description": "C\u00e1lcio (cmolc/dm\u00b3)"
+    },
+    "magnesio": {
+      "type": "number",
+      "description": "Magn\u00e9sio (cmolc/dm\u00b3)"
+    },
+    "enxofre": {
+      "type": "number",
+      "description": "Enxofre (mg/dm\u00b3)"
+    },
+    "boro": {
+      "type": "number"
+    },
+    "zinco": {
+      "type": "number"
+    },
+    "cobre": {
+      "type": "number"
+    },
+    "manganes": {
+      "type": "number"
+    },
+    "ferro": {
+      "type": "number"
+    },
+    "ctc": {
+      "type": "number",
+      "description": "CTC"
+    },
+    "saturacao_bases": {
+      "type": "number",
+      "description": "V% - Satura\u00e7\u00e3o de bases"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "talhao_id",
+    "safra"
+  ]
+}

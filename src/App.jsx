@@ -13,6 +13,7 @@ import Talhoes from './pages/Talhoes';
 import Safristas from './pages/Safristas';
 import Lancamentos from './pages/Lancamentos';
 import ParametrosTalhoes from './pages/ParametrosTalhoes';
+import Adubacao from './pages/Adubacao';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -46,6 +47,7 @@ const AuthenticatedApp = () => {
         <Route path="/safristas" element={<Safristas />} />
         <Route path="/lancamentos" element={<Lancamentos />} />
         <Route path="/parametros" element={<ParametrosTalhoes />} />
+        <Route path="/adubacao" element={<Adubacao />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

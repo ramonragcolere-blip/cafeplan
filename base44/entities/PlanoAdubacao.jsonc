@@ -1,0 +1,225 @@
+{
+  "name": "PlanoAdubacao",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talh\u00e3o"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra agr\u00edcola"
+    },
+    "nutrientes": {
+      "type": "object",
+      "description": "Planejamento nutricional por nutriente",
+      "properties": {
+        "nitrogenio": {
+          "type": "object"
+        },
+        "fosforo": {
+          "type": "object"
+        },
+        "potassio": {
+          "type": "object"
+        },
+        "calcio": {
+          "type": "object"
+        },
+        "magnesio": {
+          "type": "object"
+        },
+        "enxofre": {
+          "type": "object"
+        },
+        "boro": {
+          "type": "object"
+        },
+        "zinco": {
+          "type": "object"
+        },
+        "cobre": {
+          "type": "object"
+        },
+        "manganes": {
+          "type": "object"
+        },
+        "ferro": {
+          "type": "object"
+        }
+      }
+    },
+    "fontes_formulados": {
+      "type": "object",
+      "description": "Fontes e formulados planejados",
+      "properties": {
+        "npk": {
+          "type": "string"
+        },
+        "fosforo_fonte": {
+          "type": "string"
+        },
+        "potassio_fonte": {
+          "type": "string"
+        },
+        "calcario": {
+          "type": "string"
+        },
+        "gesso": {
+          "type": "string"
+        },
+        "magnesio_fonte": {
+          "type": "string"
+        },
+        "boro_fonte": {
+          "type": "string"
+        },
+        "zinco_fonte": {
+          "type": "string"
+        },
+        "cobre_fonte": {
+          "type": "string"
+        },
+        "manganes_fonte": {
+          "type": "string"
+        },
+        "foliares": {
+          "type": "string"
+        },
+        "outros": {
+          "type": "string"
+        }
+      }
+    },
+    "aplicacoes": {
+      "type": "array",
+      "description": "Lista de aplica\u00e7\u00f5es (planejadas e executadas)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "numero": {
+            "type": "number",
+            "description": "1, 2 ou 3"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "planejado",
+              "executado"
+            ]
+          },
+          "data_planejada": {
+            "type": "string",
+            "format": "date"
+          },
+          "data_executada": {
+            "type": "string",
+            "format": "date"
+          },
+          "produto": {
+            "type": "string"
+          },
+          "nitrogenio_kg": {
+            "type": "number"
+          },
+          "fosforo_kg": {
+            "type": "number"
+          },
+          "potassio_kg": {
+            "type": "number"
+          },
+          "calcio_kg": {
+            "type": "number"
+          },
+          "magnesio_kg": {
+            "type": "number"
+          },
+          "enxofre_kg": {
+            "type": "number"
+          },
+          "boro_kg": {
+            "type": "string"
+          },
+          "zinco_kg": {
+            "type": "string"
+          },
+          "cobre_kg": {
+            "type": "string"
+          },
+          "manganes_kg": {
+            "type": "string"
+          },
+          "dose_total_kg": {
+            "type": "number"
+          },
+          "dose_total_sacos": {
+            "type": "number"
+          },
+          "gramas_por_pe_1": {
+            "type": "number"
+          },
+          "gramas_por_pe_2": {
+            "type": "number"
+          },
+          "gramas_por_pe_3": {
+            "type": "number"
+          },
+          "gramas_por_metro_1": {
+            "type": "number"
+          },
+          "gramas_por_metro_2": {
+            "type": "number"
+          },
+          "gramas_por_metro_3": {
+            "type": "number"
+          },
+          "observacoes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "compras": {
+      "type": "array",
+      "description": "Produtos comprados",
+      "items": {
+        "type": "object",
+        "properties": {
+          "produto": {
+            "type": "string"
+          },
+          "quantidade": {
+            "type": "number"
+          },
+          "unidade": {
+            "type": "string"
+          },
+          "preco_unitario": {
+            "type": "number"
+          },
+          "valor_total": {
+            "type": "number"
+          },
+          "observacoes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "talhao_id",
+    "safra"
+  ]
+}
