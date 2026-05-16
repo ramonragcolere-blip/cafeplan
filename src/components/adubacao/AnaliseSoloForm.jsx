@@ -5,25 +5,21 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Save, Loader2, FlaskConical } from 'lucide-react';
 
+// Apenas dados QUÍMICOS da análise de solo (dados físicos/cadastrais ficam em DadosTalhaoCard)
 const CAMPOS = [
-  { key: 'data_analise', label: 'Data da Análise', type: 'date', col: 'full' },
-  { key: 'area_ha', label: 'Área (ha)', type: 'number' },
-  { key: 'num_plantas', label: 'Nº de Plantas', type: 'number' },
-  { key: 'plantas_por_ha', label: 'Plantas/ha', type: 'number' },
-  { key: 'metros_lineares', label: 'Metros Lineares', type: 'number' },
-  { key: 'espacamento', label: 'Espaçamento/Estande', type: 'text' },
-  { key: 'ph', label: 'pH', type: 'number', step: '0.1' },
+  { key: 'data_analise', label: 'Data da Análise', type: 'date' },
+  { key: 'ph', label: 'pH', type: 'number', step: '0.01' },
   { key: 'materia_organica', label: 'Matéria Orgânica', type: 'number', step: '0.01' },
-  { key: 'fosforo', label: 'Fósforo (mg/dm³)', type: 'number', step: '0.01' },
-  { key: 'potassio', label: 'Potássio (mg/dm³)', type: 'number', step: '0.01' },
-  { key: 'calcio', label: 'Cálcio (cmolc/dm³)', type: 'number', step: '0.01' },
-  { key: 'magnesio', label: 'Magnésio (cmolc/dm³)', type: 'number', step: '0.01' },
-  { key: 'enxofre', label: 'Enxofre (mg/dm³)', type: 'number', step: '0.01' },
-  { key: 'boro', label: 'Boro', type: 'number', step: '0.01' },
-  { key: 'zinco', label: 'Zinco', type: 'number', step: '0.01' },
-  { key: 'cobre', label: 'Cobre', type: 'number', step: '0.01' },
-  { key: 'manganes', label: 'Manganês', type: 'number', step: '0.01' },
-  { key: 'ferro', label: 'Ferro', type: 'number', step: '0.01' },
+  { key: 'fosforo', label: 'Fósforo — P (mg/dm³)', type: 'number', step: '0.01' },
+  { key: 'potassio', label: 'Potássio — K (mg/dm³)', type: 'number', step: '0.01' },
+  { key: 'calcio', label: 'Cálcio — Ca (cmolc/dm³)', type: 'number', step: '0.01' },
+  { key: 'magnesio', label: 'Magnésio — Mg (cmolc/dm³)', type: 'number', step: '0.01' },
+  { key: 'enxofre', label: 'Enxofre — S (mg/dm³)', type: 'number', step: '0.01' },
+  { key: 'boro', label: 'Boro — B', type: 'number', step: '0.001' },
+  { key: 'zinco', label: 'Zinco — Zn', type: 'number', step: '0.01' },
+  { key: 'cobre', label: 'Cobre — Cu', type: 'number', step: '0.01' },
+  { key: 'manganes', label: 'Manganês — Mn', type: 'number', step: '0.01' },
+  { key: 'ferro', label: 'Ferro — Fe', type: 'number', step: '0.01' },
   { key: 'ctc', label: 'CTC', type: 'number', step: '0.01' },
   { key: 'saturacao_bases', label: 'V% (Saturação de Bases)', type: 'number', step: '0.1' },
 ];
@@ -42,9 +38,7 @@ export default function AnaliseSoloForm({ dados, onSave, saving }) {
   const handleSave = () => {
     const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
     const data = { ...form };
-    CAMPOS.forEach(c => {
-      if (c.type === 'number') data[c.key] = toNum(form[c.key]);
-    });
+    CAMPOS.forEach(c => { if (c.type === 'number') data[c.key] = toNum(form[c.key]); });
     onSave(data);
   };
 
@@ -56,7 +50,7 @@ export default function AnaliseSoloForm({ dados, onSave, saving }) {
       </div>
       <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {CAMPOS.map(c => (
-          <div key={c.key} className={c.col === 'full' ? 'col-span-2 sm:col-span-4' : ''}>
+          <div key={c.key}>
             <Label className="text-xs mb-1 block">{c.label}</Label>
             <Input
               type={c.type}

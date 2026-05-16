@@ -2,18 +2,83 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
-import SeletorContexto from '@/components/adubacao/SeletorContexto';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Sprout, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
+import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
 import PlanoNutricionalForm from '@/components/adubacao/PlanoNutricionalForm';
 import FontesFormulados from '@/components/adubacao/FontesFormulados';
 import ComprasForm from '@/components/adubacao/ComprasForm';
 import AplicacaoBlock from '@/components/adubacao/AplicacaoBlock';
-import { Sprout } from 'lucide-react';
+
+const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
+
+function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onSavePlano, isAnaliseSaving, isPlanSaving }) {
+  const [aberto, setAberto] = useState(false);
+
+  const temDados = !!(analise || plano);
+
+  const handleSaveAplicacao = (aplicacao) => {
+    const aplicacoes = plano?.aplicacoes ? [...plano.aplicacoes] : [];
+    const idx = aplicacoes.findIndex(a => a.numero === aplicacao.numero && a.tipo === aplicacao.tipo);
+    if (idx >= 0) aplicacoes[idx] = aplicacao;
+    else aplicacoes.push(aplicacao);
+    onSavePlano({ aplicacoes });
+  };
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden bg-card">
+      {/* Header clicável */}
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+        onClick={() => setAberto(a => !a)}
+      >
+        <div className="flex items-center gap-3">
+          <Sprout className="w-4 h-4 text-primary shrink-0" />
+          <span className="font-semibold">{talhao.nome}</span>
+          {talhao.area_ha && <span className="text-sm text-muted-foreground">{talhao.area_ha} ha</span>}
+          {talhao.cultivar && <span className="text-xs text-muted-foreground">• {talhao.cultivar}</span>}
+          {talhao.num_plantas && <span className="text-xs text-muted-foreground">• {talhao.num_plantas?.toLocaleString()} plantas</span>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {temDados && <Badge variant="secondary" className="text-xs">Com dados</Badge>}
+          {aberto ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+        </div>
+      </button>
+
+      {/* Conteúdo expansível */}
+      {aberto && (
+        <div className="border-t border-border p-4 space-y-4">
+          <DadosTalhaoCard talhao={talhao} produtor={produtor} />
+          <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
+          <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+          <PlanoNutricionalForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+          <FontesFormulados dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+          <ComprasForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold">Aplicações</h3>
+            {[1, 2, 3].map(n => (
+              <div key={n} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <AplicacaoBlock numero={n} tipo="planejado" dados={plano} talhao={talhao} onSave={handleSaveAplicacao} saving={isPlanSaving} />
+                <AplicacaoBlock numero={n} tipo="executado" dados={plano} talhao={talhao} onSave={handleSaveAplicacao} saving={isPlanSaving} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Adubacao() {
   const [produtorId, setProdutorId] = useState(null);
-  const [talhaoId, setTalhaoId] = useState(null);
   const [safra, setSafra] = useState(null);
+  const [filtroNome, setFiltroNome] = useState('');
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -23,80 +88,61 @@ export default function Adubacao() {
   const { data: planos = [] } = useQuery({ queryKey: ['planos_adubacao'], queryFn: () => base44.entities.PlanoAdubacao.list() });
 
   const produtor = useMemo(() => produtores.find(p => p.id === produtorId) || null, [produtores, produtorId]);
-  const talhao = useMemo(() => talhoes.find(t => t.id === talhaoId) || null, [talhoes, talhaoId]);
 
-  const analise = useMemo(() =>
-    talhaoId && safra ? analises.find(a => a.talhao_id === talhaoId && a.safra === safra) || null : null,
-    [analises, talhaoId, safra]
+  const talhoesProdutor = useMemo(() =>
+    produtor ? talhoes.filter(t => t.codigo_produtor === produtor.codigo) : [],
+    [talhoes, produtor]
   );
 
-  const plano = useMemo(() =>
-    talhaoId && safra ? planos.find(p => p.talhao_id === talhaoId && p.safra === safra) || null : null,
-    [planos, talhaoId, safra]
+  const talhoesFiltrados = useMemo(() =>
+    filtroNome ? talhoesProdutor.filter(t => t.nome.toLowerCase().includes(filtroNome.toLowerCase())) : talhoesProdutor,
+    [talhoesProdutor, filtroNome]
   );
-
-  const handleProdutorChange = (id) => {
-    setProdutorId(id);
-    setTalhaoId(null);
-    setSafra(null);
-  };
-
-  const handleTalhaoChange = (id) => {
-    setTalhaoId(id);
-    setSafra(null);
-  };
 
   // ---- Mutations Análise ----
-  const analiseCreateMutation = useMutation({
+  const analiseCreate = useMutation({
     mutationFn: data => base44.entities.AnaliseSolo.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_solo'] }); toast({ title: 'Análise de solo salva!' }); },
-    onError: err => toast({ title: 'Erro ao salvar análise', description: String(err?.message || err), variant: 'destructive' }),
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
-  const analiseUpdateMutation = useMutation({
+  const analiseUpdate = useMutation({
     mutationFn: ({ id, data }) => base44.entities.AnaliseSolo.update(id, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_solo'] }); toast({ title: 'Análise de solo atualizada!' }); },
-    onError: err => toast({ title: 'Erro ao salvar análise', description: String(err?.message || err), variant: 'destructive' }),
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
-
-  const handleSaveAnalise = (data) => {
-    const payload = { ...data, codigo_produtor: produtor.codigo, talhao_id: talhaoId, talhao_nome: talhao?.nome, safra };
-    if (analise) analiseUpdateMutation.mutate({ id: analise.id, data: payload });
-    else analiseCreateMutation.mutate(payload);
-  };
 
   // ---- Mutations Plano ----
-  const planoCreateMutation = useMutation({
+  const planoCreate = useMutation({
     mutationFn: data => base44.entities.PlanoAdubacao.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['planos_adubacao'] }); toast({ title: 'Dados salvos!' }); },
-    onError: err => toast({ title: 'Erro ao salvar', description: String(err?.message || err), variant: 'destructive' }),
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
-  const planoUpdateMutation = useMutation({
+  const planoUpdate = useMutation({
     mutationFn: ({ id, data }) => base44.entities.PlanoAdubacao.update(id, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['planos_adubacao'] }); toast({ title: 'Dados salvos!' }); },
-    onError: err => toast({ title: 'Erro ao salvar', description: String(err?.message || err), variant: 'destructive' }),
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
-  const handleSavePlano = (partialData) => {
-    const base = { codigo_produtor: produtor.codigo, talhao_id: talhaoId, talhao_nome: talhao?.nome, safra };
-    if (plano) {
-      planoUpdateMutation.mutate({ id: plano.id, data: { ...plano, ...partialData } });
-    } else {
-      planoCreateMutation.mutate({ ...base, ...partialData });
-    }
+  const getSaveHandlers = (talhao) => {
+    const analise = safra ? analises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null : null;
+    const plano = safra ? planos.find(p => p.talhao_id === talhao.id && p.safra === safra) || null : null;
+
+    const handleSaveAnalise = (data) => {
+      const payload = { ...data, codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra };
+      if (analise) analiseUpdate.mutate({ id: analise.id, data: payload });
+      else analiseCreate.mutate(payload);
+    };
+
+    const handleSavePlano = (partialData) => {
+      const base = { codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra };
+      if (plano) planoUpdate.mutate({ id: plano.id, data: { ...plano, ...partialData } });
+      else planoCreate.mutate({ ...base, ...partialData });
+    };
+
+    return { analise, plano, handleSaveAnalise, handleSavePlano };
   };
 
-  const handleSaveAplicacao = (aplicacao) => {
-    const aplicacoes = plano?.aplicacoes ? [...plano.aplicacoes] : [];
-    const idx = aplicacoes.findIndex(a => a.numero === aplicacao.numero && a.tipo === aplicacao.tipo);
-    if (idx >= 0) aplicacoes[idx] = aplicacao;
-    else aplicacoes.push(aplicacao);
-    handleSavePlano({ aplicacoes });
-  };
-
-  const isAnaliseSaving = analiseCreateMutation.isPending || analiseUpdateMutation.isPending;
-  const isPlanSaving = planoCreateMutation.isPending || planoUpdateMutation.isPending;
-
-  const pronto = produtor && talhaoId && safra;
+  const pronto = produtor && safra;
 
   return (
     <div className="space-y-6">
@@ -106,56 +152,80 @@ export default function Adubacao() {
         </div>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Adubação do Cafeeiro</h1>
-          <p className="text-muted-foreground mt-0.5">Planejamento e execução por produtor, talhão e safra</p>
+          <p className="text-muted-foreground mt-0.5">Planejamento nutricional por produtor, talhão e safra</p>
         </div>
       </div>
 
-      <SeletorContexto
-        produtores={produtores}
-        talhoes={talhoes}
-        produtor={produtor}
-        talhaoId={talhaoId}
-        safra={safra}
-        onProdutor={handleProdutorChange}
-        onTalhao={handleTalhaoChange}
-        onSafra={setSafra}
-      />
+      {/* Seletor */}
+      <div className="bg-card border border-border rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <Label className="text-xs mb-1 block">Produtor</Label>
+          <Select value={produtorId || 'none'} onValueChange={v => { setProdutorId(v === 'none' ? null : v); setSafra(null); setFiltroNome(''); }}>
+            <SelectTrigger><SelectValue placeholder="Selecione o produtor" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Selecione...</SelectItem>
+              {produtores.map(p => <SelectItem key={p.id} value={p.id}>{p.codigo} — {p.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs mb-1 block">Safra</Label>
+          <Select value={safra || 'none'} onValueChange={v => setSafra(v === 'none' ? null : v)} disabled={!produtor}>
+            <SelectTrigger><SelectValue placeholder="Selecione a safra" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Selecione...</SelectItem>
+              {SAFRAS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {produtor && (
+          <p className="sm:col-span-2 text-xs text-muted-foreground">
+            Fazenda: <strong>{produtor.fazenda}</strong> — {produtor.municipio}/{produtor.uf} — {talhoesProdutor.length} talhão(ões)
+          </p>
+        )}
+      </div>
 
       {!pronto && (
         <div className="bg-card rounded-2xl border border-border p-16 text-center text-muted-foreground">
           <Sprout className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">Selecione produtor, talhão e safra para começar</p>
-          <p className="text-sm mt-1">Os dados serão carregados automaticamente para cada combinação.</p>
+          <p className="text-lg font-medium">Selecione produtor e safra para ver os talhões</p>
         </div>
       )}
 
       {pronto && (
-        <div className="space-y-5">
-          {/* Info do contexto */}
-          <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-2 text-sm flex flex-wrap gap-4">
-            <span><strong>Produtor:</strong> {produtor.nome}</span>
-            <span><strong>Fazenda:</strong> {produtor.fazenda}</span>
-            <span><strong>Talhão:</strong> {talhao?.nome}</span>
-            <span><strong>Safra:</strong> {safra}</span>
-            {talhao?.area_ha && <span><strong>Área:</strong> {talhao.area_ha} ha</span>}
-            {talhao?.num_plantas && <span><strong>Plantas:</strong> {talhao.num_plantas?.toLocaleString()}</span>}
-          </div>
+        <div className="space-y-4">
+          {/* Filtro de talhão */}
+          {talhoesProdutor.length > 1 && (
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input placeholder="Filtrar talhão..." value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="pl-10" />
+            </div>
+          )}
 
-          <AnaliseSoloForm dados={analise} onSave={handleSaveAnalise} saving={isAnaliseSaving} />
-          <PlanoNutricionalForm dados={plano} onSave={handleSavePlano} saving={isPlanSaving} />
-          <FontesFormulados dados={plano} onSave={handleSavePlano} saving={isPlanSaving} />
-          <ComprasForm dados={plano} onSave={handleSavePlano} saving={isPlanSaving} />
+          {talhoesFiltrados.length === 0 && (
+            <div className="text-center text-muted-foreground py-10 bg-card rounded-2xl border border-border">
+              <p>Nenhum talhão encontrado para este produtor.</p>
+              <p className="text-sm mt-1">Cadastre os talhões na aba "Talhões" primeiro.</p>
+            </div>
+          )}
 
-          {/* Aplicações */}
-          <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Aplicações</h2>
-            {[1, 2, 3].map(n => (
-              <div key={n} className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <AplicacaoBlock numero={n} tipo="planejado" dados={plano} talhao={talhao} onSave={handleSaveAplicacao} saving={isPlanSaving} />
-                <AplicacaoBlock numero={n} tipo="executado" dados={plano} talhao={talhao} onSave={handleSaveAplicacao} saving={isPlanSaving} />
-              </div>
-            ))}
-          </div>
+          {talhoesFiltrados.map(talhao => {
+            const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
+            return (
+              <TalhaoRow
+                key={talhao.id}
+                talhao={talhao}
+                produtor={produtor}
+                safra={safra}
+                analise={analise}
+                plano={plano}
+                onSaveAnalise={handleSaveAnalise}
+                onSavePlano={handleSavePlano}
+                isAnaliseSaving={analiseCreate.isPending || analiseUpdate.isPending}
+                isPlanSaving={planoCreate.isPending || planoUpdate.isPending}
+              />
+            );
+          })}
         </div>
       )}
     </div>
