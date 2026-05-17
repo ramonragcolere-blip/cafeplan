@@ -1,0 +1,75 @@
+{
+  "name": "FonteSimples",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string",
+      "description": "Nome da fonte/mat\u00e9ria-prima"
+    },
+    "nutriente_principal": {
+      "type": "string",
+      "description": "Ex: N, P, K, Ca, Mg, S, B, Zn..."
+    },
+    "nutrientes_secundarios": {
+      "type": "string"
+    },
+    "n_pct": {
+      "type": "number",
+      "description": "N %"
+    },
+    "p2o5_pct": {
+      "type": "number",
+      "description": "P\u2082O\u2085 %"
+    },
+    "k2o_pct": {
+      "type": "number",
+      "description": "K\u2082O %"
+    },
+    "ca_pct": {
+      "type": "number",
+      "description": "Ca %"
+    },
+    "mg_pct": {
+      "type": "number",
+      "description": "Mg %"
+    },
+    "s_pct": {
+      "type": "number",
+      "description": "S %"
+    },
+    "b_pct": {
+      "type": "number",
+      "description": "B %"
+    },
+    "zn_pct": {
+      "type": "number",
+      "description": "Zn %"
+    },
+    "cu_pct": {
+      "type": "number",
+      "description": "Cu %"
+    },
+    "mn_pct": {
+      "type": "number",
+      "description": "Mn %"
+    },
+    "fe_pct": {
+      "type": "number",
+      "description": "Fe %"
+    },
+    "unidade_padrao": {
+      "type": "string",
+      "default": "kg"
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "ativo": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "nome"
+  ]
+}

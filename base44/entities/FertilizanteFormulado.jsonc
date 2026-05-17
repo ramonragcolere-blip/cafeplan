@@ -1,0 +1,126 @@
+{
+  "name": "FertilizanteFormulado",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string",
+      "description": "Nome comercial do produto"
+    },
+    "fornecedor": {
+      "type": "string",
+      "description": "Fornecedor / fabricante"
+    },
+    "grupo": {
+      "type": "string",
+      "enum": [
+        "Fertilizante Solo",
+        "Fertilizante Solo + Nematicida Biol\u00f3gico",
+        "Fertilizante Foliar",
+        "Fosfatado",
+        "Fonte de Nitrog\u00eanio",
+        "Fonte de F\u00f3sforo",
+        "Fonte de Pot\u00e1ssio",
+        "Fonte de Magn\u00e9sio",
+        "Fonte de Boro",
+        "Fonte de Zinco",
+        "Fonte de Cobre",
+        "Corretivo",
+        "Condicionador de Solo",
+        "Organomineral",
+        "Outro"
+      ]
+    },
+    "tipo_produto": {
+      "type": "string",
+      "description": "Tipo: formulado NPK, organomineral, simples, foliar..."
+    },
+    "ingrediente_ativo": {
+      "type": "string"
+    },
+    "n_pct": {
+      "type": "number",
+      "description": "N %"
+    },
+    "p2o5_pct": {
+      "type": "number",
+      "description": "P\u2082O\u2085 %"
+    },
+    "k2o_pct": {
+      "type": "number",
+      "description": "K\u2082O %"
+    },
+    "ca_pct": {
+      "type": "number",
+      "description": "Ca %"
+    },
+    "mg_pct": {
+      "type": "number",
+      "description": "Mg %"
+    },
+    "s_pct": {
+      "type": "number",
+      "description": "S %"
+    },
+    "b_pct": {
+      "type": "number",
+      "description": "B %"
+    },
+    "zn_pct": {
+      "type": "number",
+      "description": "Zn %"
+    },
+    "cu_pct": {
+      "type": "number",
+      "description": "Cu %"
+    },
+    "mn_pct": {
+      "type": "number",
+      "description": "Mn %"
+    },
+    "fe_pct": {
+      "type": "number",
+      "description": "Fe %"
+    },
+    "outros_nutrientes": {
+      "type": "string"
+    },
+    "dose_viveiro": {
+      "type": "string"
+    },
+    "dose_plantio": {
+      "type": "string"
+    },
+    "dose_1ano_recepa": {
+      "type": "string"
+    },
+    "dose_producao": {
+      "type": "string"
+    },
+    "dose_esqueletado": {
+      "type": "string"
+    },
+    "unidade_aplicacao": {
+      "type": "string"
+    },
+    "instrucoes_uso": {
+      "type": "string"
+    },
+    "composicao_texto": {
+      "type": "string",
+      "description": "Composi\u00e7\u00e3o original em texto"
+    },
+    "intervalo_seguranca": {
+      "type": "string"
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "ativo": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "nome"
+  ]
+}

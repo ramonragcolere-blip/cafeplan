@@ -14,6 +14,7 @@ import Safristas from './pages/Safristas';
 import Lancamentos from './pages/Lancamentos';
 import ParametrosTalhoes from './pages/ParametrosTalhoes';
 import Adubacao from './pages/Adubacao';
+import BaseFertilizantes from './pages/BaseFertilizantes';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -48,6 +49,7 @@ const AuthenticatedApp = () => {
         <Route path="/lancamentos" element={<Lancamentos />} />
         <Route path="/parametros" element={<ParametrosTalhoes />} />
         <Route path="/adubacao" element={<Adubacao />} />
+        <Route path="/fertilizantes" element={<BaseFertilizantes />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
