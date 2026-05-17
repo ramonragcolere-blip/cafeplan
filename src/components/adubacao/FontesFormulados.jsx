@@ -306,21 +306,29 @@ export default function FontesFormulados({ dados, talhao, onSave, saving }) {
     ...fontesSimples.map(f => ({ ...f, _tipo: 'fonte' })),
   ], [fertilizantes, fontesSimples]);
 
-  // Carrega dados salvos
+  // Carrega dados salvos — re-executa quando muda o talhão/plano ou quando os produtos carregam
+  const dadosId = dados?.id ?? null;
   useEffect(() => {
     const saved = dados?.fontes_formulados_v2;
-    if (saved && Array.isArray(saved) && saved.length > 0) {
+    if (saved && Array.isArray(saved) && saved.length > 0 && todos.length > 0) {
       setLinhas(saved.map(l => {
         const prod = todos.find(p => p.id === l.produto_id) || null;
         return { ...l, _id: nextId++, _produto: prod, aberto: false };
       }));
     } else {
+      // Sem dados salvos ou plano ainda não existe → limpa as linhas
       setLinhas([]);
     }
-  }, [dados?.id, todos.length]);
+  }, [dadosId, todos.length]);
 
   const handleSave = () => {
-    const toSave = linhas.map(({ _id, _produto, aberto, ...rest }) => rest);
+    // Persiste apenas campos serializáveis (sem _id interno, sem obj _produto, sem flag aberto)
+    const toSave = linhas.map(({ _id, _produto, aberto, ...rest }) => ({
+      ...rest,
+      // garante que produto_id e produto_tipo estão presentes
+      produto_id: rest.produto_id || null,
+      produto_tipo: rest.produto_tipo || null,
+    }));
     onSave({ fontes_formulados_v2: toSave });
   };
 
