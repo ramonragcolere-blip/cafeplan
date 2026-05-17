@@ -58,7 +58,7 @@ function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onS
           <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
           <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
           <PlanoNutricionalForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
-          <FontesFormulados dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+          <FontesFormulados dados={plano} talhao={talhao} onSave={onSavePlano} saving={isPlanSaving} />
           <ComprasForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
           <div className="space-y-3">
             <h3 className="text-base font-semibold">Aplicações</h3>
