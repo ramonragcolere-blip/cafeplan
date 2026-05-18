@@ -81,7 +81,7 @@ function linhaVazia() {
     _id: nid(), produto_id: null, produto_tipo: null, _produto: null, _aberto: false,
     aplicacao: '1ª',
     nutriente_ref: '', rec_kgha: '', dose_ajust_kgha: '',
-    qtd_planejado: '', data_planejada: '',
+    qtd_planejado: '', data_planejada: '', epoca_prevista: '',
     qtd_comprado: '', data_comprado: '',
     qtd_executado: '', data_executada: '',
     observacoes: '',
@@ -354,6 +354,7 @@ export default function PlanoAplicacoes({ dados, talhao, onSave, saving }) {
               <th className="text-center py-2 px-2 font-medium text-muted-foreground w-36 bg-blue-50">Comprado (kg)</th>
               <th className="text-center py-2 px-2 font-medium text-muted-foreground w-36 bg-green-50">Executado (kg)</th>
               <th className="text-center py-2 px-2 font-medium text-muted-foreground w-28">Diferença</th>
+              <th className="text-center py-2 px-2 font-medium text-muted-foreground w-32">Época prevista</th>
               <th className="text-center py-2 px-2 font-medium text-muted-foreground w-28">Data Plan.</th>
               <th className="text-center py-2 px-2 font-medium text-muted-foreground w-28">Data Exec.</th>
               <th className="text-center py-2 px-2 font-medium text-muted-foreground w-16">Det.</th>
@@ -434,6 +435,13 @@ export default function PlanoAplicacoes({ dados, talhao, onSave, saving }) {
                           )}
                         </div>
                       ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+
+                    {/* Época prevista */}
+                    <td className="py-1.5 px-2">
+                      <Input value={linha.epoca_prevista || ''}
+                        onChange={e => updateLinha(linha._id, { ...linha, epoca_prevista: e.target.value })}
+                        className="h-7 text-xs" placeholder="Ex: out/nov" />
                     </td>
 
                     {/* Data Planejada */}

@@ -6,24 +6,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Sprout, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Sprout, ChevronDown, ChevronUp, Search, FlaskConical, Calculator, Package, ShoppingCart, ClipboardCheck, FileDown } from 'lucide-react';
 import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
 import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
-import PlanoNutricionalForm from '@/components/adubacao/PlanoNutricionalForm';
 import PlanoAplicacoes from '@/components/adubacao/PlanoAplicacoes';
+import AbaCompra from '@/components/adubacao/AbaCompra';
+import AbaExecucao from '@/components/adubacao/AbaExecucao';
+import AbaExportarPDF from '@/components/adubacao/AbaExportarPDF';
 
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 
-function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onSavePlano, isAnaliseSaving, isPlanSaving }) {
-  const [aberto, setAberto] = useState(false);
+const ABAS = [
+  { id: 'analise', label: 'Análise e Recomendação', icon: FlaskConical },
+  { id: 'planejamento', label: 'Planejamento', icon: Package },
+  { id: 'compra', label: 'Compra', icon: ShoppingCart },
+  { id: 'execucao', label: 'Execução', icon: ClipboardCheck },
+  { id: 'pdf', label: 'Exportar PDF', icon: FileDown },
+];
 
+// ── TalhaoRow — expandível, usado nas abas Análise e Planejamento ─────────────
+function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onSavePlano, isAnaliseSaving, isPlanSaving, abaInterna }) {
+  const [aberto, setAberto] = useState(false);
   const temDados = !!(analise || plano);
 
   return (
     <div className="border border-border rounded-xl overflow-hidden bg-card">
-      {/* Header clicável */}
       <button
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors text-left"
         onClick={() => setAberto(a => !a)}
@@ -41,24 +49,33 @@ function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onS
         </div>
       </button>
 
-      {/* Conteúdo expansível */}
       {aberto && (
         <div className="border-t border-border p-4 space-y-4">
-          <DadosTalhaoCard talhao={talhao} produtor={produtor} />
-          <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
-          <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
-          <PlanoNutricionalForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
-          <PlanoAplicacoes dados={plano} talhao={talhao} onSave={onSavePlano} saving={isPlanSaving} />
+          {abaInterna === 'analise' && (
+            <>
+              <DadosTalhaoCard talhao={talhao} produtor={produtor} />
+              <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
+              <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+            </>
+          )}
+          {abaInterna === 'planejamento' && (
+            <>
+              <DadosTalhaoCard talhao={talhao} produtor={produtor} />
+              <PlanoAplicacoes dados={plano} talhao={talhao} onSave={onSavePlano} saving={isPlanSaving} />
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+// ── Página principal ──────────────────────────────────────────────────────────
 export default function Adubacao() {
   const [produtorId, setProdutorId] = useState(null);
   const [safra, setSafra] = useState(null);
   const [filtroNome, setFiltroNome] = useState('');
+  const [abaAtiva, setAbaAtiva] = useState('analise');
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -68,18 +85,12 @@ export default function Adubacao() {
   const { data: planos = [] } = useQuery({ queryKey: ['planos_adubacao'], queryFn: () => base44.entities.PlanoAdubacao.list() });
 
   const produtor = useMemo(() => produtores.find(p => p.id === produtorId) || null, [produtores, produtorId]);
-
-  const talhoesProdutor = useMemo(() =>
-    produtor ? talhoes.filter(t => t.codigo_produtor === produtor.codigo) : [],
-    [talhoes, produtor]
-  );
-
+  const talhoesProdutor = useMemo(() => produtor ? talhoes.filter(t => t.codigo_produtor === produtor.codigo) : [], [talhoes, produtor]);
   const talhoesFiltrados = useMemo(() =>
     filtroNome ? talhoesProdutor.filter(t => t.nome.toLowerCase().includes(filtroNome.toLowerCase())) : talhoesProdutor,
-    [talhoesProdutor, filtroNome]
-  );
+    [talhoesProdutor, filtroNome]);
 
-  // ---- Mutations Análise ----
+  // ── Mutations Análise ────────────────────────────────────────────────────────
   const analiseCreate = useMutation({
     mutationFn: data => base44.entities.AnaliseSolo.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_solo'] }); toast({ title: 'Análise de solo salva!' }); },
@@ -91,7 +102,7 @@ export default function Adubacao() {
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
-  // ---- Mutations Plano ----
+  // ── Mutations Plano ──────────────────────────────────────────────────────────
   const planoCreate = useMutation({
     mutationFn: data => base44.entities.PlanoAdubacao.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['planos_adubacao'] }); toast({ title: 'Dados salvos!' }); },
@@ -103,6 +114,7 @@ export default function Adubacao() {
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
+  // ── Handlers por talhão ──────────────────────────────────────────────────────
   const getSaveHandlers = (talhao) => {
     const analise = safra ? analises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null : null;
     const plano = safra ? planos.find(p => p.talhao_id === talhao.id && p.safra === safra) || null : null;
@@ -122,10 +134,28 @@ export default function Adubacao() {
     return { analise, plano, handleSaveAnalise, handleSavePlano };
   };
 
+  // Handler especial para compras (salva em plano específico por id)
+  const handleSavePlanoById = (planoObj, partialData) => {
+    if (planoObj?.id) planoUpdate.mutate({ id: planoObj.id, data: { ...planoObj, ...partialData } });
+  };
+
   const pronto = produtor && safra;
+  const isAnaliseSaving = analiseCreate.isPending || analiseUpdate.isPending;
+  const isPlanSaving = planoCreate.isPending || planoUpdate.isPending;
+
+  // Para abas de Execução, usa o primeiro talhão filtrado como contexto (ou o selecionado)
+  const [talhaoExecId, setTalhaoExecId] = useState(null);
+  const talhaoExec = useMemo(() => {
+    if (talhaoExecId) return talhoesProdutor.find(t => t.id === talhaoExecId) || talhoesProdutor[0] || null;
+    return talhoesProdutor[0] || null;
+  }, [talhoesProdutor, talhaoExecId]);
+  const planoExec = useMemo(() =>
+    talhaoExec && safra ? planos.find(p => p.talhao_id === talhaoExec.id && p.safra === safra) || null : null,
+    [planos, talhaoExec, safra]);
 
   return (
     <div className="space-y-6">
+      {/* Título */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
           <Sprout className="w-5 h-5 text-primary" />
@@ -136,11 +166,11 @@ export default function Adubacao() {
         </div>
       </div>
 
-      {/* Seletor */}
+      {/* Seletor de contexto */}
       <div className="bg-card border border-border rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <Label className="text-xs mb-1 block">Produtor</Label>
-          <Select value={produtorId || 'none'} onValueChange={v => { setProdutorId(v === 'none' ? null : v); setSafra(null); setFiltroNome(''); }}>
+          <Select value={produtorId || 'none'} onValueChange={v => { setProdutorId(v === 'none' ? null : v); setSafra(null); setFiltroNome(''); setTalhaoExecId(null); }}>
             <SelectTrigger><SelectValue placeholder="Selecione o produtor" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Selecione...</SelectItem>
@@ -165,48 +195,165 @@ export default function Adubacao() {
         )}
       </div>
 
+      {/* Placeholder sem seleção */}
       {!pronto && (
         <div className="bg-card rounded-2xl border border-border p-16 text-center text-muted-foreground">
           <Sprout className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">Selecione produtor e safra para ver os talhões</p>
+          <p className="text-lg font-medium">Selecione produtor e safra para começar</p>
         </div>
       )}
 
       {pronto && (
-        <div className="space-y-4">
-          {/* Filtro de talhão */}
-          {talhoesProdutor.length > 1 && (
-            <div className="relative max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Filtrar talhão..." value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="pl-10" />
-            </div>
-          )}
+        <>
+          {/* Abas */}
+          <div className="flex flex-wrap gap-1 border-b border-border pb-0">
+            {ABAS.map(aba => {
+              const Icon = aba.icon;
+              return (
+                <button
+                  key={aba.id}
+                  onClick={() => setAbaAtiva(aba.id)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg border border-b-0 transition-colors -mb-px ${
+                    abaAtiva === aba.id
+                      ? 'bg-card border-border text-foreground'
+                      : 'bg-muted/30 border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {aba.label}
+                </button>
+              );
+            })}
+          </div>
 
-          {talhoesFiltrados.length === 0 && (
-            <div className="text-center text-muted-foreground py-10 bg-card rounded-2xl border border-border">
-              <p>Nenhum talhão encontrado para este produtor.</p>
-              <p className="text-sm mt-1">Cadastre os talhões na aba "Talhões" primeiro.</p>
-            </div>
-          )}
+          {/* Conteúdo das abas */}
+          <div className="mt-0">
 
-          {talhoesFiltrados.map(talhao => {
-            const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
-            return (
-              <TalhaoRow
-                key={talhao.id}
-                talhao={talhao}
+            {/* ABA 1 — Análise e Recomendação */}
+            {abaAtiva === 'analise' && (
+              <div className="space-y-4">
+                {talhoesProdutor.length > 1 && (
+                  <div className="relative max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input placeholder="Filtrar talhão..." value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="pl-10" />
+                  </div>
+                )}
+                {talhoesFiltrados.length === 0 && (
+                  <div className="text-center text-muted-foreground py-10 bg-card rounded-2xl border border-border">
+                    <p>Nenhum talhão encontrado.</p>
+                  </div>
+                )}
+                {talhoesFiltrados.map(talhao => {
+                  const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
+                  return (
+                    <TalhaoRow
+                      key={talhao.id}
+                      talhao={talhao}
+                      produtor={produtor}
+                      safra={safra}
+                      analise={analise}
+                      plano={plano}
+                      onSaveAnalise={handleSaveAnalise}
+                      onSavePlano={handleSavePlano}
+                      isAnaliseSaving={isAnaliseSaving}
+                      isPlanSaving={isPlanSaving}
+                      abaInterna="analise"
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ABA 2 — Planejamento */}
+            {abaAtiva === 'planejamento' && (
+              <div className="space-y-4">
+                {talhoesProdutor.length > 1 && (
+                  <div className="relative max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input placeholder="Filtrar talhão..." value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="pl-10" />
+                  </div>
+                )}
+                {talhoesFiltrados.length === 0 && (
+                  <div className="text-center text-muted-foreground py-10 bg-card rounded-2xl border border-border">
+                    <p>Nenhum talhão encontrado.</p>
+                  </div>
+                )}
+                {talhoesFiltrados.map(talhao => {
+                  const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
+                  return (
+                    <TalhaoRow
+                      key={talhao.id}
+                      talhao={talhao}
+                      produtor={produtor}
+                      safra={safra}
+                      analise={analise}
+                      plano={plano}
+                      onSaveAnalise={handleSaveAnalise}
+                      onSavePlano={handleSavePlano}
+                      isAnaliseSaving={isAnaliseSaving}
+                      isPlanSaving={isPlanSaving}
+                      abaInterna="planejamento"
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ABA 3 — Compra */}
+            {abaAtiva === 'compra' && (
+              <AbaCompra
                 produtor={produtor}
                 safra={safra}
-                analise={analise}
-                plano={plano}
-                onSaveAnalise={handleSaveAnalise}
-                onSavePlano={handleSavePlano}
-                isAnaliseSaving={analiseCreate.isPending || analiseUpdate.isPending}
-                isPlanSaving={planoCreate.isPending || planoUpdate.isPending}
+                talhoes={talhoes}
+                planos={planos}
+                saving={isPlanSaving}
+                onSavePlano={handleSavePlanoById}
               />
-            );
-          })}
-        </div>
+            )}
+
+            {/* ABA 4 — Execução */}
+            {abaAtiva === 'execucao' && (
+              <div className="space-y-4">
+                {talhoesProdutor.length > 1 && (
+                  <div>
+                    <Label className="text-xs mb-1 block">Selecionar talhão</Label>
+                    <Select
+                      value={talhaoExec?.id || 'none'}
+                      onValueChange={v => setTalhaoExecId(v === 'none' ? null : v)}
+                    >
+                      <SelectTrigger className="max-w-sm"><SelectValue placeholder="Talhão..." /></SelectTrigger>
+                      <SelectContent>
+                        {talhoesProdutor.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <AbaExecucao
+                  talhao={talhaoExec}
+                  plano={planoExec}
+                  saving={isPlanSaving}
+                  onSave={(partialData) => {
+                    if (!talhaoExec) return;
+                    const { plano: p, handleSavePlano } = getSaveHandlers(talhaoExec);
+                    handleSavePlano(partialData);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* ABA 5 — Exportar PDF */}
+            {abaAtiva === 'pdf' && (
+              <AbaExportarPDF
+                produtor={produtor}
+                safra={safra}
+                talhoes={talhoes}
+                planos={planos}
+                analises={analises}
+              />
+            )}
+
+          </div>
+        </>
       )}
     </div>
   );
