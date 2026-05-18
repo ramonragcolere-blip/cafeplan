@@ -12,9 +12,7 @@ import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
 import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
 import PlanoNutricionalForm from '@/components/adubacao/PlanoNutricionalForm';
-import FontesFormulados from '@/components/adubacao/FontesFormulados';
-import ComprasForm from '@/components/adubacao/ComprasForm';
-import AplicacaoBlock from '@/components/adubacao/AplicacaoBlock';
+import PlanoAplicacoes from '@/components/adubacao/PlanoAplicacoes';
 
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 
@@ -22,14 +20,6 @@ function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onS
   const [aberto, setAberto] = useState(false);
 
   const temDados = !!(analise || plano);
-
-  const handleSaveAplicacao = (aplicacao) => {
-    const aplicacoes = plano?.aplicacoes ? [...plano.aplicacoes] : [];
-    const idx = aplicacoes.findIndex(a => a.numero === aplicacao.numero && a.tipo === aplicacao.tipo);
-    if (idx >= 0) aplicacoes[idx] = aplicacao;
-    else aplicacoes.push(aplicacao);
-    onSavePlano({ aplicacoes });
-  };
 
   return (
     <div className="border border-border rounded-xl overflow-hidden bg-card">
@@ -58,17 +48,7 @@ function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onS
           <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
           <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
           <PlanoNutricionalForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
-          <FontesFormulados dados={plano} talhao={talhao} onSave={onSavePlano} saving={isPlanSaving} />
-          <ComprasForm dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
-          <div className="space-y-3">
-            <h3 className="text-base font-semibold">Aplicações</h3>
-            {[1, 2, 3].map(n => (
-              <div key={n} className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <AplicacaoBlock numero={n} tipo="planejado" dados={plano} talhao={talhao} onSave={handleSaveAplicacao} saving={isPlanSaving} />
-                <AplicacaoBlock numero={n} tipo="executado" dados={plano} talhao={talhao} onSave={handleSaveAplicacao} saving={isPlanSaving} />
-              </div>
-            ))}
-          </div>
+          <PlanoAplicacoes dados={plano} talhao={talhao} onSave={onSavePlano} saving={isPlanSaving} />
         </div>
       )}
     </div>
