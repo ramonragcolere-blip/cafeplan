@@ -11,6 +11,7 @@ import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
 import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
 import PlanoAplicacoes from '@/components/adubacao/PlanoAplicacoes';
+import AbaPlanejamento from '@/components/adubacao/AbaPlanejamento';
 import AbaCompra from '@/components/adubacao/AbaCompra';
 import AbaExecucao from '@/components/adubacao/AbaExecucao';
 import AbaExportarPDF from '@/components/adubacao/AbaExportarPDF';
@@ -266,37 +267,18 @@ export default function Adubacao() {
 
             {/* ABA 2 — Planejamento */}
             {abaAtiva === 'planejamento' && (
-              <div className="space-y-4">
-                {talhoesProdutor.length > 1 && (
-                  <div className="relative max-w-sm">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input placeholder="Filtrar talhão..." value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="pl-10" />
-                  </div>
-                )}
-                {talhoesFiltrados.length === 0 && (
-                  <div className="text-center text-muted-foreground py-10 bg-card rounded-2xl border border-border">
-                    <p>Nenhum talhão encontrado.</p>
-                  </div>
-                )}
-                {talhoesFiltrados.map(talhao => {
-                  const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
-                  return (
-                    <TalhaoRow
-                      key={talhao.id}
-                      talhao={talhao}
-                      produtor={produtor}
-                      safra={safra}
-                      analise={analise}
-                      plano={plano}
-                      onSaveAnalise={handleSaveAnalise}
-                      onSavePlano={handleSavePlano}
-                      isAnaliseSaving={isAnaliseSaving}
-                      isPlanSaving={isPlanSaving}
-                      abaInterna="planejamento"
-                    />
-                  );
-                })}
-              </div>
+              <AbaPlanejamento
+                produtor={produtor}
+                safra={safra}
+                talhoes={talhoes}
+                analises={analises}
+                planos={planos}
+                saving={isPlanSaving}
+                onSavePlano={(talhao, partialData) => {
+                  const { handleSavePlano } = getSaveHandlers(talhao);
+                  handleSavePlano(partialData);
+                }}
+              />
             )}
 
             {/* ABA 3 — Compra */}
