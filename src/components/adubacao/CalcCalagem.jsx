@@ -147,6 +147,50 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
   const resultado = useMemo(() => calcCalagem(caAtual, mgAtual, nivel, produto, area), [caAtual, mgAtual, nivel, produto, area]);
   const meta = NIVEIS[nivel];
 
+  const { mutate: enviarPlanejamento, isPending: enviando } = useMutation({
+    mutationFn: async () => {
+      if (!resultado || !produto) return;
+      const temCa = (produto.ca_pct || 0) > 0;
+      const temMg = (produto.mg_pct || 0) > 0;
+      const nutriLabel = temCa && temMg ? 'Ca+Mg' : temCa ? 'Ca' : 'Mg';
+
+      const payload = {
+        codigo_produtor: codigoProdutor,
+        safra,
+        talhao_id: talhaoId,
+        talhao_nome: talhao?.nome || '',
+        nutriente_key: 'calagem',
+        nutriente_label: `Calagem (${nutriLabel})`,
+        produto_id: produto.id,
+        produto_nome: produto.nome,
+        dose_rec_manual: String(resultado.doseFinalHa),
+        num_aplic: 1,
+        pcts: [100],
+        meses: [[]],
+        observacoes: `Meta: ${nivel} | Dose Ca: ${resultado.dosePeloCa ?? 0} kg/ha | Dose Mg: ${resultado.dosePeloMg ?? 0} kg/ha | Total: ${resultado.totalKg ?? '—'} kg`,
+        status: 'planejado',
+      };
+
+      const existentes = await base44.entities.BasePlanejamentoAdubacao.filter({
+        codigo_produtor: codigoProdutor,
+        safra,
+        talhao_id: talhaoId,
+        nutriente_key: 'calagem',
+      });
+
+      if (existentes?.length > 0) {
+        return base44.entities.BasePlanejamentoAdubacao.update(existentes[0].id, payload);
+      } else {
+        return base44.entities.BasePlanejamentoAdubacao.create(payload);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['base_planejamento'] });
+      handleSalvar();
+      if (onEnviarPlanejamento) onEnviarPlanejamento({ tipo: 'calagem' });
+    },
+  });
+
   const semAnalise = caAtual == null && mgAtual == null;
   if (semAnalise) return null;
 
@@ -171,18 +215,8 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
   };
 
   const handleEnviar = () => {
-    if (!resultado || !produto || !onEnviarPlanejamento) return;
-    onEnviarPlanejamento({
-      produtoId: produto.id,
-      produtoNome: produto.nome,
-      doseHa: resultado.doseFinalHa,
-      totalKg: resultado.totalKg,
-      ton: resultado.ton,
-      sc40: resultado.sc40,
-      sc50: resultado.sc50,
-      nivel,
-      tipo: 'calagem',
-    });
+    if (!resultado || !produto || !codigoProdutor || !safra || !talhaoId) return;
+    enviarPlanejamento();
   };
 
   return (
@@ -370,12 +404,10 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
                 {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Salvar recomendação
               </Button>
-              {onEnviarPlanejamento && (
-                <Button size="sm" onClick={handleEnviar} className="gap-2 bg-lime-700 hover:bg-lime-800">
-                  <Send className="w-4 h-4" />
-                  Enviar para Planejamento
-                </Button>
-              )}
+              <Button size="sm" onClick={handleEnviar} disabled={enviando || !codigoProdutor || !safra || !talhaoId} className="gap-2 bg-lime-700 hover:bg-lime-800">
+                {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Enviar para Planejamento
+              </Button>
             </div>
           </div>
         )}

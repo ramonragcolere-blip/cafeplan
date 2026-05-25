@@ -596,6 +596,26 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
             </div>
           </div>
 
+          {/* Item de calagem — exibido se foi enviado do CalcCalagem */}
+          {(() => {
+            const regCalagem = registrosSalvos.find(r => r.nutriente_key === 'calagem');
+            if (!regCalagem) return null;
+            return (
+              <div className="bg-lime-50 border border-lime-200 rounded-xl p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-lime-800 uppercase tracking-wide">Calagem / Correção</p>
+                  <span className="text-xs text-lime-600 bg-lime-100 px-2 py-0.5 rounded-full">{regCalagem.nutriente_label}</span>
+                </div>
+                <p className="text-sm font-medium">{regCalagem.produto_nome}</p>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <span>Dose: <strong>{regCalagem.dose_rec_manual} kg/ha</strong></span>
+                  {talhao?.area_ha && <span>Total: <strong>{Math.round(Number(regCalagem.dose_rec_manual) * talhao.area_ha).toLocaleString()} kg</strong></span>}
+                </div>
+                {regCalagem.observacoes && <p className="text-xs text-muted-foreground">{regCalagem.observacoes}</p>}
+              </div>
+            );
+          })()}
+
           {/* Linhas por nutriente */}
           <div className="space-y-4">
             {NUTRIENTES_CHAVE.map(n => {
