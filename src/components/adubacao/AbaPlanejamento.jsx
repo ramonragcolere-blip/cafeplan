@@ -100,7 +100,7 @@ const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV'
 function LinhanutrienteRec({
   nutriente, recKgHa, talhao, todos, linhaState, onChange,
 }) {
-  const { produtoId, doseRecManual, numAplic, pcts, meses = [], epocaPrevista, observacoes } = linhaState;
+  const { produtoId, doseRecManual, numAplic, pcts, meses = [], observacoes } = linhaState;
 
   const produto = useMemo(() => todos.find(p => p.id === produtoId) || null, [todos, produtoId]);
   const area = talhao?.area_ha || 0;
@@ -136,15 +136,24 @@ function LinhanutrienteRec({
   };
 
   const setMes = (idx, mes) => {
+    const mesArray = Array.isArray(meses[idx]) ? meses[idx] : (meses[idx] ? [meses[idx]] : []);
+    const jaSelec = mesArray.includes(mes);
+    let novosMesIdx;
+    if (jaSelec) {
+      novosMesIdx = mesArray.filter(m => m !== mes);
+    } else if (mesArray.length < 3) {
+      novosMesIdx = [...mesArray, mes];
+    } else {
+      novosMesIdx = mesArray; // já tem 3, não adiciona
+    }
     const novos = [...(meses || [])];
-    // toggle: se já selecionado, remove; senão seta
-    novos[idx] = novos[idx] === mes ? '' : mes;
+    novos[idx] = novosMesIdx;
     onChange({ ...linhaState, meses: novos });
   };
 
   const setNumAplic = (n) => {
     const num = Number(n);
-    onChange({ ...linhaState, numAplic: num, pcts: PCT_DEFAULTS[num] || [100], meses: Array(num).fill('') });
+    onChange({ ...linhaState, numAplic: num, pcts: PCT_DEFAULTS[num] || [100], meses: Array(num).fill([]) });
   };
 
   if (recKgHa == null && doseRecManual === '') return null;
@@ -328,18 +337,28 @@ function LinhanutrienteRec({
                         <div>{sc50Aplic} sc · {tonAplic} t</div>
                         {gPlantaAplic && <div>{gPlantaAplic} g/planta{gMetroAplic ? ` · ${gMetroAplic} g/metro` : ''}</div>}
                       </div>
-                      {/* Mês */}
+                      {/* Meses (até 3) */}
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">Mês:</p>
+                        <p className="text-xs text-muted-foreground mb-1">Meses (até 3):</p>
                         <div className="flex flex-wrap gap-1">
-                          {MESES.map(m => (
-                            <button key={m} type="button"
-                              onClick={() => setMes(i, m)}
-                              className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${mesSel === m ? 'bg-green-700 text-white border-green-700' : 'bg-white text-muted-foreground border-border hover:bg-green-50'}`}>
-                              {m}
-                            </button>
-                          ))}
+                          {MESES.map(m => {
+                            const mesArray = Array.isArray(meses[i]) ? meses[i] : (meses[i] ? [meses[i]] : []);
+                            const selec = mesArray.includes(m);
+                            return (
+                              <button key={m} type="button"
+                                onClick={() => setMes(i, m)}
+                                className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${selec ? 'bg-green-700 text-white border-green-700' : 'bg-white text-muted-foreground border-border hover:bg-green-50'}`}>
+                                {m}
+                              </button>
+                            );
+                          })}
                         </div>
+                        {(() => {
+                          const mesArray = Array.isArray(meses[i]) ? meses[i] : (meses[i] ? [meses[i]] : []);
+                          return mesArray.length > 0 ? (
+                            <p className="text-xs text-green-700 mt-1">{mesArray.join(', ')}</p>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
                   );
@@ -353,26 +372,15 @@ function LinhanutrienteRec({
           </div>
         ) : null}
 
-        {/* Época e Observações */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <Label className="text-xs mb-1 block">Época prevista</Label>
-            <Input
-              value={epocaPrevista}
-              onChange={e => onChange({ ...linhaState, epocaPrevista: e.target.value })}
-              className="h-8 text-sm"
-              placeholder="Ex: outubro/novembro"
-            />
-          </div>
-          <div>
-            <Label className="text-xs mb-1 block">Observações</Label>
-            <Input
-              value={observacoes}
-              onChange={e => onChange({ ...linhaState, observacoes: e.target.value })}
-              className="h-8 text-sm"
-              placeholder="Obs..."
-            />
-          </div>
+        {/* Observações */}
+        <div>
+          <Label className="text-xs mb-1 block">Observações</Label>
+          <Input
+            value={observacoes}
+            onChange={e => onChange({ ...linhaState, observacoes: e.target.value })}
+            className="h-8 text-sm"
+            placeholder="Obs..."
+          />
         </div>
       </div>
     </div>
@@ -387,21 +395,19 @@ function linhaInicial(nutrienteKey, todos) {
     doseRecManual: '',
     numAplic: 1,
     pcts: [100],
-    meses: [''],
-    epocaPrevista: '',
+    meses: [[]],
     observacoes: '',
   };
 }
 
-// Linha vazia sem sugestão de produto (para quando não há dados salvos e não deve sugerir)
+// Linha vazia sem sugestão de produto
 function linhaVazia() {
   return {
     produtoId: null,
     doseRecManual: '',
     numAplic: 1,
     pcts: [100],
-    meses: [''],
-    epocaPrevista: '',
+    meses: [[]],
     observacoes: '',
   };
 }
@@ -455,18 +461,21 @@ export default function AbaPlanejamento({
 
     const saved = plano?.planejamento_nutrientes;
 
-    // Se há dados salvos, carregá-los exatamente como foram salvos.
-    // "produtoId: null" significa "Nenhum produto" escolhido pelo usuário — respeitar.
+    // Se há dados salvos, carregá-los exatamente — inclusive produtoId: null (Nenhum produto)
     if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) {
-      // Garantir compatibilidade com registros antigos sem campo "meses"
       const hidratado = {};
       NUTRIENTES_CHAVE.forEach(n => {
         const l = saved[n.key];
-        if (l) {
-          hidratado[n.key] = {
-            meses: Array(l.numAplic || 1).fill(''),
-            ...l,
-          };
+        if (l !== undefined) {
+          const numAplic = l.numAplic || 1;
+          // Normalizar meses: garantir que cada posição seja array (compatibilidade com formato antigo string)
+          const mesNorm = Array.from({ length: numAplic }, (_, i) => {
+            const m = l.meses?.[i];
+            if (!m) return [];
+            if (Array.isArray(m)) return m;
+            return m ? [m] : [];
+          });
+          hidratado[n.key] = { ...linhaVazia(), ...l, meses: mesNorm };
         } else {
           hidratado[n.key] = linhaVazia();
         }
@@ -584,9 +593,9 @@ export default function AbaPlanejamento({
           <div className="space-y-4">
             {NUTRIENTES_CHAVE.map(n => {
               const recKgHa = rec?.[n.recKey] ?? null;
-              const linhaS = linhasState[n.key] || { produtoId: null, doseRecManual: '', numAplic: 1, pcts: [100], meses: [''], epocaPrevista: '', observacoes: '' };
+              const linhaS = linhasState[n.key] || linhaVazia();
               // Só mostrar linhas que têm rec ou que o usuário já preencheu alguma coisa
-              const temDados = linhaS.produtoId || linhaS.doseRecManual || linhaS.epocaPrevista;
+              const temDados = linhaS.produtoId || linhaS.doseRecManual || linhaS.observacoes;
               if (recKgHa == null && !temDados) return (
                 <div key={n.key} className="border border-dashed border-border rounded-xl p-3 flex items-center gap-3">
                   <span className="font-bold text-sm text-primary w-10">{n.label}</span>
