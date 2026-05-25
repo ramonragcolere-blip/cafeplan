@@ -11,6 +11,7 @@ import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
 import AnaliseSolo2040Form from '@/components/adubacao/AnaliseSolo2040Form';
 import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
+import ImportarAnalisePDF from '@/components/adubacao/ImportarAnalisePDF';
 import PlanoAplicacoes from '@/components/adubacao/PlanoAplicacoes';
 import AbaPlanejamento from '@/components/adubacao/AbaPlanejamento';
 import AbaCompra from '@/components/adubacao/AbaCompra';
@@ -28,7 +29,7 @@ const ABAS = [
 ];
 
 // ── TalhaoRow — expandível, usado nas abas Análise e Planejamento ─────────────
-function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSaveAnalise, onSaveAnalise2040, onSavePlano, isAnaliseSaving, isAnalise2040Saving, isPlanSaving, abaInterna, onEnviarPlanejamento }) {
+function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSaveAnalise, onSaveAnalise2040, onSavePlano, isAnaliseSaving, isAnalise2040Saving, isPlanSaving, abaInterna, onEnviarPlanejamento, talhoes, onImportarAnalise, onImportarAnalise2040 }) {
   const [aberto, setAberto] = useState(false);
   const temDados = !!(analise || plano);
 
@@ -56,6 +57,15 @@ function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSav
           {abaInterna === 'analise' && (
             <>
               <DadosTalhaoCard talhao={talhao} produtor={produtor} />
+              <div className="flex justify-end">
+                <ImportarAnalisePDF
+                  talhoes={talhoes || [talhao]}
+                  produtor={produtor}
+                  safra={safra}
+                  onImportarAnalise={onImportarAnalise}
+                  onImportarAnalise2040={onImportarAnalise2040}
+                />
+              </div>
               <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
               <AnaliseSolo2040Form dados={analise2040} onSave={onSaveAnalise2040} saving={isAnalise2040Saving} />
               <RecomendacaoNPK analise={analise} analise2040={analise2040} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} onEnviarPlanejamento={onEnviarPlanejamento} />
@@ -273,6 +283,15 @@ export default function Adubacao() {
                     const calagemAtual = plano?.calagem_recomendada || [];
                     handleSavePlano({ calagem_recomendada: [...calagemAtual.filter(c => c.tipo !== 'calagem'), dados] });
                   };
+                  // handlers para importação PDF — recebem um talhao explícito (pode ser diferente do atual)
+                  const handleImportarAnalise = (talhaoAlvo, dados) => {
+                    const { handleSaveAnalise: save } = getSaveHandlers(talhaoAlvo);
+                    save(dados);
+                  };
+                  const handleImportarAnalise2040 = (talhaoAlvo, dados) => {
+                    const { handleSaveAnalise2040: save } = getSaveHandlers(talhaoAlvo);
+                    save(dados);
+                  };
                   return (
                     <TalhaoRow
                       key={talhao.id}
@@ -290,6 +309,9 @@ export default function Adubacao() {
                       isPlanSaving={isPlanSaving}
                       abaInterna="analise"
                       onEnviarPlanejamento={handleEnviarCalagem}
+                      talhoes={talhoesProdutor}
+                      onImportarAnalise={handleImportarAnalise}
+                      onImportarAnalise2040={handleImportarAnalise2040}
                     />
                   );
                 })}
