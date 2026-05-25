@@ -192,38 +192,33 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving, onImportar 
   const [semAnalise, setSemAnalise] = useState(false);
   const [form, setForm] = useState(empty());
 
-  // Chave estável que muda quando troca de registro ou de null→registro
-  const dadosKey = dados ? `${dados.id}|${dados.talhao_id}|${dados.safra}|${dados.codigo_produtor}` : '__nenhum__';
+  const toFormStr = (src) => {
+    const formData = { ...empty() };
+    Object.keys(formData).forEach(k => {
+      const v = src[k];
+      formData[k] = (v !== null && v !== undefined && v !== '') ? String(v) : '';
+    });
+    return formData;
+  };
 
-  // Sincroniza formulário sempre que o registro de origem mudar
+  // Sincroniza formulário sempre que os dados externos mudarem (carregamento, troca de talhão/safra, ou após salvar)
   useEffect(() => {
     if (dados) {
       setSemAnalise(dados.sem_analise_2040 === true);
-      // Converte valores numéricos para string para inputs controlados
-      const formData = { ...empty() };
-      Object.keys(formData).forEach(k => {
-        const v = dados[k];
-        formData[k] = (v !== null && v !== undefined) ? String(v) : '';
-      });
-      setForm(formData);
+      setForm(toFormStr(dados));
     } else {
       setSemAnalise(false);
       setForm(empty());
     }
+  // JSON.stringify garante que qualquer mudança nos dados dispara o efeito
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dadosKey]);
+  }, [JSON.stringify(dados)]);
 
   // Quando importar via PDF: atualiza form local imediatamente E persiste
   const handleImportar = (dadosImportados) => {
     setSemAnalise(false);
     setAberto(true);
-    // Normaliza para string (inputs controlados)
-    const formData = { ...empty() };
-    Object.keys(formData).forEach(k => {
-      const v = dadosImportados[k];
-      formData[k] = (v !== null && v !== undefined && v !== '') ? String(v) : '';
-    });
-    setForm(formData);
+    setForm(toFormStr(dadosImportados));
     onSave(dadosImportados);
   };
 
