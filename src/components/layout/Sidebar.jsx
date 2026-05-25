@@ -44,7 +44,22 @@ export default function Sidebar() {
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-sidebar-primary flex items-center justify-center">
-              <Coffee className="w-5 h-5 text-sidebar-primary-foreground" />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-sidebar-primary-foreground">
+                {/* tronco */}
+                <line x1="12" y1="22" x2="12" y2="12" />
+                {/* galho esquerdo */}
+                <path d="M12 17 C9 16, 6 14, 5 11" />
+                {/* galho direito */}
+                <path d="M12 15 C15 14, 18 12, 19 9" />
+                {/* folha esquerda */}
+                <path d="M5 11 C3 8, 5 5, 8 7 C7 9, 6 11, 5 11Z" fill="currentColor" stroke="none" />
+                {/* folha direita */}
+                <path d="M19 9 C21 6, 19 3, 16 5 C17 7, 18 9, 19 9Z" fill="currentColor" stroke="none" />
+                {/* fruto no galho esq */}
+                <circle cx="8.5" cy="14" r="1" fill="currentColor" stroke="none" />
+                {/* fruto no galho dir */}
+                <circle cx="16" cy="11" r="1" fill="currentColor" stroke="none" />
+              </svg>
             </div>
             <div>
               <h1 className="font-bold text-lg leading-tight">Colheita</h1>
