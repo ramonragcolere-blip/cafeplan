@@ -29,7 +29,7 @@ const ABAS = [
 ];
 
 // ── TalhaoRow — expandível, usado nas abas Análise e Planejamento ─────────────
-function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSaveAnalise, onSaveAnalise2040, onSavePlano, isAnaliseSaving, isAnalise2040Saving, isPlanSaving, abaInterna, onEnviarPlanejamento, talhoes, onImportarAnalise, onImportarAnalise2040 }) {
+function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSaveAnalise, onSaveAnalise2040, onSavePlano, isAnaliseSaving, isAnalise2040Saving, isPlanSaving, abaInterna, onEnviarPlanejamento, talhoes, analises, analises2040List, onImportarAnalise, onImportarAnalise2040 }) {
   const [aberto, setAberto] = useState(false);
   const temDados = !!(analise || plano);
 
@@ -60,8 +60,9 @@ function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSav
               <div className="flex justify-end">
                 <ImportarAnalisePDF
                   talhoes={talhoes || [talhao]}
-                  produtor={produtor}
                   safra={safra}
+                  analises={analises}
+                  analises2040={analises2040List}
                   onImportarAnalise={onImportarAnalise}
                   onImportarAnalise2040={onImportarAnalise2040}
                 />
@@ -310,6 +311,8 @@ export default function Adubacao() {
                       abaInterna="analise"
                       onEnviarPlanejamento={handleEnviarCalagem}
                       talhoes={talhoesProdutor}
+                      analises={analises}
+                      analises2040List={analises2040}
                       onImportarAnalise={handleImportarAnalise}
                       onImportarAnalise2040={handleImportarAnalise2040}
                     />
