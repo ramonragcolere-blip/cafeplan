@@ -1,0 +1,83 @@
+{
+  "name": "BasePlanejamentoAdubacao",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra (ex: 2025/2026)"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talh\u00e3o"
+    },
+    "talhao_nome": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "nutriente_key": {
+      "type": "string",
+      "description": "Chave do nutriente: n_pct, p2o5_pct, k2o_pct, b_pct"
+    },
+    "nutriente_label": {
+      "type": "string",
+      "description": "R\u00f3tulo do nutriente: N, P2O5, K2O, B"
+    },
+    "produto_id": {
+      "type": "string",
+      "description": "ID do produto selecionado (null = Nenhum produto)"
+    },
+    "produto_nome": {
+      "type": "string",
+      "description": "Nome do produto (ou 'Nenhum produto')"
+    },
+    "dose_rec_manual": {
+      "type": "string",
+      "description": "Dose manual em kg/ha (string vazia = usa recomenda\u00e7\u00e3o calculada)"
+    },
+    "num_aplic": {
+      "type": "number",
+      "description": "N\u00famero de aplica\u00e7\u00f5es / parcelamentos",
+      "default": 1
+    },
+    "pcts": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "Percentual de cada parcela"
+    },
+    "meses": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Meses por aplica\u00e7\u00e3o (array de arrays)"
+    },
+    "observacoes": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es livres"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planejado",
+        "em_execucao",
+        "concluido"
+      ],
+      "default": "planejado"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id",
+    "nutriente_key"
+  ]
+}
