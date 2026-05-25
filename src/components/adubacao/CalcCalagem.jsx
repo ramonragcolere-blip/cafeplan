@@ -16,7 +16,7 @@ const NIVEIS = {
 const GRUPOS_CORRETIVO = ['Corretivo', 'Condicionador de Solo', 'Fonte de Cálcio', 'Fonte de Magnésio'];
 
 function calcCalagEmElevacao(caAtual, mgAtual, nivel, produto, area) {
-  const meta = NIVEIS[nivel];
+  const meta = NIVEIS[nivel] || NIVEIS['Bom'];
   if (!meta) return null;
 
   const defCa = Math.max(0, meta.ca - (Number(caAtual) || 0));
@@ -218,7 +218,15 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
     if (carregadoRef.current || carregando) return;
     const reg = registrosSalvos[0];
     if (reg) {
-      setNivel(reg.meta || 'Bom');
+      // reg.meta pode ser "V%→70" (protocolo V%) ou "Bom"/"Mínimo"/"Excelente"
+      const metaSalva = reg.meta || 'Bom';
+      if (metaSalva.startsWith('V%')) {
+        setProtocolo('vpct');
+        const v2Salvo = metaSalva.split('→')[1];
+        if (v2Salvo) setV2(v2Salvo);
+      } else if (NIVEIS[metaSalva]) {
+        setNivel(metaSalva);
+      }
       setProdutoId(reg.produto_id || null);
       setObservacoes(reg.observacoes || '');
       setRegistroId(reg.id);
@@ -258,7 +266,7 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
     [caAtual, mgAtual, nivel, produto, area]
   );
 
-  const meta = NIVEIS[nivel];
+  const meta = NIVEIS[nivel] || NIVEIS['Bom'];
 
   const prntEfetivo = produto?.prnt > 0 ? Number(produto.prnt)
     : prntManual !== '' ? Number(prntManual) : 100;
