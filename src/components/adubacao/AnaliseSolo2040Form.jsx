@@ -192,25 +192,38 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving, onImportar 
   const [semAnalise, setSemAnalise] = useState(false);
   const [form, setForm] = useState(empty());
 
-  // Sincroniza quando os dados externos chegarem (carregamento ou troca de talhão/safra)
+  // Chave estável que muda quando troca de registro ou de null→registro
+  const dadosKey = dados ? `${dados.id}|${dados.talhao_id}|${dados.safra}|${dados.codigo_produtor}` : '__nenhum__';
+
+  // Sincroniza formulário sempre que o registro de origem mudar
   useEffect(() => {
     if (dados) {
       setSemAnalise(dados.sem_analise_2040 === true);
-      setForm({ ...empty(), ...dados });
+      // Converte valores numéricos para string para inputs controlados
+      const formData = { ...empty() };
+      Object.keys(formData).forEach(k => {
+        const v = dados[k];
+        formData[k] = (v !== null && v !== undefined) ? String(v) : '';
+      });
+      setForm(formData);
     } else {
       setSemAnalise(false);
       setForm(empty());
     }
-  }, [dados?.id ?? 'null', dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dadosKey]);
 
-  // Quando importar via PDF: salva E atualiza o form local imediatamente
+  // Quando importar via PDF: atualiza form local imediatamente E persiste
   const handleImportar = (dadosImportados) => {
-    // Atualiza formulário local imediatamente (para o usuário ver os campos preenchidos)
     setSemAnalise(false);
     setAberto(true);
-    const formAtualizado = { ...empty(), ...dadosImportados };
-    setForm(formAtualizado);
-    // Persiste no banco
+    // Normaliza para string (inputs controlados)
+    const formData = { ...empty() };
+    Object.keys(formData).forEach(k => {
+      const v = dadosImportados[k];
+      formData[k] = (v !== null && v !== undefined && v !== '') ? String(v) : '';
+    });
+    setForm(formData);
     onSave(dadosImportados);
   };
 
