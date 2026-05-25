@@ -93,7 +93,7 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
     <div className="bg-card border border-border rounded-2xl overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-3 bg-orange-50 border-b border-border">
         <Calculator className="w-4 h-4 text-orange-700" />
-        <span className="font-semibold text-sm text-orange-800">Recomendação Nutricional (N-P-K-B)</span>
+        <span className="font-semibold text-sm text-orange-800">Recomendação Nutricional (N-P-K)</span>
       </div>
       <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Produtividade para cálculo N */}
@@ -158,20 +158,6 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
             </div>
           </div>
 
-          {/* B */}
-          <div className="flex items-center justify-between py-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">B (Boro)</span>
-              {calcBoro && <Badge classe={calcBoro.classe} />}
-            </div>
-            <span className="font-bold text-sm">
-              {calcBoro
-                ? calcBoro.dispensar ? 'Dispensar'
-                : calcBoro.observacao ? calcBoro.observacao
-                : `${calcBoro.dose} kg/ha`
-                : '—'}
-            </span>
-          </div>
         </div>
 
         {/* g/planta e g/metro */}
@@ -192,11 +178,29 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
           </div>
         )}
 
-        {/* Micronutrientes: Zn, Cu, Mn */}
-        {(classZn || classCu || classMn) && (
+        {/* Micronutrientes: B, Zn, Cu, Mn */}
+        {(calcBoro || classZn || classCu || classMn) && (
           <div className="lg:col-span-2 bg-muted/20 rounded-xl p-4 border border-border/50">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Micronutrientes (mg/dm³)</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Micronutrientes</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Boro */}
+              {calcBoro && (
+                <div className="bg-white rounded-lg p-3 border border-border/40 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">B <span className="font-normal text-muted-foreground">(Boro)</span></span>
+                    <Badge classe={calcBoro.classe} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{b} mg/dm³</p>
+                  <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                    calcBoro.dispensar ? 'bg-green-100 text-green-700'
+                    : calcBoro.observacao ? 'bg-yellow-100 text-yellow-700'
+                    : 'bg-red-100 text-red-700'
+                  }`}>
+                    {calcBoro.dispensar ? 'Dispensar' : calcBoro.observacao ? 'Avaliar' : `Aplicar ${calcBoro.dose} kg/ha`}
+                  </span>
+                </div>
+              )}
+              {/* Zn, Cu, Mn */}
               {[
                 { label: 'Zn', nome: 'Zinco', valor: zn, result: classZn },
                 { label: 'Cu', nome: 'Cobre', valor: cu, result: classCu },
