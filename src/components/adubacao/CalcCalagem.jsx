@@ -300,28 +300,28 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
               <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
             </button>
             {dropAberto && (
-              <div className="absolute z-50 top-full left-0 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-xl overflow-hidden min-w-[320px]">
                 <div className="p-2 border-b border-border">
                   <input autoFocus
-                    className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
+                    className="w-full h-9 text-sm border border-input rounded px-3 bg-background"
                     placeholder="Buscar corretivo..."
                     value={busca}
                     onChange={e => setBusca(e.target.value)}
                   />
                 </div>
-                <div className="max-h-96 overflow-y-auto">
+                <div className="max-h-72 overflow-y-auto">
                   <button type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 text-muted-foreground"
+                    className="w-full text-left px-4 py-2.5 hover:bg-muted/60 text-sm border-b border-border/30 text-muted-foreground"
                     onClick={() => { setProdutoId(null); setDropAberto(false); setBusca(''); }}>
                     — Nenhum produto —
                   </button>
                   {corretivosVisiveis.map(p => (
                     <button key={p.id} type="button"
-                      className="w-full text-left px-3 py-2.5 hover:bg-muted/60 border-b border-border/30 last:border-0"
+                      className="w-full text-left px-4 py-3 hover:bg-muted/60 border-b border-border/30 last:border-0"
                       onClick={() => { setProdutoId(p.id); setDropAberto(false); setBusca(''); }}>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium">{p.nome}</span>
-                        <span className="text-muted-foreground text-xs whitespace-nowrap">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm font-medium leading-snug">{p.nome}</span>
+                        <span className="text-muted-foreground text-xs whitespace-nowrap shrink-0 mt-0.5">
                           {p.ca_pct > 0 ? `Ca: ${p.ca_pct}%` : ''}{p.ca_pct > 0 && p.mg_pct > 0 ? ' · ' : ''}{p.mg_pct > 0 ? `Mg: ${p.mg_pct}%` : ''}
                         </span>
                       </div>
