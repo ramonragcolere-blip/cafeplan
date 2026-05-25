@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Save, Loader2, Calculator } from 'lucide-react';
-import { calcN, classificarP, classificarK, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcCalagem } from '@/lib/tabelasNutricionais';
+import { Save, Loader2, Calculator, AlertTriangle } from 'lucide-react';
+import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcCalagem, calcKSomaCamadas, alertas2040, META_K } from '@/lib/tabelasNutricionais';
 import CalcCalagem from '@/components/adubacao/CalcCalagem';
 
 function Badge({ label, classe }) {
@@ -34,9 +34,10 @@ function ResultRow({ label, value, unit, sub }) {
   );
 }
 
-export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving, onEnviarPlanejamento }) {
+export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, onSave, saving, onEnviarPlanejamento }) {
   const [safraAnterior, setSafraAnterior] = useState('');
   const [safraEstimada, setSafraEstimada] = useState('');
+  const [metaK, setMetaK] = useState('bom');
 
   useEffect(() => {
     setSafraAnterior(dados?.safra_anterior_sc_ha || '');
@@ -58,18 +59,28 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
     ? (Number(safraAnterior) + Number(safraEstimada)) / 2
     : null;
 
-  const nCalc = calcN(safraAnterior, safraEstimada);
+  const nCalc     = calcN(safraAnterior, safraEstimada);
   const dosesBase = getDosesBase(mediaBienal);
-  const classP = p != null ? classificarP(p) : null;
-  const classK = k != null ? classificarK(k) : null;
-  const calcBoro = b != null ? calcB(b) : null;
+  const classP    = p != null ? classificarP(p) : null;
+  const calcBoro  = b != null ? calcB(b) : null;
 
   const doseP = classP && dosesBase.P != null
     ? classP.dispensar ? 0 : Math.round(dosesBase.P * classP.fator)
     : null;
-  const doseK = classK && dosesBase.K != null
-    ? classK.dispensar ? 0 : Math.round(dosesBase.K * classK.fator)
+
+  // K — lógica com soma de camadas
+  const kDecisao = k != null
+    ? calcKSomaCamadas(k, analise2040?.potassio, mediaBienal, metaK)
     : null;
+
+  const doseKBase = kDecisao?.classK && dosesBase.K != null
+    ? kDecisao.classK.dispensar ? 0 : Math.round(dosesBase.K * kDecisao.classK.fator)
+    : null;
+  // Se dispensado pela soma, doseK = 0
+  const doseK = kDecisao?.dispensar ? 0 : doseKBase;
+
+  // Alertas 20-40 cm
+  const alertasSub = alertas2040(analise2040);
 
   // Dose total/planta/metro
   const area = talhao?.area_ha || 0;
@@ -144,20 +155,48 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
             </div>
           </div>
 
-          {/* K */}
-          <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">K₂O</span>
-              {classK && <Badge classe={classK.classe} />}
+          {/* K — com lógica de soma de camadas */}
+          <div className="flex items-start justify-between py-1.5 border-b border-border/40 gap-2">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">K₂O</span>
+                {kDecisao?.classK && <Badge classe={kDecisao.classK.classe} />}
+              </div>
+              {/* Sub-info soma de camadas */}
+              {analise2040?.potassio != null && k != null && (
+                <span className="text-xs text-muted-foreground">
+                  Soma: {k} + {analise2040.potassio} = <strong>{kDecisao?.kTotal} mg/dm³</strong>
+                  {' '}(meta {metaK}: {META_K[metaK]} mg/dm³)
+                </span>
+              )}
+              {kDecisao?.dispensar && analise2040?.potassio != null && (
+                <span className="text-xs text-green-700 font-medium">K dispensado — soma das camadas atinge a meta</span>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="font-bold text-sm">
-                {doseK != null ? (classK?.dispensar ? 'Dispensar' : `${doseK} kg/ha`) : '—'}
+                {doseK != null ? (kDecisao?.dispensar ? 'Dispensar' : `${doseK} kg/ha`) : '—'}
               </span>
               {doseK > 0 && <span className="text-xs text-muted-foreground">(total: {totK.total || '—'} kg)</span>}
             </div>
           </div>
 
+          {/* Seletor de meta K */}
+          {k != null && (
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-muted-foreground">Meta K:</span>
+              {[
+                { v: 'minimo', l: 'Mínimo (60)' },
+                { v: 'bom', l: 'Bom (120)' },
+                { v: 'excelente', l: 'Excelente (150)' },
+              ].map(m => (
+                <button key={m.v} type="button" onClick={() => setMetaK(m.v)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${metaK === m.v ? 'bg-primary text-white border-primary' : 'border-border text-muted-foreground hover:bg-muted/40'}`}>
+                  {m.l}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* g/planta e g/metro */}
@@ -224,6 +263,23 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Alertas camada 20-40 cm */}
+        {alertasSub.length > 0 && (
+          <div className="lg:col-span-2 rounded-xl p-4 border border-blue-200 bg-blue-50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" /> Alertas — Camada 20–40 cm (informativos)
+            </p>
+            <div className="space-y-1.5">
+              {alertasSub.map((a, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm text-blue-900">
+                  <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <span>{a.msg}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}

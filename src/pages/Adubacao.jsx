@@ -58,7 +58,7 @@ function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSav
               <DadosTalhaoCard talhao={talhao} produtor={produtor} />
               <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
               <AnaliseSolo2040Form dados={analise2040} onSave={onSaveAnalise2040} saving={isAnalise2040Saving} />
-              <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} onEnviarPlanejamento={onEnviarPlanejamento} />
+              <RecomendacaoNPK analise={analise} analise2040={analise2040} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} onEnviarPlanejamento={onEnviarPlanejamento} />
             </>
           )}
           {abaInterna === 'planejamento' && (

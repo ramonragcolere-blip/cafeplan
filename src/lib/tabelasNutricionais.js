@@ -184,6 +184,52 @@ export function calcCalagem(ph, vPct, ctc) {
   return resultado;
 }
 
+// Metas de K (mg/dm³) por nível
+export const META_K = {
+  minimo:    60,
+  bom:       120,
+  excelente: 150,
+};
+
+// Decisão de K com soma das duas camadas
+// Retorna: { kTotal, metaUsada, metaLabel, dispensar, deficit, classK0020 }
+export function calcKSomaCamadas(k0020, k2040, mediaBienal, metaNivel = 'bom') {
+  const k1 = Number(k0020) || 0;
+  const k2 = Number(k2040) || 0;
+  const ambas = k0020 != null && k2040 != null;
+  const kBase = ambas ? k1 + k2 : k1;
+  const meta = META_K[metaNivel] ?? META_K.bom;
+  const classK = classificarK(ambas ? kBase : k1);
+
+  if (ambas && kBase >= meta) {
+    return { kTotal: kBase, metaUsada: meta, metaLabel: metaNivel, dispensar: true, deficit: 0, classK };
+  }
+
+  // Se temos soma mas abaixo da meta, calculamos com o déficit
+  if (ambas && kBase < meta) {
+    // A recomendação padrão usa k0020, mas avisamos que a soma ainda é insuficiente
+    return { kTotal: kBase, metaUsada: meta, metaLabel: metaNivel, dispensar: false, deficit: meta - kBase, classK };
+  }
+
+  // Sem camada 2040: comportamento original
+  return { kTotal: k1, metaUsada: meta, metaLabel: metaNivel, dispensar: classK?.dispensar ?? false, deficit: null, classK };
+}
+
+// Alertas informativos da camada 20-40 cm
+export function alertas2040(analise2040) {
+  if (!analise2040) return [];
+  const alertas = [];
+  const ph  = Number(analise2040.ph);
+  const al  = Number(analise2040.aluminio);
+  const ca  = Number(analise2040.calcio);
+  const mg  = Number(analise2040.magnesio);
+  if (!isNaN(ph)  && ph < 5.0)  alertas.push({ tipo: 'acidez',   msg: 'Acidez subsuperficial — avaliar calagem profunda' });
+  if (!isNaN(al)  && al > 0.5)  alertas.push({ tipo: 'aluminio', msg: 'Alumínio tóxico em profundidade' });
+  if ((!isNaN(ca) && ca < 1.5) || (!isNaN(mg) && mg < 0.5))
+    alertas.push({ tipo: 'gesso', msg: 'Ca ou Mg baixo em profundidade — avaliar gesso agrícola' });
+  return alertas;
+}
+
 // Dose de boro
 export function calcB(b) {
   const v = Number(b);
