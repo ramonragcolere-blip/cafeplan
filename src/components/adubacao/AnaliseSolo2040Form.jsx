@@ -195,11 +195,14 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving }) {
   const [form2040, setForm2040] = useState(empty2040());
   const [semAnalise, setSemAnalise] = useState(false);
 
-  // Carrega dados ao trocar de talhão/safra/produtor — mesma lógica do 0-20 cm
+  // Carrega dados ao trocar de talhão/safra/produtor OU quando os valores mudam (ex: após importação via PDF)
+  const dadosKey = dados ? JSON.stringify(
+    CAMPOS_2040.reduce((acc, c) => ({ ...acc, [c.key]: dados[c.key] }), { id: dados.id, sem_analise_2040: dados.sem_analise_2040 })
+  ) : 'empty';
   useEffect(() => {
     setSemAnalise(dados ? dados.sem_analise_2040 === true : false);
     setForm2040(dados ? { ...empty2040(), ...dados } : empty2040());
-  }, [dados?.id, dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
+  }, [dadosKey]);
 
   const set2040 = (k, v) => setForm2040(f => ({ ...f, [k]: v }));
 
