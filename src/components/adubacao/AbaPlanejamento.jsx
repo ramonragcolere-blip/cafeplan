@@ -452,8 +452,8 @@ export default function AbaPlanejamento({
 
   const metros = useMemo(() => getMetros(talhao), [talhao]);
 
-  // Chave única para o contexto atual
-  const ctxKey = `${produtor?.id}__${talhaoId}__${safra}`;
+  // Chave única para o contexto atual — inclui o id do plano para re-hidratar após o primeiro save
+  const ctxKey = `${produtor?.id}__${talhaoId}__${safra}__${plano?.id ?? 'novo'}`;
 
   // Hidratar estado das linhas ao mudar contexto
   useEffect(() => {
@@ -461,21 +461,28 @@ export default function AbaPlanejamento({
 
     const saved = plano?.planejamento_nutrientes;
 
-    // Se há dados salvos, carregá-los exatamente — inclusive produtoId: null (Nenhum produto)
+    // Se há dados salvos, carregá-los SEMPRE — inclusive produtoId: null (Nenhum produto)
+    // A presença de qualquer chave nos dados salvos indica que o usuário já salvou essa linha
     if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) {
       const hidratado = {};
       NUTRIENTES_CHAVE.forEach(n => {
         const l = saved[n.key];
         if (l !== undefined) {
           const numAplic = l.numAplic || 1;
-          // Normalizar meses: garantir que cada posição seja array (compatibilidade com formato antigo string)
+          // Normalizar meses: garantir que cada posição seja array
           const mesNorm = Array.from({ length: numAplic }, (_, i) => {
             const m = l.meses?.[i];
             if (!m) return [];
             if (Array.isArray(m)) return m;
-            return m ? [m] : [];
+            return [m];
           });
-          hidratado[n.key] = { ...linhaVazia(), ...l, meses: mesNorm };
+          // Preservar produtoId: null explícito (Nenhum produto)
+          hidratado[n.key] = {
+            ...linhaVazia(),
+            ...l,
+            produtoId: 'produtoId' in l ? l.produtoId : linhaVazia().produtoId,
+            meses: mesNorm,
+          };
         } else {
           hidratado[n.key] = linhaVazia();
         }
@@ -491,7 +498,7 @@ export default function AbaPlanejamento({
     });
     setLinhasState(inicial);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxKey, todos.length, plano?.id]);
+  }, [ctxKey, todos.length]);
 
   const handleSave = () => {
     onSavePlano(talhao, { planejamento_nutrientes: linhasState });
