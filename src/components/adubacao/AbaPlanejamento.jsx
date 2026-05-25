@@ -81,14 +81,26 @@ function calcDoses(doseRecKgHa, produtoPct, areaHa, numPlantas, metros) {
   };
 }
 
-const PCT_DEFAULTS = { 1: [100], 2: [50, 50], 3: [40, 30, 30] };
-const APLIC_LABELS = ['1ª Aplicação', '2ª Aplicação', '3ª Aplicação'];
+const PCT_DEFAULTS = {
+  1: [100],
+  2: [50, 50],
+  3: [34, 33, 33],
+  4: [25, 25, 25, 25],
+  5: [20, 20, 20, 20, 20],
+  6: [17, 17, 17, 17, 16, 16],
+  7: [15, 15, 14, 14, 14, 14, 14],
+  8: [13, 13, 12, 12, 12, 12, 13, 13],
+  9: [12, 11, 11, 11, 11, 11, 11, 11, 11],
+  10: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+};
+const APLIC_LABELS = ['1ª','2ª','3ª','4ª','5ª','6ª','7ª','8ª','9ª','10ª'];
+const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 
 // ── Linha de produto por nutriente ─────────────────────────────────────────────
 function LinhanutrienteRec({
   nutriente, recKgHa, talhao, todos, linhaState, onChange,
 }) {
-  const { produtoId, doseRecManual, numAplic, pcts, epocaPrevista, observacoes } = linhaState;
+  const { produtoId, doseRecManual, numAplic, pcts, meses = [], epocaPrevista, observacoes } = linhaState;
 
   const produto = useMemo(() => todos.find(p => p.id === produtoId) || null, [todos, produtoId]);
   const area = talhao?.area_ha || 0;
@@ -123,9 +135,16 @@ function LinhanutrienteRec({
     onChange({ ...linhaState, pcts: novos });
   };
 
+  const setMes = (idx, mes) => {
+    const novos = [...(meses || [])];
+    // toggle: se já selecionado, remove; senão seta
+    novos[idx] = novos[idx] === mes ? '' : mes;
+    onChange({ ...linhaState, meses: novos });
+  };
+
   const setNumAplic = (n) => {
     const num = Number(n);
-    onChange({ ...linhaState, numAplic: num, pcts: PCT_DEFAULTS[num] || [100] });
+    onChange({ ...linhaState, numAplic: num, pcts: PCT_DEFAULTS[num] || [100], meses: Array(num).fill('') });
   };
 
   if (recKgHa == null && doseRecManual === '') return null;
@@ -267,42 +286,60 @@ function LinhanutrienteRec({
 
             {/* Parcelamento */}
             <div className="border-t border-green-200 pt-3">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-xs font-semibold text-green-800">Parcelamento:</span>
-                <div className="flex gap-1">
-                  {[1, 2, 3].map(n => (
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-xs font-semibold text-green-800 shrink-0">Parcelamento:</span>
+                <div className="flex flex-wrap gap-1">
+                  {[1,2,3,4,5,6,7,8,9,10].map(n => (
                     <button key={n} type="button"
                       onClick={() => setNumAplic(n)}
-                      className={`px-3 py-1 text-xs rounded-full border transition-colors ${numAplic === n ? 'bg-green-700 text-white border-green-700' : 'bg-white text-muted-foreground border-border hover:bg-muted/30'}`}>
+                      className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${numAplic === n ? 'bg-green-700 text-white border-green-700' : 'bg-white text-muted-foreground border-border hover:bg-muted/30'}`}>
                       {n}x
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {Array.from({ length: numAplic }).map((_, i) => {
                   const pct = parseFloat(pcts[i]) || 0;
                   const kgAplic = dosesCalc.total * (pct / 100);
+                  const doseHaAplic = area > 0 ? (kgAplic / area) : 0;
                   const sc50Aplic = (kgAplic / 50).toFixed(1);
+                  const tonAplic = (kgAplic / 1000).toFixed(3);
                   const gPlantaAplic = numPlantas > 0 ? ((kgAplic * 1000) / numPlantas).toFixed(1) : null;
                   const gMetroAplic = metros > 0 ? ((kgAplic * 1000) / metros).toFixed(1) : null;
+                  const mesSel = meses[i] || '';
                   return (
-                    <div key={i} className="bg-white rounded-lg border border-green-100 p-3">
-                      <p className="text-xs font-semibold text-green-700 mb-2">{APLIC_LABELS[i]}</p>
-                      <div className="flex items-center gap-2 mb-2">
+                    <div key={i} className="bg-white rounded-lg border border-green-100 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-green-700">{APLIC_LABELS[i]} Aplicação</p>
+                      {/* Percentual */}
+                      <div className="flex items-center gap-2">
                         <Input
                           type="number"
                           value={pcts[i]}
                           onChange={e => setPct(i, e.target.value)}
-                          className="h-7 w-20 text-xs"
+                          className="h-7 w-16 text-xs"
                           min="0" max="100"
                         />
                         <span className="text-xs text-muted-foreground">%</span>
                       </div>
+                      {/* Cálculos */}
                       <div className="text-xs space-y-0.5 text-muted-foreground">
-                        <div><span className="font-semibold text-foreground">{Math.round(kgAplic)} kg</span> · {sc50Aplic} sc</div>
-                        {gPlantaAplic && <div>{gPlantaAplic} g/planta</div>}
-                        {gMetroAplic && <div>{gMetroAplic} g/metro</div>}
+                        <div><span className="font-semibold text-foreground">{Math.round(kgAplic)} kg</span> · {Math.round(doseHaAplic * 10) / 10} kg/ha</div>
+                        <div>{sc50Aplic} sc · {tonAplic} t</div>
+                        {gPlantaAplic && <div>{gPlantaAplic} g/planta{gMetroAplic ? ` · ${gMetroAplic} g/metro` : ''}</div>}
+                      </div>
+                      {/* Mês */}
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Mês:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {MESES.map(m => (
+                            <button key={m} type="button"
+                              onClick={() => setMes(i, m)}
+                              className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${mesSel === m ? 'bg-green-700 text-white border-green-700' : 'bg-white text-muted-foreground border-border hover:bg-green-50'}`}>
+                              {m}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   );
@@ -343,13 +380,27 @@ function LinhanutrienteRec({
 }
 
 // ── Estado inicial de uma linha por nutriente ───────────────────────────────────
-function linhaInicial(nutrienteKey, todos, recKgHa) {
+function linhaInicial(nutrienteKey, todos) {
   const melhor = melhorProduto(todos, nutrienteKey);
   return {
     produtoId: melhor?.id || null,
     doseRecManual: '',
     numAplic: 1,
     pcts: [100],
+    meses: [''],
+    epocaPrevista: '',
+    observacoes: '',
+  };
+}
+
+// Linha vazia sem sugestão de produto (para quando não há dados salvos e não deve sugerir)
+function linhaVazia() {
+  return {
+    produtoId: null,
+    doseRecManual: '',
+    numAplic: 1,
+    pcts: [100],
+    meses: [''],
     epocaPrevista: '',
     observacoes: '',
   };
@@ -402,42 +453,36 @@ export default function AbaPlanejamento({
   useEffect(() => {
     if (!talhao || !todos.length) return;
 
-    // Se há plano salvo com planejamento_nutrientes, usá-lo
     const saved = plano?.planejamento_nutrientes;
-    if (saved && typeof saved === 'object') {
-      setLinhasState(saved);
+
+    // Se há dados salvos, carregá-los exatamente como foram salvos.
+    // "produtoId: null" significa "Nenhum produto" escolhido pelo usuário — respeitar.
+    if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) {
+      // Garantir compatibilidade com registros antigos sem campo "meses"
+      const hidratado = {};
+      NUTRIENTES_CHAVE.forEach(n => {
+        const l = saved[n.key];
+        if (l) {
+          hidratado[n.key] = {
+            meses: Array(l.numAplic || 1).fill(''),
+            ...l,
+          };
+        } else {
+          hidratado[n.key] = linhaVazia();
+        }
+      });
+      setLinhasState(hidratado);
       return;
     }
 
-    // Caso contrário, inicializar com sugestão automática
+    // Sem dados salvos: inicializar com sugestão automática de produto
     const inicial = {};
     NUTRIENTES_CHAVE.forEach(n => {
-      const recKgHa = rec?.[n.recKey] ?? null;
-      if (recKgHa != null || true) { // sempre inicializar
-        inicial[n.key] = linhaInicial(n.key, todos, recKgHa);
-      }
+      inicial[n.key] = linhaInicial(n.key, todos);
     });
     setLinhasState(inicial);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxKey, todos.length, plano?.id]);
-
-  // Auto-sugerir produto quando rec mudar e ainda não houver produto selecionado
-  useEffect(() => {
-    if (!rec || !todos.length) return;
-    setLinhasState(prev => {
-      const novo = { ...prev };
-      NUTRIENTES_CHAVE.forEach(n => {
-        const recKgHa = rec[n.recKey];
-        if (recKgHa == null) return;
-        const linha = novo[n.key];
-        if (linha && !linha.produtoId) {
-          const melhor = melhorProduto(todos, n.key);
-          if (melhor) novo[n.key] = { ...linha, produtoId: melhor.id };
-        }
-      });
-      return novo;
-    });
-  }, [rec, todos.length]);
 
   const handleSave = () => {
     onSavePlano(talhao, { planejamento_nutrientes: linhasState });
@@ -539,7 +584,7 @@ export default function AbaPlanejamento({
           <div className="space-y-4">
             {NUTRIENTES_CHAVE.map(n => {
               const recKgHa = rec?.[n.recKey] ?? null;
-              const linhaS = linhasState[n.key] || { produtoId: null, doseRecManual: '', numAplic: 1, pcts: [100], epocaPrevista: '', observacoes: '' };
+              const linhaS = linhasState[n.key] || { produtoId: null, doseRecManual: '', numAplic: 1, pcts: [100], meses: [''], epocaPrevista: '', observacoes: '' };
               // Só mostrar linhas que têm rec ou que o usuário já preencheu alguma coisa
               const temDados = linhaS.produtoId || linhaS.doseRecManual || linhaS.epocaPrevista;
               if (recKgHa == null && !temDados) return (
