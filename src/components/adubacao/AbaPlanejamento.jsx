@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw } from 'lucide-react';
-import { calcN, classificarP, classificarK, calcB, getDosesBase } from '@/lib/tabelasNutricionais';
+import { calcN, classificarP, classificarK, calcB, getDosesBase, classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
 import { useToast } from '@/components/ui/use-toast';
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -42,14 +42,25 @@ function calcRecomendacao(analise, plano) {
   const media = safrAnt && safrEst ? (Number(safrAnt) + Number(safrEst)) / 2 : null;
   const nCalc = calcN(safrAnt, safrEst);
   const dosesBase = getDosesBase(media);
-  const classP = analise?.fosforo != null ? classificarP(analise.fosforo) : null;
-  const classK = analise?.potassio != null ? classificarK(analise.potassio) : null;
-  const calcBoro = analise?.boro != null ? calcB(analise.boro) : null;
+  const classP  = analise?.fosforo  != null ? classificarP(analise.fosforo)  : null;
+  const classK  = analise?.potassio != null ? classificarK(analise.potassio) : null;
+  const calcBoro = analise?.boro    != null ? calcB(analise.boro)            : null;
+  const classZn  = analise?.zinco   != null ? classificarZn(analise.zinco)   : null;
+  const classCu  = analise?.cobre   != null ? classificarCu(analise.cobre)   : null;
+  const classMn  = analise?.manganes!= null ? classificarMn(analise.manganes): null;
   return {
-    N: nCalc?.dose ?? null,
-    P: classP ? (classP.dispensar ? 0 : Math.round(dosesBase.P * classP.fator)) : null,
-    K: classK ? (classK.dispensar ? 0 : Math.round(dosesBase.K * classK.fator)) : null,
-    B: calcBoro ? (calcBoro.dispensar ? 0 : calcBoro.dose) : null,
+    N:  nCalc?.dose ?? null,
+    P:  classP  ? (classP.dispensar  ? 0 : Math.round(dosesBase.P * classP.fator)) : null,
+    K:  classK  ? (classK.dispensar  ? 0 : Math.round(dosesBase.K * classK.fator)) : null,
+    B:  calcBoro ? (calcBoro.dispensar ? 0 : calcBoro.dose) : null,
+    // Micronutrientes — ação (Aplicar / Avaliar / Dispensar)
+    Zn: classZn ? classZn.acao  : null,
+    Cu: classCu ? classCu.acao  : null,
+    Mn: classMn ? classMn.acao  : null,
+    // Secundários — valor direto da análise
+    Ca: analise?.calcio    != null ? analise.calcio    : null,
+    Mg: analise?.magnesio  != null ? analise.magnesio  : null,
+    S:  analise?.enxofre   != null ? analise.enxofre   : null,
   };
 }
 
@@ -530,13 +541,47 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
                   Recomendação nutricional (da aba Análise e Recomendação)
                 </p>
                 {rec ? (
-                  <div className="flex flex-wrap gap-3">
-                    {NUTRIENTES_CHAVE.map(n => (
-                      <div key={n.key} className="bg-white rounded-lg px-3 py-1.5 border border-orange-100 text-center min-w-[70px]">
-                        <p className="text-xs text-muted-foreground">{n.label}</p>
-                        <p className="font-bold text-sm">{rec[n.recKey]!=null ? `${rec[n.recKey]} kg/ha` : <span className="text-muted-foreground text-xs">—</span>}</p>
+                  <div className="space-y-2">
+                    {/* NPK + B */}
+                    <div className="flex flex-wrap gap-2">
+                      {NUTRIENTES_CHAVE.map(n => (
+                        <div key={n.key} className="bg-white rounded-lg px-3 py-1.5 border border-orange-100 text-center min-w-[64px]">
+                          <p className="text-xs text-muted-foreground">{n.label}</p>
+                          <p className="font-bold text-sm">{rec[n.recKey]!=null ? `${rec[n.recKey]} kg/ha` : <span className="text-muted-foreground text-xs">—</span>}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Micronutrientes Zn, Cu, Mn */}
+                    {(rec.Zn || rec.Cu || rec.Mn) && (
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { label: 'Zn', val: rec.Zn },
+                          { label: 'Cu', val: rec.Cu },
+                          { label: 'Mn', val: rec.Mn },
+                        ].filter(x => x.val).map(x => {
+                          const cor = x.val === 'Aplicar' ? 'bg-red-50 border-red-200 text-red-700'
+                            : x.val === 'Avaliar' ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                            : 'bg-green-50 border-green-200 text-green-700';
+                          return (
+                            <div key={x.label} className={`rounded-lg px-3 py-1.5 border text-center min-w-[64px] ${cor}`}>
+                              <p className="text-xs opacity-70">{x.label}</p>
+                              <p className="font-semibold text-xs">{x.val}</p>
+                            </div>
+                          );
+                        })}
+                        {/* Ca, Mg, S — valores da análise */}
+                        {[
+                          { label: 'Ca', val: rec.Ca, unit: 'cmolc' },
+                          { label: 'Mg', val: rec.Mg, unit: 'cmolc' },
+                          { label: 'S',  val: rec.S,  unit: 'mg/dm³' },
+                        ].filter(x => x.val != null).map(x => (
+                          <div key={x.label} className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5 text-center min-w-[64px]">
+                            <p className="text-xs text-blue-500">{x.label}</p>
+                            <p className="font-semibold text-xs text-blue-700">{x.val} <span className="font-normal opacity-70">{x.unit}</span></p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
