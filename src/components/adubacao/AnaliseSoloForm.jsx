@@ -30,7 +30,7 @@ export default function AnaliseSoloForm({ dados, onSave, saving }) {
 
   useEffect(() => {
     setForm(dados ? { ...empty(), ...dados } : empty());
-  }, [dados?.id]);
+  }, [dados?.id, dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 

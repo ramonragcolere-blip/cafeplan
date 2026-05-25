@@ -43,7 +43,7 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving }) {
       setSemAnalise(false);
       setForm(empty());
     }
-  }, [dados?.id]);
+  }, [dados?.id, dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
