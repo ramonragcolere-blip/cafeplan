@@ -385,6 +385,9 @@ export default function Adubacao() {
                 produtor={produtor}
                 safra={safra}
                 talhoes={talhoes}
+                analises={analises}
+                analises2040={analises2040}
+                planos={planos}
               />
             )}
 
