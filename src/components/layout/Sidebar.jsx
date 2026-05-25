@@ -62,7 +62,7 @@ export default function Sidebar() {
               </svg>
             </div>
             <div>
-              <h1 className="font-bold text-lg leading-tight">Café </h1>
+              <h1 className="font-bold text-lg leading-tight">Café Plan</h1>
               <p className="text-xs text-sidebar-foreground/60">Planejamento de Café</p>
             </div>
           </div>
