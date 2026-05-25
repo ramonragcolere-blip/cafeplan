@@ -317,13 +317,8 @@ export default function Adubacao() {
                 )}
                 <AbaExecucao
                   talhao={talhaoExec}
-                  plano={planoExec}
-                  saving={isPlanSaving}
-                  onSave={(partialData) => {
-                    if (!talhaoExec) return;
-                    const { plano: p, handleSavePlano } = getSaveHandlers(talhaoExec);
-                    handleSavePlano(partialData);
-                  }}
+                  produtor={produtor}
+                  safra={safra}
                 />
               </div>
             )}

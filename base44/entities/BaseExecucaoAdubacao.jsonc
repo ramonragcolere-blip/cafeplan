@@ -1,0 +1,91 @@
+{
+  "name": "BaseExecucaoAdubacao",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra (ex: 2025/2026)"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talh\u00e3o"
+    },
+    "talhao_nome": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "nutriente_key": {
+      "type": "string",
+      "description": "Chave do nutriente (n_pct, p2o5_pct, k2o_pct, b_pct, calagem)"
+    },
+    "nutriente_label": {
+      "type": "string",
+      "description": "R\u00f3tulo do nutriente"
+    },
+    "parcela": {
+      "type": "number",
+      "description": "N\u00famero da parcela/aplica\u00e7\u00e3o",
+      "default": 1
+    },
+    "produto_plan_id": {
+      "type": "string",
+      "description": "ID do produto planejado"
+    },
+    "produto_plan_nome": {
+      "type": "string",
+      "description": "Nome do produto planejado"
+    },
+    "dose_plan_kgha": {
+      "type": "number",
+      "description": "Dose planejada (kg/ha)"
+    },
+    "produto_exec_id": {
+      "type": "string",
+      "description": "ID do produto aplicado"
+    },
+    "produto_exec_nome": {
+      "type": "string",
+      "description": "Nome do produto aplicado"
+    },
+    "dose_exec_kgha": {
+      "type": "number",
+      "description": "Dose aplicada (kg/ha)"
+    },
+    "qtd_aplicada_kg": {
+      "type": "number",
+      "description": "Quantidade total aplicada (kg)"
+    },
+    "data_aplicacao": {
+      "type": "string",
+      "format": "date",
+      "description": "Data de aplica\u00e7\u00e3o"
+    },
+    "responsavel": {
+      "type": "string",
+      "description": "Respons\u00e1vel pela aplica\u00e7\u00e3o"
+    },
+    "observacoes": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es da execu\u00e7\u00e3o"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "nao_executado",
+        "executado",
+        "parcial"
+      ],
+      "default": "nao_executado"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id",
+    "nutriente_key"
+  ]
+}
