@@ -165,8 +165,8 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
               {/* Sub-info soma de camadas */}
               {analise2040?.potassio != null && k != null && (
                 <span className="text-xs text-muted-foreground">
-                  Soma: {k} + {analise2040.potassio} = <strong>{kDecisao?.kTotal?.toFixed(2)} mmolc/dm³</strong>
-                  {' '}(meta {metaK}: {META_K[metaK]} mmolc/dm³)
+                  Soma: {k} + {analise2040.potassio} = <strong>{kDecisao?.kTotal?.toFixed(0)} mg/dm³</strong>
+                  {' '}(meta {metaK}: {META_K[metaK]} mg/dm³)
                 </span>
               )}
               {kDecisao?.dispensar && analise2040?.potassio != null && (
@@ -186,9 +186,9 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
             <div className="flex items-center gap-2 pt-1">
               <span className="text-xs text-muted-foreground">Meta K:</span>
               {[
-                { v: 'minimo', l: 'Mínimo (60)' },
-                { v: 'bom', l: 'Bom (120)' },
-                { v: 'excelente', l: 'Excelente (150)' },
+                { v: 'minimo', l: 'Mínimo (60 mg/dm³)' },
+                { v: 'bom', l: 'Bom (120 mg/dm³)' },
+                { v: 'excelente', l: 'Excelente (150 mg/dm³)' },
               ].map(m => (
                 <button key={m.v} type="button" onClick={() => setMetaK(m.v)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${metaK === m.v ? 'bg-primary text-white border-primary' : 'border-border text-muted-foreground hover:bg-muted/40'}`}>

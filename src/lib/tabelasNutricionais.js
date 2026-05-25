@@ -93,14 +93,14 @@ export function classificarP(p) {
   return { classe: 'Ótimo', fator: 0, dispensar: true };
 }
 
-// Ajuste potássio (K2O) — valor em mmolc/dm³ (limiares: 60/120/150/200 mg/dm³ ÷ 39.1)
+// Ajuste potássio (K2O) — valor em mg/dm³
 export function classificarK(k) {
   const v = Number(k);
   if (isNaN(v)) return null;
-  if (v < 1.53)  return { classe: 'Baixo', fator: 1.3 };
-  if (v <= 3.07) return { classe: 'Médio', fator: 1.1 };
-  if (v <= 3.84) return { classe: 'Bom', fator: 1.0 };
-  if (v <= 5.12) return { classe: 'Bom+', fator: 0.7 };
+  if (v < 60)  return { classe: 'Baixo', fator: 1.3 };
+  if (v <= 120) return { classe: 'Médio', fator: 1.1 };
+  if (v <= 150) return { classe: 'Bom', fator: 1.0 };
+  if (v <= 200) return { classe: 'Bom+', fator: 0.7 };
   return { classe: 'Alto', fator: 0, dispensar: true };
 }
 
@@ -184,11 +184,11 @@ export function calcCalagem(ph, vPct, ctc) {
   return resultado;
 }
 
-// Metas de K em mmolc/dm³ (60/120/150 mg/dm³ ÷ 39.1)
+// Metas de K em mg/dm³
 export const META_K = {
-  minimo:    1.53,
-  bom:       3.07,
-  excelente: 3.84,
+  minimo:    60,
+  bom:       120,
+  excelente: 150,
 };
 
 // Decisão de K com soma das duas camadas
