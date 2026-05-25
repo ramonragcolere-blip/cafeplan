@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Save, Loader2, Calculator } from 'lucide-react';
 import { calcN, classificarP, classificarK, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcCalagem } from '@/lib/tabelasNutricionais';
+import CalcCalagem from '@/components/adubacao/CalcCalagem';
 
 function Badge({ label, classe }) {
   const cores = {
@@ -33,7 +34,7 @@ function ResultRow({ label, value, unit, sub }) {
   );
 }
 
-export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving }) {
+export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving, onEnviarPlanejamento }) {
   const [safraAnterior, setSafraAnterior] = useState('');
   const [safraEstimada, setSafraEstimada] = useState('');
 
@@ -253,6 +254,7 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
           Salvar Produtividade
         </Button>
       </div>
+      <CalcCalagem analise={analise} talhao={talhao} onEnviarPlanejamento={onEnviarPlanejamento} />
     </div>
   );
 }

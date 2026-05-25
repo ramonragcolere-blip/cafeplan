@@ -27,7 +27,7 @@ const ABAS = [
 ];
 
 // ── TalhaoRow — expandível, usado nas abas Análise e Planejamento ─────────────
-function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onSavePlano, isAnaliseSaving, isPlanSaving, abaInterna }) {
+function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onSavePlano, isAnaliseSaving, isPlanSaving, abaInterna, onEnviarPlanejamento }) {
   const [aberto, setAberto] = useState(false);
   const temDados = !!(analise || plano);
 
@@ -56,7 +56,7 @@ function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onS
             <>
               <DadosTalhaoCard talhao={talhao} produtor={produtor} />
               <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
-              <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} />
+              <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} onEnviarPlanejamento={onEnviarPlanejamento} />
             </>
           )}
           {abaInterna === 'planejamento' && (
@@ -246,6 +246,10 @@ export default function Adubacao() {
                 )}
                 {talhoesFiltrados.map(talhao => {
                   const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
+                  const handleEnviarCalagem = (dados) => {
+                    const calagemAtual = plano?.calagem_recomendada || [];
+                    handleSavePlano({ calagem_recomendada: [...calagemAtual.filter(c => c.tipo !== 'calagem'), dados] });
+                  };
                   return (
                     <TalhaoRow
                       key={talhao.id}
@@ -259,6 +263,7 @@ export default function Adubacao() {
                       isAnaliseSaving={isAnaliseSaving}
                       isPlanSaving={isPlanSaving}
                       abaInterna="analise"
+                      onEnviarPlanejamento={handleEnviarCalagem}
                     />
                   );
                 })}
