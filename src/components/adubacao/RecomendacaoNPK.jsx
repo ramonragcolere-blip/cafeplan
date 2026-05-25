@@ -165,8 +165,8 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
               {/* Sub-info soma de camadas */}
               {analise2040?.potassio != null && k != null && (
                 <span className="text-xs text-muted-foreground">
-                  Soma: {k} + {analise2040.potassio} = <strong>{kDecisao?.kTotal} mg/dm³</strong>
-                  {' '}(meta {metaK}: {META_K[metaK]} mg/dm³)
+                  Soma: {k} + {analise2040.potassio} = <strong>{kDecisao?.kTotal?.toFixed(2)} mmolc/dm³</strong>
+                  {' '}(meta {metaK}: {META_K[metaK]} mmolc/dm³)
                 </span>
               )}
               {kDecisao?.dispensar && analise2040?.potassio != null && (

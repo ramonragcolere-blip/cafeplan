@@ -69,9 +69,10 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
 
   const queryClient = useQueryClient();
 
-  const caAtual = analise?.calcio;
-  const mgAtual = analise?.magnesio;
-  const kAtual  = analise?.potassio;
+  // Valores armazenados em mmolc/dm³ → converter para cmolc/dm³ para os cálculos (÷10)
+  const caAtual = analise?.calcio   != null ? analise.calcio   / 10 : undefined;
+  const mgAtual = analise?.magnesio != null ? analise.magnesio / 10 : undefined;
+  const kAtual  = analise?.potassio; // mmolc/dm³ — apenas informativo neste componente
   const area    = talhao?.area_ha || 0;
 
   // analise pode ser null se ainda não foi salva — usar talhao/safraCtx como fallback
@@ -254,7 +255,7 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
               {/* Ca */}
               <tr className="border-b border-border/40">
                 <td className="py-2 pr-4 font-medium">Ca (cmolc/dm³)</td>
-                <td className="text-right px-3">{caAtual != null ? caAtual : '—'}</td>
+                <td className="text-right px-3">{caAtual != null ? caAtual.toFixed(2) : '—'}</td>
                 <td className="text-right px-3">{meta.ca}</td>
                 <td className={`text-right px-3 font-semibold ${resultado?.defCa > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {resultado ? (resultado.defCa > 0 ? `−${resultado.defCa.toFixed(2)}` : '✓') : '—'}
@@ -266,7 +267,7 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
               {/* Mg */}
               <tr className="border-b border-border/40">
                 <td className="py-2 pr-4 font-medium">Mg (cmolc/dm³)</td>
-                <td className="text-right px-3">{mgAtual != null ? mgAtual : '—'}</td>
+                <td className="text-right px-3">{mgAtual != null ? mgAtual.toFixed(2) : '—'}</td>
                 <td className="text-right px-3">{meta.mg}</td>
                 <td className={`text-right px-3 font-semibold ${resultado?.defMg > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {resultado ? (resultado.defMg > 0 ? `−${resultado.defMg.toFixed(2)}` : '✓') : '—'}
@@ -277,9 +278,9 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
               </tr>
               {/* K — apenas informativo */}
               <tr>
-                <td className="py-2 pr-4 font-medium text-muted-foreground">K — equilíbrio (mg/dm³)</td>
+                <td className="py-2 pr-4 font-medium text-muted-foreground">K — equilíbrio (mmolc/dm³)</td>
                 <td className="text-right px-3 text-muted-foreground">{kAtual != null ? kAtual : '—'}</td>
-                <td className="text-right px-3 text-muted-foreground">{meta.k * 391} <span className="text-xs">(≈{meta.k} cmolc)</span></td>
+                <td className="text-right px-3 text-muted-foreground">{(meta.k * 10).toFixed(1)} <span className="text-xs">(≈{meta.k} cmolc)</span></td>
                 <td className="text-right px-3 text-muted-foreground text-xs italic">informativo</td>
                 <td className="text-right pl-3 text-muted-foreground text-xs italic">não gera dose</td>
               </tr>
