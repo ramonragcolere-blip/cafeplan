@@ -258,7 +258,7 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
           Salvar Produtividade
         </Button>
       </div>
-      <CalcCalagem analise={analise} talhao={talhao} onEnviarPlanejamento={onEnviarPlanejamento} />
+      <CalcCalagem analise={analise} talhao={talhao} safraCtx={analise?.safra} onEnviarPlanejamento={onEnviarPlanejamento} />
     </div>
   );
 }

@@ -1,0 +1,71 @@
+{
+  "name": "BaseRecomendacaoCalagem",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra (ex: 2025/2026)"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talh\u00e3o"
+    },
+    "talhao_nome": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "meta": {
+      "type": "string",
+      "description": "N\u00edvel alvo: M\u00ednimo, Bom ou Excelente"
+    },
+    "produto_id": {
+      "type": "string",
+      "description": "ID da fonte corretiva selecionada"
+    },
+    "produto_nome": {
+      "type": "string",
+      "description": "Nome da fonte corretiva"
+    },
+    "ca_atual": {
+      "type": "number",
+      "description": "Ca atual (cmolc/dm\u00b3)"
+    },
+    "mg_atual": {
+      "type": "number",
+      "description": "Mg atual (cmolc/dm\u00b3)"
+    },
+    "k_atual": {
+      "type": "number",
+      "description": "K atual (mg/dm\u00b3)"
+    },
+    "deficit_ca": {
+      "type": "number",
+      "description": "D\u00e9ficit Ca (cmolc/dm\u00b3)"
+    },
+    "deficit_mg": {
+      "type": "number",
+      "description": "D\u00e9ficit Mg (cmolc/dm\u00b3)"
+    },
+    "dose_kg_ha": {
+      "type": "number",
+      "description": "Dose recomendada (kg/ha)"
+    },
+    "dose_total_kg": {
+      "type": "number",
+      "description": "Dose total no talh\u00e3o (kg)"
+    },
+    "observacoes": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es livres"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id"
+  ]
+}

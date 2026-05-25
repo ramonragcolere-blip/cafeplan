@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Send, ChevronDown } from 'lucide-react';
+import { Send, ChevronDown, Save, Loader2 } from 'lucide-react';
 
 const NIVEIS = {
   Mínimo:    { ca: 3.0, mg: 1.0, k: 0.33 },
@@ -25,7 +25,6 @@ function calcCalagem(caAtual, mgAtual, nivel, produto, area) {
   const pctMg = parseFloat(produto.mg_pct) || 0;
 
   // Fórmula Ca: cmolc fornecida por tonelada = (1000 × %Ca) / 560
-  // Dose (t/ha) = déficit Ca / cmolc_por_tonelada → Dose (kg/ha) = dose_t × 1000
   let dosePeloCa = 0;
   if (pctCa > 0 && defCa > 0) {
     const cmolcPorTonCa = (1000 * (pctCa / 100)) / 560;
@@ -59,16 +58,70 @@ function calcCalagem(caAtual, mgAtual, nivel, produto, area) {
   };
 }
 
-export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
+export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlanejamento }) {
   const [nivel, setNivel] = useState('Bom');
   const [produtoId, setProdutoId] = useState(null);
   const [dropAberto, setDropAberto] = useState(false);
   const [busca, setBusca] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  const [registroId, setRegistroId] = useState(null); // ID do registro salvo
+  const carregadoRef = useRef(false); // evita sobrescrever após carga inicial
 
-  const caAtual  = analise?.calcio;
-  const mgAtual  = analise?.magnesio;
-  const kAtual   = analise?.potassio;
-  const area     = talhao?.area_ha || 0;
+  const queryClient = useQueryClient();
+
+  const caAtual = analise?.calcio;
+  const mgAtual = analise?.magnesio;
+  const kAtual  = analise?.potassio;
+  const area    = talhao?.area_ha || 0;
+
+  // analise pode ser null se ainda não foi salva — usar talhao/safraCtx como fallback
+  const codigoProdutor = analise?.codigo_produtor || talhao?.codigo_produtor;
+  const safra          = analise?.safra || safraCtx;
+  const talhaoId       = analise?.talhao_id || talhao?.id;
+
+  // Chave de contexto para detectar mudança de Produtor+Safra+Talhão
+  const ctxKey = `${codigoProdutor}|${safra}|${talhaoId}`;
+
+  // Busca registro salvo
+  const { data: registrosSalvos = [], isLoading: carregando } = useQuery({
+    queryKey: ['recomendacao_calagem', ctxKey],
+    queryFn: () => codigoProdutor && safra && talhaoId
+      ? base44.entities.BaseRecomendacaoCalagem.filter({ codigo_produtor: codigoProdutor, safra, talhao_id: talhaoId })
+      : Promise.resolve([]),
+    enabled: !!(codigoProdutor && safra && talhaoId),
+  });
+
+  // Carrega estado salvo apenas uma vez por contexto
+  useEffect(() => {
+    carregadoRef.current = false;
+  }, [ctxKey]);
+
+  useEffect(() => {
+    if (carregadoRef.current) return;
+    if (carregando) return;
+    const reg = registrosSalvos[0];
+    if (reg) {
+      setNivel(reg.meta || 'Bom');
+      setProdutoId(reg.produto_id || null);
+      setObservacoes(reg.observacoes || '');
+      setRegistroId(reg.id);
+    }
+    carregadoRef.current = true;
+  }, [registrosSalvos, carregando]);
+
+  const { mutate: salvar, isPending: salvando } = useMutation({
+    mutationFn: async (dados) => {
+      if (registroId) {
+        return base44.entities.BaseRecomendacaoCalagem.update(registroId, dados);
+      } else {
+        return base44.entities.BaseRecomendacaoCalagem.create(dados);
+      }
+    },
+    onSuccess: (res) => {
+      if (!registroId && res?.id) setRegistroId(res.id);
+      queryClient.invalidateQueries({ queryKey: ['recomendacao_calagem', ctxKey] });
+    },
+  });
 
   const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
   const { data: fontesSimples = [] }  = useQuery({ queryKey: ['fontes_simples'],  queryFn: () => base44.entities.FonteSimples.list() });
@@ -96,6 +149,26 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
 
   const semAnalise = caAtual == null && mgAtual == null;
   if (semAnalise) return null;
+
+  const handleSalvar = () => {
+    salvar({
+      codigo_produtor: codigoProdutor,
+      safra,
+      talhao_id: talhaoId,
+      talhao_nome: talhao?.nome || analise?.talhao_nome || '',
+      meta: nivel,
+      produto_id: produtoId || '',
+      produto_nome: produto?.nome || '',
+      ca_atual: caAtual ?? null,
+      mg_atual: mgAtual ?? null,
+      k_atual: kAtual ?? null,
+      deficit_ca: resultado?.defCa ?? null,
+      deficit_mg: resultado?.defMg ?? null,
+      dose_kg_ha: resultado?.doseFinalHa ?? null,
+      dose_total_kg: resultado?.totalKg ?? null,
+      observacoes,
+    });
+  };
 
   const handleEnviar = () => {
     if (!resultado || !produto || !onEnviarPlanejamento) return;
@@ -140,7 +213,7 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
                 <th className="text-right py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase">Atual</th>
                 <th className="text-right py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase">Meta ({nivel})</th>
                 <th className="text-right py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase">Déficit</th>
-                <th className="text-right py-1.5 pl-3 text-xs font-semibold text-muted-foreground uppercase">Necessidade (kg/ha)</th>
+                <th className="text-right py-1.5 pl-3 text-xs font-semibold text-muted-foreground uppercase">Situação</th>
               </tr>
             </thead>
             <tbody>
@@ -180,14 +253,14 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
           </table>
         </div>
 
-        {/* Seletor de fonte corretiva */}
+        {/* Seletor de fonte corretiva — sempre visível */}
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Fonte corretiva</p>
-          <div className="relative w-full max-w-2xl">
+          <div className="relative w-full">
             <button type="button"
               className="w-full h-10 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
               onClick={() => setDropAberto(a => !a)}>
-              <span className={produto ? 'text-foreground truncate' : 'text-muted-foreground'}>
+              <span className={produto ? 'text-foreground' : 'text-muted-foreground'}>
                 {produto ? produto.nome : 'Selecionar produto...'}
               </span>
               <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
@@ -202,7 +275,7 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
                     onChange={e => setBusca(e.target.value)}
                   />
                 </div>
-                <div className="max-h-80 overflow-y-auto">
+                <div className="max-h-96 overflow-y-auto">
                   <button type="button"
                     className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 text-muted-foreground"
                     onClick={() => { setProdutoId(null); setDropAberto(false); setBusca(''); }}>
@@ -210,15 +283,15 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
                   </button>
                   {corretivosVisiveis.map(p => (
                     <button key={p.id} type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 last:border-0"
+                      className="w-full text-left px-3 py-2.5 hover:bg-muted/60 border-b border-border/30 last:border-0"
                       onClick={() => { setProdutoId(p.id); setDropAberto(false); setBusca(''); }}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{p.nome}</span>
-                        <span className="text-muted-foreground text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium">{p.nome}</span>
+                        <span className="text-muted-foreground text-xs whitespace-nowrap">
                           {p.ca_pct > 0 ? `Ca: ${p.ca_pct}%` : ''}{p.ca_pct > 0 && p.mg_pct > 0 ? ' · ' : ''}{p.mg_pct > 0 ? `Mg: ${p.mg_pct}%` : ''}
                         </span>
                       </div>
-                      {p.fornecedor && <div className="text-muted-foreground">{p.fornecedor}</div>}
+                      {p.fornecedor && <div className="text-xs text-muted-foreground mt-0.5">{p.fornecedor}</div>}
                     </button>
                   ))}
                 </div>
@@ -292,14 +365,28 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
               )}
             </div>
 
-            {onEnviarPlanejamento && (
-              <div className="flex justify-end pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando} className="gap-2">
+                {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar recomendação
+              </Button>
+              {onEnviarPlanejamento && (
                 <Button size="sm" onClick={handleEnviar} className="gap-2 bg-lime-700 hover:bg-lime-800">
                   <Send className="w-4 h-4" />
                   Enviar para Planejamento
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Botão salvar mesmo sem produto selecionado (persiste meta e observações) */}
+        {resultado && (!produto || resultado.doseFinalHa === 0) && codigoProdutor && safra && talhaoId && (
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando} className="gap-2">
+              {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Salvar
+            </Button>
           </div>
         )}
       </div>
