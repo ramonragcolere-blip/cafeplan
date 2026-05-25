@@ -68,7 +68,15 @@ function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSav
                 />
               </div>
               <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
-              <AnaliseSolo2040Form dados={analise2040} onSave={onSaveAnalise2040} saving={isAnalise2040Saving} />
+              <AnaliseSolo2040Form
+                dados={analise2040}
+                onSave={onSaveAnalise2040}
+                saving={isAnalise2040Saving}
+                talhoes={talhoes}
+                safra={safra}
+                analises2040={analises2040List}
+                onImportar={(talhaoAlvo, dados) => onImportarAnalise2040(talhaoAlvo, dados)}
+              />
               <RecomendacaoNPK analise={analise} analise2040={analise2040} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} onEnviarPlanejamento={onEnviarPlanejamento} />
             </>
           )}

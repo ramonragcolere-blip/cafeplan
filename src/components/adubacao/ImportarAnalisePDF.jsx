@@ -28,21 +28,22 @@ const CAMPOS_0_20 = [
 
 const CAMPOS_2040 = [
   { key: 'ph',               label: 'pH'                      },
-  { key: 'calcio',           label: 'Ca (cmolc/dm³)'          },
-  { key: 'magnesio',         label: 'Mg (cmolc/dm³)'          },
-  { key: 'potassio',         label: 'K (mg/dm³)'              },
+  { key: 'materia_organica', label: 'M.O. (g/dm³)'            },
+  { key: 'fosforo',          label: 'P (mg/dm³)'              },
+  { key: 'potassio',         label: 'K (mmolc/dm³)'           },
+  { key: 'calcio',           label: 'Ca (mmolc/dm³)'          },
+  { key: 'magnesio',         label: 'Mg (mmolc/dm³)'          },
   { key: 'aluminio',         label: 'Al (cmolc/dm³)'          },
   { key: 'h_al',             label: 'H+Al (cmolc/dm³)'        },
   { key: 'sb',               label: 'SB (cmolc/dm³)'          },
   { key: 'ctc',              label: 'CTC (cmolc/dm³)'         },
   { key: 'saturacao_bases',  label: 'V%'                      },
-  { key: 'fosforo',          label: 'P (mg/dm³)'              },
+  { key: 'boro',             label: 'B (mg/dm³)'              },
   { key: 'zinco',            label: 'Zn (mg/dm³)'             },
   { key: 'cobre',            label: 'Cu (mg/dm³)'             },
   { key: 'manganes',         label: 'Mn (mg/dm³)'             },
-  { key: 'boro',             label: 'B (mg/dm³)'              },
+  { key: 'ferro',            label: 'Fe (mg/dm³)'             },
   { key: 'enxofre',          label: 'S (mg/dm³)'              },
-  { key: 'materia_organica', label: 'MO (dag/kg)'             },
   { key: 'data_analise',     label: 'Data da Análise', date: true },
 ];
 
