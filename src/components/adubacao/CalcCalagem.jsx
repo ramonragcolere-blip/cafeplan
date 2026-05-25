@@ -19,36 +19,43 @@ function calcCalagem(caAtual, mgAtual, nivel, produto, area) {
   const defCa = Math.max(0, meta.ca - (Number(caAtual) || 0));
   const defMg = Math.max(0, meta.mg - (Number(mgAtual) || 0));
 
-  const caNecKgHa = defCa * 560;
-  const mgNecKgHa = defMg * 400;
-
-  if (!produto) return { defCa, defMg, caNecKgHa, mgNecKgHa, meta };
+  if (!produto) return { defCa, defMg, meta };
 
   const pctCa = parseFloat(produto.ca_pct) || 0;
   const pctMg = parseFloat(produto.mg_pct) || 0;
 
-  const dosePeloCa = pctCa > 0 ? caNecKgHa / (pctCa / 100) : 0;
-  const dosePeloMg = pctMg > 0 ? mgNecKgHa / (pctMg / 100) : 0;
+  // Fórmula Ca: cmolc fornecida por tonelada = (1000 × %Ca) / 560
+  // Dose (t/ha) = déficit Ca / cmolc_por_tonelada → Dose (kg/ha) = dose_t × 1000
+  let dosePeloCa = 0;
+  if (pctCa > 0 && defCa > 0) {
+    const cmolcPorTonCa = (1000 * (pctCa / 100)) / 560;
+    dosePeloCa = (defCa / cmolcPorTonCa) * 1000; // kg/ha
+  }
+
+  // Fórmula Mg: cmolc fornecida por tonelada = (1000 × %Mg) / 400
+  let dosePeloMg = 0;
+  if (pctMg > 0 && defMg > 0) {
+    const cmolcPorTonMg = (1000 * (pctMg / 100)) / 400;
+    dosePeloMg = (defMg / cmolcPorTonMg) * 1000; // kg/ha
+  }
+
+  // Dose final = maior valor (nutriente mais limitante)
   const doseFinalHa = Math.max(dosePeloCa, dosePeloMg);
 
-  const totalKg   = area > 0 ? doseFinalHa * area : null;
-  const ton       = totalKg != null ? totalKg / 1000 : null;
-  const sc40      = totalKg != null ? totalKg / 40 : null;
-  const sc50      = totalKg != null ? totalKg / 50 : null;
-
-  // Ca e Mg fornecidos pela dose
-  const caFornecidoHa = doseFinalHa * (pctCa / 100);
-  const mgFornecidoHa = doseFinalHa * (pctMg / 100);
+  const totalKg = area > 0 ? doseFinalHa * area : null;
+  const ton     = totalKg != null ? totalKg / 1000 : null;
+  const sc40    = totalKg != null ? totalKg / 40 : null;
+  const sc50    = totalKg != null ? totalKg / 50 : null;
 
   return {
-    defCa, defMg, caNecKgHa, mgNecKgHa, meta,
-    doseFinalHa: Math.round(doseFinalHa * 10) / 10,
+    defCa, defMg, meta,
+    dosePeloCa: Math.round(dosePeloCa),
+    dosePeloMg: Math.round(dosePeloMg),
+    doseFinalHa: Math.round(doseFinalHa),
     totalKg: totalKg != null ? Math.round(totalKg) : null,
     ton:  ton  != null ? parseFloat(ton.toFixed(3))  : null,
     sc40: sc40 != null ? parseFloat(sc40.toFixed(1)) : null,
     sc50: sc50 != null ? parseFloat(sc50.toFixed(1)) : null,
-    caFornecidoHa: parseFloat(caFornecidoHa.toFixed(3)),
-    mgFornecidoHa: parseFloat(mgFornecidoHa.toFixed(3)),
   };
 }
 
@@ -146,7 +153,7 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
                   {resultado ? (resultado.defCa > 0 ? `−${resultado.defCa.toFixed(2)}` : '✓') : '—'}
                 </td>
                 <td className="text-right pl-3 font-semibold">
-                  {resultado ? (resultado.caNecKgHa > 0 ? `${Math.round(resultado.caNecKgHa)} kg/ha` : '—') : '—'}
+                  {resultado ? (resultado.defCa > 0 ? `déficit: ${resultado.defCa.toFixed(2)} cmolc` : 'Sem déficit') : '—'}
                 </td>
               </tr>
               {/* Mg */}
@@ -158,7 +165,7 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
                   {resultado ? (resultado.defMg > 0 ? `−${resultado.defMg.toFixed(2)}` : '✓') : '—'}
                 </td>
                 <td className="text-right pl-3 font-semibold">
-                  {resultado ? (resultado.mgNecKgHa > 0 ? `${Math.round(resultado.mgNecKgHa)} kg/ha` : '—') : '—'}
+                  {resultado ? (resultado.defMg > 0 ? `déficit: ${resultado.defMg.toFixed(2)} cmolc` : 'Sem déficit') : '—'}
                 </td>
               </tr>
               {/* K — apenas informativo */}
@@ -226,10 +233,33 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
           )}
         </div>
 
-        {/* Resultado */}
+        {/* Sem déficit */}
+        {resultado && resultado.defCa === 0 && resultado.defMg === 0 && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700 font-medium">
+            ✓ Ca e Mg estão dentro ou acima da meta "{nivel}". Sem déficit — calagem não necessária.
+          </div>
+        )}
+
+        {/* Resultado com produto */}
         {resultado && produto && resultado.doseFinalHa > 0 && (
           <div className="bg-lime-50 border border-lime-200 rounded-xl p-4 space-y-3">
             <p className="text-xs font-semibold text-lime-800 uppercase tracking-wide">Resultado — {produto.nome}</p>
+
+            {/* Decomposição por nutriente */}
+            <div className="text-sm space-y-1 border-b border-lime-200 pb-3">
+              {resultado.dosePeloCa > 0
+                ? <div>Dose pelo Ca: <strong>{resultado.dosePeloCa} kg/ha</strong></div>
+                : <div className="text-muted-foreground">Dose pelo Ca: sem déficit</div>
+              }
+              {resultado.dosePeloMg > 0
+                ? <div>Dose pelo Mg: <strong>{resultado.dosePeloMg} kg/ha</strong></div>
+                : <div className="text-muted-foreground">Dose pelo Mg: sem déficit</div>
+              }
+              <div className="font-semibold text-lime-800">
+                Dose recomendada: {resultado.doseFinalHa} kg/ha
+                <span className="font-normal text-xs text-muted-foreground ml-1">(limitada pelo nutriente mais deficitário)</span>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white rounded-lg p-2.5 text-center border border-lime-100">
@@ -262,12 +292,6 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
               )}
             </div>
 
-            {/* Ca e Mg fornecidos */}
-            <div className="text-xs text-muted-foreground space-y-0.5">
-              <div>Ca fornecido: <strong>{resultado.caFornecidoHa} cmolc/dm³·ha</strong> (via {produto.nome})</div>
-              <div>Mg fornecido: <strong>{resultado.mgFornecidoHa} cmolc/dm³·ha</strong> (via {produto.nome})</div>
-            </div>
-
             {onEnviarPlanejamento && (
               <div className="flex justify-end pt-1">
                 <Button size="sm" onClick={handleEnviar} className="gap-2 bg-lime-700 hover:bg-lime-800">
@@ -276,12 +300,6 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
                 </Button>
               </div>
             )}
-          </div>
-        )}
-
-        {resultado && (!produto || resultado.doseFinalHa === 0) && (resultado.defCa === 0 && resultado.defMg === 0) && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700 font-medium">
-            ✓ Ca e Mg estão dentro ou acima da meta "{nivel}". Calagem não necessária.
           </div>
         )}
       </div>
