@@ -46,34 +46,52 @@ const CAMPOS_2040 = [
   { key: 'data_analise',     label: 'Data da Análise', date: true },
 ];
 
-const PROMPT_EXTRACAO = `
-Você é um especialista em análise de solos agrícolas brasileiro. Analise este PDF de análise de solo e extraia os dados.
+const buildPrompt = (textoPDF) => `
+Você é um especialista em análise de solos agrícolas brasileiro.
+Abaixo está o TEXTO BRUTO extraído de um laudo de análise de solo. Leia com atenção e extraia os dados.
 
-IDENTIFIQUE O LABORATÓRIO:
-- COOXUPÉ: contém "Cooxupé", "Cooperativa Regional de Cafeicultores em Guaxupé". Unidades: K em mmolc/dm³, Ca e Mg em mmolc/dm³. Use valores diretamente SEM conversão.
-- LAB VIÇOSA: contém "Laboratório de Análise de Solo Viçosa" ou "labsolosvicosa@gmail.com". Unidades: Ca e Mg em cmolc/dm³, K em mg/dm³. CONVERTER K de cmolc/dm³ para mg/dm³: K_mg = K_cmolc × 391 (se o valor do K parecer estar em cmolc, multiplique por 391).
+=== TEXTO DO PDF ===
+${textoPDF}
+=== FIM DO TEXTO ===
 
-Para cada camada/talhão encontrado, extraia:
+PASSO 1 — IDENTIFIQUE O LABORATÓRIO pelo texto:
+- COOXUPÉ: contém "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé".
+  Unidades típicas: K em mmolc/dm³, Ca e Mg em mmolc/dm³.
+  IMPORTANTE: para este lab, use os valores de K, Ca e Mg DIRETAMENTE, sem conversão.
+- LAB_VICOSA: contém "Laboratório de Análise de Solo Viçosa" ou "labsolosvicosa@gmail.com".
+  Unidades típicas: Ca e Mg em cmolc/dm³, K pode aparecer em cmolc/dm³ — nesse caso converter: K_mg = K_cmolc × 391.
+- OUTRO: qualquer outro laboratório.
 
+PASSO 2 — LOCALIZE OS CAMPOS PELOS RÓTULOS no texto (não por posição fixa):
+Para COOXUPÉ, procure rótulos como: "pH CaCl2", "M.O.", "P mg/dm³", "K mmol", "Ca mmol", "Mg mmol",
+"H+Al", "S.B.", "C.T.C.", "V%", "B mg", "Cu mg", "Fe mg", "Mn mg", "Zn mg", "S mg", "Al".
+Para LAB_VICOSA, procure: "pH", "P", "K", "Ca", "Mg", "Al", "H + Al", "SB", "(t)", "(T)", "V", "m", "MO", "Zn", "Fe", "Mn", "Cu", "B", "S".
+Para outros labs, tente identificar pelos nomes dos elementos.
+
+PASSO 3 — Se houver múltiplos talhões ou camadas (0-20 e 20-40), retorne uma entrada para cada combinação.
+
+PASSO 4 — Para campos não encontrados, use null. NÃO retorne erro geral — sempre retorne o JSON mesmo com campos em null.
+
+Retorne SOMENTE este JSON (sem markdown, sem explicações):
 {
   "laboratorio": "COOXUPE" | "LAB_VICOSA" | "OUTRO",
   "identificacao": {
-    "cliente": "nome do cliente/proprietário",
-    "propriedade": "nome da fazenda/propriedade",
-    "referencia_talhao": "referência ou nome do talhão",
-    "data_liberacao": "data de liberação no formato YYYY-MM-DD se possível"
+    "cliente": "nome do cliente/proprietário ou null",
+    "propriedade": "nome da fazenda ou null",
+    "referencia_talhao": "referência ou nome do talhão ou null",
+    "data_liberacao": "YYYY-MM-DD ou null"
   },
   "talhoes": [
     {
-      "nome_talhao": "nome do talhão conforme consta no PDF",
+      "nome_talhao": "nome do talhão conforme consta no texto",
       "profundidade": "0-20" ou "20-40",
       "dados": {
         "ph": número ou null,
         "materia_organica": número ou null,
         "fosforo": número ou null,
-        "potassio": número ou null (em mg/dm³ — converter se necessário),
-        "calcio": número ou null (em cmolc/dm³),
-        "magnesio": número ou null (em cmolc/dm³),
+        "potassio": número ou null (sempre em mg/dm³),
+        "calcio": número ou null (sempre em cmolc/dm³),
+        "magnesio": número ou null (sempre em cmolc/dm³),
         "aluminio": número ou null,
         "h_al": número ou null,
         "sb": número ou null,
@@ -90,10 +108,6 @@ Para cada camada/talhão encontrado, extraia:
     }
   ]
 }
-
-Se o PDF tiver múltiplas camadas (0-20 e 20-40) para o mesmo talhão, retorne duas entradas na lista talhoes com profundidades diferentes.
-Se tiver múltiplos talhões, retorne uma entrada para cada.
-Retorne SOMENTE o JSON, sem markdown.
 `;
 
 const LAB_LABEL = {
@@ -155,10 +169,37 @@ export default function ImportarAnalisePDF({
     setOpen(true);
     setLoading(true);
     try {
+      // 1. Upload do arquivo
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
+
+      // 2. Extrair texto bruto do PDF usando a API de extração de dados
+      let textoPDF = '';
+      try {
+        const extracao = await base44.integrations.Core.ExtractDataFromUploadedFile({
+          file_url,
+          json_schema: {
+            type: 'object',
+            properties: {
+              texto_completo: { type: 'string', description: 'Todo o texto extraído do PDF, incluindo rótulos, valores e identificações' },
+            },
+          },
+        });
+        if (extracao?.status === 'success' && extracao?.output?.texto_completo) {
+          textoPDF = extracao.output.texto_completo;
+        }
+      } catch (_) {
+        // falha silenciosa — tenta enviar o arquivo direto ao LLM abaixo
+      }
+
+      // 3. Chamar o LLM com o texto extraído (ou arquivo direto como fallback)
+      const promptFinal = textoPDF
+        ? buildPrompt(textoPDF)
+        : buildPrompt('[Texto não pôde ser extraído — analise o arquivo diretamente]');
+
       const resposta = await base44.integrations.Core.InvokeLLM({
-        prompt: PROMPT_EXTRACAO,
-        file_urls: [file_url],
+        prompt: promptFinal,
+        // se não extraiu texto, manda o arquivo para o LLM tentar ler
+        file_urls: textoPDF ? undefined : [file_url],
         model: 'claude_sonnet_4_6',
         response_json_schema: {
           type: 'object',
@@ -176,14 +217,43 @@ export default function ImportarAnalisePDF({
         parsed = m ? JSON.parse(m[0]) : null;
       }
 
-      if (!parsed || !parsed.talhoes?.length) throw new Error('Não foi possível extrair dados do PDF.');
+      // Fallback: se não encontrou talhões, abre formulário vazio para preenchimento manual
+      if (!parsed || !parsed.talhoes?.length) {
+        const vazio = {
+          laboratorio: 'OUTRO',
+          identificacao: {},
+          talhoes: [{ nome_talhao: 'Novo registro', profundidade: '0-20', dados: {} }],
+        };
+        setResultado(vazio);
+        setEdicoes([{}]);
+        setTalhaoSelecionado(['']);
+        setExpandidos([true]);
+        setErro('Não foi possível extrair dados automaticamente. Preencha os campos manualmente.');
+        return;
+      }
 
-      setResultado(parsed);
-      setEdicoes(parsed.talhoes.map(t => ({ ...t.dados })));
-      setTalhaoSelecionado(parsed.talhoes.map(() => ''));
-      setExpandidos(parsed.talhoes.map((_, i) => i === 0));
+      // Normalizar campos null/undefined dos dados
+      const talhoes = parsed.talhoes.map(t => ({
+        ...t,
+        dados: t.dados || {},
+      }));
+
+      setResultado({ ...parsed, talhoes });
+      setEdicoes(talhoes.map(t => ({ ...t.dados })));
+      setTalhaoSelecionado(talhoes.map(() => ''));
+      setExpandidos(talhoes.map((_, i) => i === 0));
     } catch (err) {
-      setErro(err?.message || String(err));
+      // Fallback geral: formulário vazio
+      const vazio = {
+        laboratorio: 'OUTRO',
+        identificacao: {},
+        talhoes: [{ nome_talhao: 'Novo registro', profundidade: '0-20', dados: {} }],
+      };
+      setResultado(vazio);
+      setEdicoes([{}]);
+      setTalhaoSelecionado(['']);
+      setExpandidos([true]);
+      setErro(`Erro ao processar PDF: ${err?.message || String(err)}. Preencha os campos manualmente.`);
     } finally {
       setLoading(false);
       e.target.value = '';
@@ -331,13 +401,19 @@ export default function ImportarAnalisePDF({
             </div>
           )}
 
-          {erro && (
+          {erro && !resultado && (
             <div className="flex items-start gap-2 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold">Erro ao processar PDF</p>
                 <p className="text-xs mt-0.5">{erro}</p>
               </div>
+            </div>
+          )}
+          {erro && resultado && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p>{erro}</p>
             </div>
           )}
 
