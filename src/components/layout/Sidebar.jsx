@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, TreePine, UserCheck, ClipboardList, Menu, X, Coffee, Settings2, Sprout, FlaskConical } from 'lucide-react';
+import { LayoutDashboard, Users, TreePine, UserCheck, ClipboardList, Menu, X, Leaf, Settings2, Sprout, FlaskConical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
@@ -44,7 +44,7 @@ export default function Sidebar() {
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-sidebar-primary flex items-center justify-center">
-              <Coffee className="w-5 h-5 text-sidebar-primary-foreground" />
+              <Leaf className="w-5 h-5 text-sidebar-primary-foreground" />
             </div>
             <div>
               <h1 className="font-bold text-lg leading-tight">Colheita</h1>
