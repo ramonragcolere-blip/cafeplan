@@ -6,7 +6,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Save, Loader2, FlaskConical, ChevronDown, ChevronRight, Upload } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const CAMPOS = [
@@ -33,23 +32,22 @@ const CAMPOS = [
 const NUM_KEYS = new Set(CAMPOS.filter(c => c.type === 'number').map(c => c.key));
 const empty = () => CAMPOS.reduce((acc, c) => ({ ...acc, [c.key]: '' }), { observacoes: '' });
 
-// ── Mini importador dedicado à camada 20-40 ────────────────────────────────
-function ImportarAnalise2040({ talhoes, safra, analises2040, onImportar }) {
+// ── Mini importador dedicado à camada 20-40 — salva sempre no talhão do contexto ──
+// onImportar(dadosNumericos) — sem talhão como argumento, o pai decide onde salvar
+function ImportarAnalise2040({ onImportar }) {
   const fileRef = useRef();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(null);
   const [campos, setCampos] = useState({});
-  const [talhaoId, setTalhaoId] = useState('');
 
-  const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
+  const toNum = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setErro(null);
     setCampos({});
-    setTalhaoId('');
     setOpen(true);
     setLoading(true);
     try {
@@ -63,10 +61,10 @@ function ImportarAnalise2040({ talhoes, safra, analises2040, onImportar }) {
         if (ext?.status === 'success' && ext?.output?.texto_completo) textoPDF = ext.output.texto_completo;
       } catch (_) {}
 
-      const prompt = `Você é especialista em análise de solos. Extraia os dados da camada 20-40 cm do texto abaixo.
+      const prompt = `Você é especialista em análise de solos brasileiros. Extraia os dados da camada 20-40 cm do texto abaixo.
 Se houver múltiplas camadas, retorne SOMENTE os dados da camada 20-40 cm.
-Texto: ${textoPDF || '[não extraído]'}
-Retorne SOMENTE o JSON com os campos numéricos (null se não encontrado):
+Texto: ${textoPDF || '[não extraído — analise o arquivo]'}
+Retorne SOMENTE o JSON (null para campos não encontrados):
 { "ph": null, "materia_organica": null, "fosforo": null, "potassio": null, "calcio": null, "magnesio": null,
   "aluminio": null, "h_al": null, "sb": null, "ctc": null, "saturacao_bases": null,
   "boro": null, "zinco": null, "cobre": null, "manganes": null, "ferro": null, "enxofre": null, "data_analise": null }`;
@@ -87,7 +85,10 @@ Retorne SOMENTE o JSON com os campos numéricos (null se não encontrado):
           },
         },
       });
-      setCampos(resp || {});
+      // Normaliza: troca null por '' para os inputs controlados
+      const normalizado = {};
+      Object.entries(resp || {}).forEach(([k, v]) => { normalizado[k] = v ?? ''; });
+      setCampos(normalizado);
     } catch (err) {
       setErro(`Erro ao processar PDF: ${err?.message || String(err)}`);
       setCampos({});
@@ -98,20 +99,14 @@ Retorne SOMENTE o JSON com os campos numéricos (null se não encontrado):
   };
 
   const handleSalvar = () => {
-    const talhao = talhoes.find(t => t.id === talhaoId);
-    if (!talhao) return;
     const data = {};
     Object.entries(campos).forEach(([k, v]) => {
       if (k === 'data_analise') { data[k] = v || undefined; return; }
       data[k] = toNum(v);
     });
-    onImportar(talhao, { ...data, sem_analise_2040: false });
+    onImportar({ ...data, sem_analise_2040: false });
     setOpen(false);
   };
-
-  const jaExiste = talhaoId && safra
-    ? (analises2040 || []).find(a => a.talhao_id === talhaoId && a.safra === safra)
-    : null;
 
   return (
     <>
@@ -124,7 +119,7 @@ Retorne SOMENTE o JSON com os campos numéricos (null se não encontrado):
         onClick={() => fileRef.current?.click()}
       >
         <Upload className="w-4 h-4" />
-        Importar análise 20-40 cm (PDF)
+        Importar PDF
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -152,53 +147,30 @@ Retorne SOMENTE o JSON com os campos numéricos (null se não encontrado):
 
           {!loading && (
             <div className="space-y-4">
-              {/* Seletor de talhão */}
-              <div>
-                <Label className="text-xs mb-1 block font-semibold">
-                  Talhão <span className="text-destructive">*</span>
-                </Label>
-                <Select value={talhaoId || 'none'} onValueChange={v => setTalhaoId(v === 'none' ? '' : v)}>
-                  <SelectTrigger className="max-w-xs">
-                    <SelectValue placeholder="Selecione o talhão…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Selecione…</SelectItem>
-                    {talhoes.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                {jaExiste && (
-                  <p className="text-xs text-amber-700 mt-1 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Já existe análise 20–40 cm para este talhão/safra. Salvar irá substituir.
-                  </p>
-                )}
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Confira os valores extraídos e edite se necessário antes de salvar.
+              </p>
 
               {/* Campos editáveis */}
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Valores extraídos — edite se necessário
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {CAMPOS.map(c => (
-                    <div key={c.key}>
-                      <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
-                      <Input
-                        type={c.key === 'data_analise' ? 'date' : 'number'}
-                        step={c.key === 'data_analise' ? undefined : '0.001'}
-                        value={campos[c.key] ?? ''}
-                        onChange={e => setCampos(prev => ({ ...prev, [c.key]: e.target.value }))}
-                        className="h-7 text-xs"
-                      />
-                    </div>
-                  ))}
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {CAMPOS.map(c => (
+                  <div key={c.key}>
+                    <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
+                    <Input
+                      type={c.type === 'date' ? 'date' : 'number'}
+                      step={c.type === 'date' ? undefined : '0.001'}
+                      value={campos[c.key] ?? ''}
+                      onChange={e => setCampos(prev => ({ ...prev, [c.key]: e.target.value }))}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                ))}
               </div>
 
               <div className="flex justify-end">
-                <Button size="sm" onClick={handleSalvar} disabled={!talhaoId} className="gap-2 bg-blue-700 hover:bg-blue-800 text-white">
+                <Button size="sm" onClick={handleSalvar} className="gap-2 bg-blue-700 hover:bg-blue-800 text-white">
                   <CheckCircle2 className="w-4 h-4" />
-                  Confirmar e salvar
+                  Confirmar e salvar neste talhão
                 </Button>
               </div>
             </div>
@@ -215,7 +187,7 @@ Retorne SOMENTE o JSON com os campos numéricos (null se não encontrado):
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function AnaliseSolo2040Form({ dados, onSave, saving, talhoes, safra, analises2040, onImportar }) {
+export default function AnaliseSolo2040Form({ dados, onSave, saving, onImportar }) {
   const [aberto, setAberto] = useState(false);
   const [semAnalise, setSemAnalise] = useState(false);
   const [form, setForm] = useState(empty());
@@ -229,7 +201,18 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving, talhoes, sa
       setSemAnalise(false);
       setForm(empty());
     }
-  }, [dados?.id, dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
+  }, [dados?.id ?? 'null', dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
+
+  // Quando importar via PDF: salva E atualiza o form local imediatamente
+  const handleImportar = (dadosImportados) => {
+    // Atualiza formulário local imediatamente (para o usuário ver os campos preenchidos)
+    setSemAnalise(false);
+    setAberto(true);
+    const formAtualizado = { ...empty(), ...dadosImportados };
+    setForm(formAtualizado);
+    // Persiste no banco
+    onSave(dadosImportados);
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -272,14 +255,7 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving, talhoes, sa
             : <ChevronRight className="w-4 h-4 text-blue-600 shrink-0" />
           }
         </button>
-        {onImportar && (
-          <ImportarAnalise2040
-            talhoes={talhoes || []}
-            safra={safra}
-            analises2040={analises2040}
-            onImportar={onImportar}
-          />
-        )}
+        <ImportarAnalise2040 onImportar={handleImportar} />
       </div>
 
       {/* Corpo expansível */}
