@@ -194,22 +194,31 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
         {/* Micronutrientes: Zn, Cu, Mn */}
         {(classZn || classCu || classMn) && (
           <div className="lg:col-span-2 bg-muted/20 rounded-xl p-4 border border-border/50">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Micronutrientes</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Micronutrientes (mg/dm³)</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
-                { label: 'Zn (Zinco)', valor: zn, result: classZn },
-                { label: 'Cu (Cobre)', valor: cu, result: classCu },
-                { label: 'Mn (Manganês)', valor: mn, result: classMn },
-              ].filter(x => x.result).map(({ label, valor, result }) => (
-                <div key={label} className="bg-white rounded-lg p-3 border border-border/40">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium">{label}</span>
-                    <Badge classe={result.classe} />
+                { label: 'Zn', nome: 'Zinco', valor: zn, result: classZn },
+                { label: 'Cu', nome: 'Cobre', valor: cu, result: classCu },
+                { label: 'Mn', nome: 'Manganês', valor: mn, result: classMn },
+              ].filter(x => x.result).map(({ label, nome, valor, result }) => {
+                const acaoCor = result.acao === 'Aplicar'
+                  ? 'bg-red-100 text-red-700'
+                  : result.acao === 'Avaliar'
+                  ? 'bg-yellow-100 text-yellow-700'
+                  : 'bg-green-100 text-green-700';
+                return (
+                  <div key={label} className="bg-white rounded-lg p-3 border border-border/40 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold">{label} <span className="font-normal text-muted-foreground">({nome})</span></span>
+                      <Badge classe={result.classe} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{valor} mg/dm³</p>
+                    <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${acaoCor}`}>
+                      {result.acao}
+                    </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">{valor} mg/dm³</p>
-                  <p className="text-xs text-foreground font-medium mt-1">{result.recomendacao}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

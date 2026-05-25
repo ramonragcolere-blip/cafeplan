@@ -108,30 +108,35 @@ export function classificarK(k) {
 export function classificarZn(zn) {
   const v = Number(zn);
   if (isNaN(v)) return null;
-  if (v < 0.6)  return { classe: 'Baixo',  recomendacao: 'Aplicar 2–4 kg Zn/ha' };
-  if (v <= 1.2) return { classe: 'Médio',  recomendacao: 'Aplicar 1–2 kg Zn/ha' };
-  if (v <= 2.4) return { classe: 'Bom',    recomendacao: 'Sem aplicação necessária' };
-  return             { classe: 'Alto',   recomendacao: 'Dispensar — avaliar fitotoxidez' };
+  if (v < 1.5)  return { classe: 'Baixo',          acao: 'Aplicar' };
+  if (v <= 2.0) return { classe: 'Médio',           acao: 'Avaliar' };
+  if (v <= 3.0) return { classe: 'Bom',             acao: 'Avaliar' };
+  if (v <= 5.0) return { classe: 'Ótimo',           acao: 'Dispensar' };
+  return             { classe: 'Alto/Inadequado', acao: 'Dispensar' };
 }
 
 // Classificação de Cobre (Cu) — mg/dm³
 export function classificarCu(cu) {
   const v = Number(cu);
   if (isNaN(v)) return null;
-  if (v < 0.4)  return { classe: 'Baixo',  recomendacao: 'Aplicar 1–3 kg Cu/ha' };
-  if (v <= 0.8) return { classe: 'Médio',  recomendacao: 'Aplicar 0.5–1 kg Cu/ha' };
-  if (v <= 1.5) return { classe: 'Bom',    recomendacao: 'Sem aplicação necessária' };
-  return             { classe: 'Alto',   recomendacao: 'Dispensar — risco de toxidez' };
+  if (v < 0.5)  return { classe: 'Baixo',             acao: 'Aplicar' };
+  if (v <= 1.5) return { classe: 'Médio',              acao: 'Avaliar' };
+  if (v <= 2.0) return { classe: 'Bom',                acao: 'Avaliar' };
+  if (v <= 2.5) return { classe: 'Ótimo',              acao: 'Dispensar' };
+  if (v <= 3.0) return { classe: 'Adequado/Atenção',   acao: 'Dispensar' };
+  return             { classe: 'Alto/Inadequado',    acao: 'Dispensar' };
 }
 
 // Classificação de Manganês (Mn) — mg/dm³
 export function classificarMn(mn) {
   const v = Number(mn);
   if (isNaN(v)) return null;
-  if (v < 1.5)  return { classe: 'Baixo',  recomendacao: 'Aplicar 3–5 kg Mn/ha' };
-  if (v <= 5.0) return { classe: 'Médio',  recomendacao: 'Aplicar 1–3 kg Mn/ha' };
-  if (v <= 10)  return { classe: 'Bom',    recomendacao: 'Sem aplicação necessária' };
-  return             { classe: 'Alto',   recomendacao: 'Dispensar — monitorar toxidez' };
+  if (v < 5)    return { classe: 'Baixo',             acao: 'Aplicar' };
+  if (v <= 10)  return { classe: 'Médio',              acao: 'Avaliar' };
+  if (v <= 15)  return { classe: 'Bom',                acao: 'Avaliar' };
+  if (v <= 25)  return { classe: 'Ótimo',              acao: 'Dispensar' };
+  if (v <= 30)  return { classe: 'Adequado/Atenção',   acao: 'Dispensar' };
+  return             { classe: 'Alto/Inadequado',    acao: 'Dispensar' };
 }
 
 // Calagem — baseada em pH e V% (saturação de bases)
