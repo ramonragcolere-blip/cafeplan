@@ -176,9 +176,9 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
         {/* Seletor de fonte corretiva */}
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Fonte corretiva</p>
-          <div className="relative max-w-sm">
+          <div className="relative w-full max-w-2xl">
             <button type="button"
-              className="w-full h-9 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
+              className="w-full h-10 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
               onClick={() => setDropAberto(a => !a)}>
               <span className={produto ? 'text-foreground truncate' : 'text-muted-foreground'}>
                 {produto ? produto.nome : 'Selecionar produto...'}
@@ -186,16 +186,16 @@ export default function CalcCalagem({ analise, talhao, onEnviarPlanejamento }) {
               <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
             </button>
             {dropAberto && (
-              <div className="absolute z-50 top-full left-0 w-96 mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+              <div className="absolute z-50 top-full left-0 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
                 <div className="p-2 border-b border-border">
                   <input autoFocus
-                    className="w-full h-7 text-xs border border-input rounded px-2 bg-background"
+                    className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
                     placeholder="Buscar corretivo..."
                     value={busca}
                     onChange={e => setBusca(e.target.value)}
                   />
                 </div>
-                <div className="max-h-56 overflow-y-auto">
+                <div className="max-h-80 overflow-y-auto">
                   <button type="button"
                     className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 text-muted-foreground"
                     onClick={() => { setProdutoId(null); setDropAberto(false); setBusca(''); }}>
