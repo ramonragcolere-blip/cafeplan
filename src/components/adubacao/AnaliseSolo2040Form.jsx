@@ -23,16 +23,6 @@ const CAMPOS_2040 = [
 
 const empty2040 = () => CAMPOS_2040.reduce((acc, c) => ({ ...acc, [c.key]: '' }), { observacoes: '' });
 
-// Converte objeto de dados (números) para estado do form (strings para inputs controlados)
-const toFormState = (src) => {
-  const base = empty2040();
-  Object.keys(base).forEach(k => {
-    const v = src[k];
-    base[k] = (v !== null && v !== undefined && v !== '') ? String(v) : '';
-  });
-  return base;
-};
-
 // ── Mini-importador PDF exclusivo para camada 20-40 cm ──────────────────────
 function BotaoImportar2040({ onImportado }) {
   const fileRef = useRef();
@@ -207,13 +197,8 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving }) {
 
   // Carrega dados ao trocar de talhão/safra/produtor — mesma lógica do 0-20 cm
   useEffect(() => {
-    if (dados) {
-      setSemAnalise(dados.sem_analise_2040 === true);
-      setForm2040(toFormState(dados));
-    } else {
-      setSemAnalise(false);
-      setForm2040(empty2040());
-    }
+    setSemAnalise(dados ? dados.sem_analise_2040 === true : false);
+    setForm2040(dados ? { ...empty2040(), ...dados } : empty2040());
   }, [dados?.id, dados?.talhao_id, dados?.safra, dados?.codigo_produtor]);
 
   const set2040 = (k, v) => setForm2040(f => ({ ...f, [k]: v }));
@@ -230,10 +215,10 @@ export default function AnaliseSolo2040Form({ dados, onSave, saving }) {
     onSave(data);
   };
 
-  // Chamado pelo importador: preenche diretamente o estado form2040
+  // Chamado pelo importador: preenche diretamente o estado form2040 — igual ao 0-20 cm
   const handleImportado = (dadosImportados) => {
     setSemAnalise(false);
-    setForm2040(toFormState(dadosImportados));
+    setForm2040({ ...empty2040(), ...dadosImportados });
   };
 
   return (
