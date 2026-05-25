@@ -1,0 +1,100 @@
+{
+  "name": "AnaliseSolo2040",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talh\u00e3o"
+    },
+    "talhao_nome": {
+      "type": "string",
+      "description": "Nome do talh\u00e3o"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra agr\u00edcola (ex: 2026/2027)"
+    },
+    "data_analise": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da an\u00e1lise"
+    },
+    "ph": {
+      "type": "number",
+      "description": "pH"
+    },
+    "calcio": {
+      "type": "number",
+      "description": "C\u00e1lcio \u2014 Ca (cmolc/dm\u00b3)"
+    },
+    "magnesio": {
+      "type": "number",
+      "description": "Magn\u00e9sio \u2014 Mg (cmolc/dm\u00b3)"
+    },
+    "potassio": {
+      "type": "number",
+      "description": "Pot\u00e1ssio \u2014 K (mg/dm\u00b3)"
+    },
+    "aluminio": {
+      "type": "number",
+      "description": "Alum\u00ednio \u2014 Al (cmolc/dm\u00b3)"
+    },
+    "h_al": {
+      "type": "number",
+      "description": "Acidez potencial \u2014 H+Al (cmolc/dm\u00b3)"
+    },
+    "sb": {
+      "type": "number",
+      "description": "Soma de Bases \u2014 SB (cmolc/dm\u00b3)"
+    },
+    "ctc": {
+      "type": "number",
+      "description": "CTC (cmolc/dm\u00b3)"
+    },
+    "saturacao_bases": {
+      "type": "number",
+      "description": "V% \u2014 Satura\u00e7\u00e3o de Bases"
+    },
+    "fosforo": {
+      "type": "number",
+      "description": "F\u00f3sforo \u2014 P (mg/dm\u00b3)"
+    },
+    "zinco": {
+      "type": "number",
+      "description": "Zinco \u2014 Zn (mg/dm\u00b3)"
+    },
+    "cobre": {
+      "type": "number",
+      "description": "Cobre \u2014 Cu (mg/dm\u00b3)"
+    },
+    "manganes": {
+      "type": "number",
+      "description": "Mangan\u00eas \u2014 Mn (mg/dm\u00b3)"
+    },
+    "boro": {
+      "type": "number",
+      "description": "Boro \u2014 B (mg/dm\u00b3)"
+    },
+    "enxofre": {
+      "type": "number",
+      "description": "Enxofre \u2014 S (mg/dm\u00b3)"
+    },
+    "materia_organica": {
+      "type": "number",
+      "description": "Mat\u00e9ria Org\u00e2nica \u2014 MO (dag/kg)"
+    },
+    "observacoes": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "talhao_id",
+    "safra"
+  ]
+}

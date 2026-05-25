@@ -90,66 +90,6 @@
     },
     "observacoes": {
       "type": "string"
-    },
-    "ph_2040": {
-      "type": "number",
-      "description": "pH \u2014 camada 20-40 cm"
-    },
-    "materia_organica_2040": {
-      "type": "number",
-      "description": "Mat\u00e9ria Org\u00e2nica \u2014 20-40 cm"
-    },
-    "fosforo_2040": {
-      "type": "number",
-      "description": "F\u00f3sforo (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "potassio_2040": {
-      "type": "number",
-      "description": "Pot\u00e1ssio (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "calcio_2040": {
-      "type": "number",
-      "description": "C\u00e1lcio (cmolc/dm\u00b3) \u2014 20-40 cm"
-    },
-    "magnesio_2040": {
-      "type": "number",
-      "description": "Magn\u00e9sio (cmolc/dm\u00b3) \u2014 20-40 cm"
-    },
-    "enxofre_2040": {
-      "type": "number",
-      "description": "Enxofre (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "boro_2040": {
-      "type": "number",
-      "description": "Boro (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "zinco_2040": {
-      "type": "number",
-      "description": "Zinco (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "cobre_2040": {
-      "type": "number",
-      "description": "Cobre (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "manganes_2040": {
-      "type": "number",
-      "description": "Mangan\u00eas (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "ferro_2040": {
-      "type": "number",
-      "description": "Ferro (mg/dm\u00b3) \u2014 20-40 cm"
-    },
-    "ctc_2040": {
-      "type": "number",
-      "description": "CTC \u2014 20-40 cm"
-    },
-    "saturacao_bases_2040": {
-      "type": "number",
-      "description": "V% (Satura\u00e7\u00e3o de Bases) \u2014 20-40 cm"
-    },
-    "observacoes_2040": {
-      "type": "string",
-      "description": "Observa\u00e7\u00f5es \u2014 20-40 cm"
     }
   },
   "required": [

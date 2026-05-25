@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Sprout, ChevronDown, ChevronUp, Search, FlaskConical, Calculator, Package, ShoppingCart, ClipboardCheck, FileDown } from 'lucide-react';
 import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
+import AnaliseSolo2040Form from '@/components/adubacao/AnaliseSolo2040Form';
 import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
 import PlanoAplicacoes from '@/components/adubacao/PlanoAplicacoes';
 import AbaPlanejamento from '@/components/adubacao/AbaPlanejamento';
@@ -27,7 +28,7 @@ const ABAS = [
 ];
 
 // ── TalhaoRow — expandível, usado nas abas Análise e Planejamento ─────────────
-function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onSavePlano, isAnaliseSaving, isPlanSaving, abaInterna, onEnviarPlanejamento }) {
+function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSaveAnalise, onSaveAnalise2040, onSavePlano, isAnaliseSaving, isAnalise2040Saving, isPlanSaving, abaInterna, onEnviarPlanejamento }) {
   const [aberto, setAberto] = useState(false);
   const temDados = !!(analise || plano);
 
@@ -56,6 +57,7 @@ function TalhaoRow({ talhao, produtor, safra, analise, plano, onSaveAnalise, onS
             <>
               <DadosTalhaoCard talhao={talhao} produtor={produtor} />
               <AnaliseSoloForm dados={analise} onSave={onSaveAnalise} saving={isAnaliseSaving} />
+              <AnaliseSolo2040Form dados={analise2040} onSave={onSaveAnalise2040} saving={isAnalise2040Saving} />
               <RecomendacaoNPK analise={analise} talhao={talhao} dados={plano} onSave={onSavePlano} saving={isPlanSaving} onEnviarPlanejamento={onEnviarPlanejamento} />
             </>
           )}
@@ -83,6 +85,7 @@ export default function Adubacao() {
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
   const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
   const { data: analises = [] } = useQuery({ queryKey: ['analises_solo'], queryFn: () => base44.entities.AnaliseSolo.list() });
+  const { data: analises2040 = [] } = useQuery({ queryKey: ['analises_solo_2040'], queryFn: () => base44.entities.AnaliseSolo2040.list() });
   const { data: planos = [] } = useQuery({ queryKey: ['planos_adubacao'], queryFn: () => base44.entities.PlanoAdubacao.list() });
 
   const produtor = useMemo(() => produtores.find(p => p.id === produtorId) || null, [produtores, produtorId]);
@@ -103,6 +106,18 @@ export default function Adubacao() {
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
+  // ── Mutations Análise 20-40 ──────────────────────────────────────────────────
+  const analise2040Create = useMutation({
+    mutationFn: data => base44.entities.AnaliseSolo2040.create(data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_solo_2040'] }); toast({ title: 'Análise 20–40 cm salva!' }); },
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
+  });
+  const analise2040Update = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.AnaliseSolo2040.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_solo_2040'] }); toast({ title: 'Análise 20–40 cm atualizada!' }); },
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
+  });
+
   // ── Mutations Plano ──────────────────────────────────────────────────────────
   const planoCreate = useMutation({
     mutationFn: data => base44.entities.PlanoAdubacao.create(data),
@@ -117,13 +132,20 @@ export default function Adubacao() {
 
   // ── Handlers por talhão ──────────────────────────────────────────────────────
   const getSaveHandlers = (talhao) => {
-    const analise = safra ? analises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null : null;
-    const plano = safra ? planos.find(p => p.talhao_id === talhao.id && p.safra === safra) || null : null;
+    const analise     = safra ? analises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null : null;
+    const analise2040 = safra ? analises2040.find(a => a.talhao_id === talhao.id && a.safra === safra) || null : null;
+    const plano       = safra ? planos.find(p => p.talhao_id === talhao.id && p.safra === safra) || null : null;
 
     const handleSaveAnalise = (data) => {
       const payload = { ...data, codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra };
       if (analise) analiseUpdate.mutate({ id: analise.id, data: payload });
       else analiseCreate.mutate(payload);
+    };
+
+    const handleSaveAnalise2040 = (data) => {
+      const payload = { ...data, codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra };
+      if (analise2040) analise2040Update.mutate({ id: analise2040.id, data: payload });
+      else analise2040Create.mutate(payload);
     };
 
     const handleSavePlano = (partialData) => {
@@ -132,7 +154,7 @@ export default function Adubacao() {
       else planoCreate.mutate({ ...base, ...partialData });
     };
 
-    return { analise, plano, handleSaveAnalise, handleSavePlano };
+    return { analise, analise2040, plano, handleSaveAnalise, handleSaveAnalise2040, handleSavePlano };
   };
 
   // Handler especial para compras (salva em plano específico por id)
@@ -141,7 +163,8 @@ export default function Adubacao() {
   };
 
   const pronto = produtor && safra;
-  const isAnaliseSaving = analiseCreate.isPending || analiseUpdate.isPending;
+  const isAnaliseSaving      = analiseCreate.isPending || analiseUpdate.isPending;
+  const isAnalise2040Saving  = analise2040Create.isPending || analise2040Update.isPending;
   const isPlanSaving = planoCreate.isPending || planoUpdate.isPending;
 
   // Para abas de Execução, usa o primeiro talhão filtrado como contexto (ou o selecionado)
@@ -245,7 +268,7 @@ export default function Adubacao() {
                   </div>
                 )}
                 {talhoesFiltrados.map(talhao => {
-                  const { analise, plano, handleSaveAnalise, handleSavePlano } = getSaveHandlers(talhao);
+                  const { analise, analise2040, plano, handleSaveAnalise, handleSaveAnalise2040, handleSavePlano } = getSaveHandlers(talhao);
                   const handleEnviarCalagem = (dados) => {
                     const calagemAtual = plano?.calagem_recomendada || [];
                     handleSavePlano({ calagem_recomendada: [...calagemAtual.filter(c => c.tipo !== 'calagem'), dados] });
@@ -257,10 +280,13 @@ export default function Adubacao() {
                       produtor={produtor}
                       safra={safra}
                       analise={analise}
+                      analise2040={analise2040}
                       plano={plano}
                       onSaveAnalise={handleSaveAnalise}
+                      onSaveAnalise2040={handleSaveAnalise2040}
                       onSavePlano={handleSavePlano}
                       isAnaliseSaving={isAnaliseSaving}
+                      isAnalise2040Saving={isAnalise2040Saving}
                       isPlanSaving={isPlanSaving}
                       abaInterna="analise"
                       onEnviarPlanejamento={handleEnviarCalagem}
