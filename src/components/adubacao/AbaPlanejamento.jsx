@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw } from 'lucide-react';
-import { calcN, classificarP, classificarK, calcB, getDosesBase, classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
+import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas } from '@/lib/tabelasNutricionais';
 import { useToast } from '@/components/ui/use-toast';
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -35,29 +35,37 @@ function getMetros(talhao) {
   return 0;
 }
 
-function calcRecomendacao(analise, plano) {
+// analise2040 opcional — para soma de camadas K (igual ao RecomendacaoNPK)
+function calcRecomendacao(analise, plano, analise2040) {
   if (!analise && !plano) return null;
   const safrAnt = plano?.safra_anterior_sc_ha;
   const safrEst = plano?.safra_estimada_sc_ha;
   const media = safrAnt && safrEst ? (Number(safrAnt) + Number(safrEst)) / 2 : null;
   const nCalc = calcN(safrAnt, safrEst);
   const dosesBase = getDosesBase(media);
-  const classP  = analise?.fosforo  != null ? classificarP(analise.fosforo)  : null;
-  const classK  = analise?.potassio != null ? classificarK(analise.potassio) : null;
-  const calcBoro = analise?.boro    != null ? calcB(analise.boro)            : null;
-  const classZn  = analise?.zinco   != null ? classificarZn(analise.zinco)   : null;
-  const classCu  = analise?.cobre   != null ? classificarCu(analise.cobre)   : null;
-  const classMn  = analise?.manganes!= null ? classificarMn(analise.manganes): null;
+  const classP   = analise?.fosforo  != null ? classificarP(analise.fosforo)  : null;
+  const calcBoro = analise?.boro     != null ? calcB(analise.boro)            : null;
+  const classZn  = analise?.zinco    != null ? classificarZn(analise.zinco)   : null;
+  const classCu  = analise?.cobre    != null ? classificarCu(analise.cobre)   : null;
+  const classMn  = analise?.manganes != null ? classificarMn(analise.manganes): null;
+
+  // K — usa calcKSomaCamadas (converte mmolc→mg/dm³ internamente, igual ao RecomendacaoNPK)
+  const kDecisao = analise?.potassio != null
+    ? calcKSomaCamadas(analise.potassio, analise2040?.potassio, media, 'bom')
+    : null;
+  const doseKBase = kDecisao?.classK && dosesBase.K != null
+    ? kDecisao.classK.dispensar ? 0 : Math.round(dosesBase.K * kDecisao.classK.fator)
+    : null;
+  const doseK = kDecisao?.dispensar ? 0 : doseKBase;
+
   return {
     N:  nCalc?.dose ?? null,
     P:  classP  ? (classP.dispensar  ? 0 : Math.round(dosesBase.P * classP.fator)) : null,
-    K:  classK  ? (classK.dispensar  ? 0 : Math.round(dosesBase.K * classK.fator)) : null,
+    K:  doseK,
     B:  calcBoro ? (calcBoro.dispensar ? 0 : calcBoro.dose) : null,
-    // Micronutrientes — ação (Aplicar / Avaliar / Dispensar)
     Zn: classZn ? classZn.acao  : null,
     Cu: classCu ? classCu.acao  : null,
     Mn: classMn ? classMn.acao  : null,
-    // Secundários — valor direto da análise
     Ca: analise?.calcio    != null ? analise.calcio    : null,
     Mg: analise?.magnesio  != null ? analise.magnesio  : null,
     S:  analise?.enxofre   != null ? analise.enxofre   : null,
@@ -318,7 +326,7 @@ function LinhanutRec({ nutriente, recKgHa, talhao, todos, linhaState, onChange }
 }
 
 // ── Componente principal ────────────────────────────────────────────────────────
-export default function AbaPlanejamento({ produtor, safra, talhoes, analises, planos, saving, onSavePlano }) {
+export default function AbaPlanejamento({ produtor, safra, talhoes, analises, analises2040, planos, saving, onSavePlano }) {
   const [talhaoId, setTalhaoId] = useState(null);
   const [linhasState, setLinhasState] = useState({});
   // Rastreia qual ctxKey está atualmente carregado para evitar sobrescrita
@@ -356,10 +364,11 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
     setTalhaoId(talhoesProdutor[0]?.id || null);
   }, [produtor?.id]);
 
-  const talhao  = useMemo(() => talhoesProdutor.find(t => t.id === talhaoId) || null, [talhoesProdutor, talhaoId]);
-  const analise = useMemo(() => talhao && safra ? analises.find(a => a.talhao_id===talhao.id && a.safra===safra)||null : null, [analises, talhao, safra]);
-  const plano   = useMemo(() => talhao && safra ? planos.find(p => p.talhao_id===talhao.id && p.safra===safra)||null : null, [planos, talhao, safra]);
-  const rec     = useMemo(() => calcRecomendacao(analise, plano), [analise, plano]);
+  const talhao     = useMemo(() => talhoesProdutor.find(t => t.id === talhaoId) || null, [talhoesProdutor, talhaoId]);
+  const analise    = useMemo(() => talhao && safra ? analises.find(a => a.talhao_id===talhao.id && a.safra===safra)||null : null, [analises, talhao, safra]);
+  const analise2040obj = useMemo(() => talhao && safra && analises2040 ? analises2040.find(a => a.talhao_id===talhao.id && a.safra===safra)||null : null, [analises2040, talhao, safra]);
+  const plano      = useMemo(() => talhao && safra ? planos.find(p => p.talhao_id===talhao.id && p.safra===safra)||null : null, [planos, talhao, safra]);
+  const rec        = useMemo(() => calcRecomendacao(analise, plano, analise2040obj), [analise, plano, analise2040obj]);
   const metros  = useMemo(() => getMetros(talhao), [talhao]);
 
   // Registros da BasePlanejamentoAdubacao para o contexto atual
@@ -378,20 +387,16 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
   // ── Carregar estado das linhas ao mudar contexto ────────────────────────────
   // REGRA: dado salvo na BasePlanejamentoAdubacao SEMPRE tem prioridade.
   // Sugestão automática só é usada quando NÃO há nenhum registro salvo.
+  // Re-executa sempre que o contexto (produtor/talhão/safra) ou os registros salvos mudarem.
   useEffect(() => {
     if (!talhao || !todos.length) return;
-    // Evitar re-carregar o mesmo contexto (troca de aba e volta)
     if (ctxKeyCarregado.current === ctxKey) return;
     ctxKeyCarregado.current = ctxKey;
 
     const novoState = {};
-
     NUTRIENTES_CHAVE.forEach(n => {
-      // Procura registro salvo para este nutriente
       const reg = registrosSalvos.find(r => r.nutriente_key === n.key);
-
       if (reg) {
-        // ── Dado salvo existe: carregar exatamente o que foi salvo ──
         const numAplic = reg.num_aplic || 1;
         novoState[n.key] = {
           produtoId: 'produto_id' in reg ? reg.produto_id : undefined,
@@ -402,7 +407,6 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
           observacoes: reg.observacoes ?? '',
         };
       } else {
-        // ── Sem dado salvo: inicializar com sugestão automática ──
         const melhor = melhorProduto(todos, n.key);
         novoState[n.key] = {
           produtoId: melhor?.id || null,
@@ -414,12 +418,11 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
         };
       }
     });
-
     setLinhasState(novoState);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxKey, registrosSalvos.length, todos.length]);
 
-  // Resetar ctxKeyCarregado quando contexto muda, para forçar re-leitura
+  // Resetar guard ao mudar contexto para forçar re-leitura
   useEffect(() => {
     ctxKeyCarregado.current = null;
   }, [ctxKey]);

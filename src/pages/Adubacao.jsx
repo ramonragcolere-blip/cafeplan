@@ -332,6 +332,7 @@ export default function Adubacao() {
                 safra={safra}
                 talhoes={talhoes}
                 analises={analises}
+                analises2040={analises2040}
                 planos={planos}
                 saving={isPlanSaving}
                 onSavePlano={(talhao, partialData) => {
