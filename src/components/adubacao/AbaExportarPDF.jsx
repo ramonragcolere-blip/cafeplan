@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { FileDown, Loader2, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { calcN, classificarP, classificarK, calcB, getDosesBase } from '@/lib/tabelasNutricionais';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -26,19 +27,42 @@ function getMeses(meses) {
   return flat.filter(Boolean).join(', ');
 }
 
+// Calcula dose do nutriente a partir da análise de solo (fallback quando dose_rec_manual vazio)
+function calcDoseNutriFromAnalise(nutrienteKey, analise, planoLegado) {
+  if (!analise) return null;
+  const safrAnt = planoLegado?.safra_anterior_sc_ha;
+  const safrEst = planoLegado?.safra_estimada_sc_ha;
+  const media = safrAnt && safrEst ? (Number(safrAnt) + Number(safrEst)) / 2 : null;
+  const nCalc    = calcN(safrAnt, safrEst);
+  const dosesBase = getDosesBase(media);
+
+  if (nutrienteKey === 'n_pct')    return nCalc?.dose ?? null;
+  if (nutrienteKey === 'p2o5_pct') {
+    const c = analise.fosforo  != null ? classificarP(analise.fosforo)  : null;
+    return c ? (c.dispensar ? 0 : Math.round(dosesBase.P * c.fator)) : null;
+  }
+  if (nutrienteKey === 'k2o_pct') {
+    const c = analise.potassio != null ? classificarK(analise.potassio) : null;
+    return c ? (c.dispensar ? 0 : Math.round(dosesBase.K * c.fator)) : null;
+  }
+  if (nutrienteKey === 'b_pct') {
+    const c = analise.boro != null ? calcB(analise.boro) : null;
+    return c ? (c.dispensar ? 0 : c.dose) : null;
+  }
+  return null;
+}
+
 // Dado um registro de BasePlanejamentoAdubacao e o produto encontrado,
 // calcula a dose REAL do produto (kg/ha) e demais métricas.
-function calcularDoseProduto(plan, produto, talhao) {
+function calcularDoseProduto(plan, produto, talhao, analise, planoLegado) {
   const area       = talhao?.area_ha || 0;
   const numPlantas = talhao?.num_plantas || 0;
   const metros     = getMetros(talhao);
 
-  // dose_rec_manual = dose do NUTRIENTE em kg/ha
-  const doseNutriHa = parseFloat(plan.dose_rec_manual) || 0;
-  if (!doseNutriHa) return null;
-
   // Para calagem: dose_rec_manual JÁ é a dose do produto
   if (plan.nutriente_key === 'calagem') {
+    const doseNutriHa = parseFloat(plan.dose_rec_manual) || 0;
+    if (!doseNutriHa) return null;
     const totalKg = area > 0 ? Math.round(doseNutriHa * area) : null;
     return {
       doseProdHa : doseNutriHa,
@@ -48,16 +72,21 @@ function calcularDoseProduto(plan, produto, talhao) {
     };
   }
 
-  // Para NPK/B: precisa da % do nutriente no produto para converter
-  if (!produto) return { doseProdHa: doseNutriHa, totalKg: area > 0 ? Math.round(doseNutriHa * area) : null, gPlanta: null, gMetro: null };
+  // Para NPK/B: dose_rec_manual é a dose do NUTRIENTE em kg/ha
+  // Se vazio, tenta calcular a partir da análise de solo
+  let doseNutriHa = parseFloat(plan.dose_rec_manual);
+  if (!doseNutriHa || isNaN(doseNutriHa)) {
+    doseNutriHa = calcDoseNutriFromAnalise(plan.nutriente_key, analise, planoLegado) || 0;
+  }
+  if (!doseNutriHa) return null;
+
+  if (!produto) return null;
 
   const pctNut = parseFloat(produto[plan.nutriente_key]) || 0;
-  // Se o produto não tem o nutriente cadastrado, usa a dose direta (evita divisão por zero)
-  const doseProdHa = pctNut > 0
-    ? Math.round((doseNutriHa / (pctNut / 100)) * 10) / 10
-    : doseNutriHa;
+  if (!pctNut) return null; // produto não tem esse nutriente cadastrado
 
-  const totalKg = area > 0 ? Math.round(doseProdHa * area) : null;
+  const doseProdHa = Math.round((doseNutriHa / (pctNut / 100)) * 10) / 10;
+  const totalKg    = area > 0 ? Math.round(doseProdHa * area) : null;
   return {
     doseProdHa,
     totalKg,
@@ -83,7 +112,7 @@ function filtrarLinhasValidas(plans) {
 
 // ── Geração do PDF ─────────────────────────────────────────────────────────────
 
-function gerarPDFProfissional(produtor, safra, talhoesProdutor, planejamentos, todosProdutos) {
+function gerarPDFProfissional(produtor, safra, talhoesProdutor, planejamentos, todosProdutos, analises = [], planosLegado = []) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const PW = 210;
   const PH = 297;
@@ -209,8 +238,10 @@ function gerarPDFProfissional(produtor, safra, talhoesProdutor, planejamentos, t
 
     // ── Itens do planejamento ──
     plansTalhao.forEach((plan, idx) => {
-      const produto = todosProdutos.find(p => p.id === plan.produto_id) || null;
-      const doses   = calcularDoseProduto(plan, produto, talhao);
+      const produto    = todosProdutos.find(p => p.id === plan.produto_id) || null;
+      const analise    = analises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
+      const planoLeg   = planosLegado.find(p => p.talhao_id === talhao.id && p.safra === safra) || null;
+      const doses      = calcularDoseProduto(plan, produto, talhao, analise, planoLeg);
       const isCalagem = plan.nutriente_key === 'calagem';
       const meses     = getMeses(plan.meses);
       const numAplic  = plan.num_aplic || 1;
@@ -342,6 +373,17 @@ export default function AbaExportarPDF({ produtor, safra, talhoes }) {
 
   const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
   const { data: fontesSimples = [] }  = useQuery({ queryKey: ['fontes_simples'],  queryFn: () => base44.entities.FonteSimples.list() });
+  // Análises e planos legados para fallback de cálculo quando dose_rec_manual está vazio
+  const { data: analises = [] } = useQuery({
+    queryKey: ['analises_solo_pdf', codigoProdutor],
+    queryFn: () => codigoProdutor ? base44.entities.AnaliseSolo.filter({ codigo_produtor: codigoProdutor }) : Promise.resolve([]),
+    enabled: !!codigoProdutor,
+  });
+  const { data: planosLegado = [] } = useQuery({
+    queryKey: ['planos_legado_pdf', codigoProdutor],
+    queryFn: () => codigoProdutor ? base44.entities.PlanoAdubacao.filter({ codigo_produtor: codigoProdutor }) : Promise.resolve([]),
+    enabled: !!codigoProdutor,
+  });
 
   const todosProdutos = useMemo(() => [
     ...fertilizantes.map(f => ({ ...f })),
@@ -358,7 +400,7 @@ export default function AbaExportarPDF({ produtor, safra, talhoes }) {
     if (!produtor || !safra) return;
     setGerando(true);
     try {
-      gerarPDFProfissional(produtor, safra, talhoesProdutor, planejamentos, todosProdutos);
+      gerarPDFProfissional(produtor, safra, talhoesProdutor, planejamentos, todosProdutos, analises, planosLegado);
     } finally {
       setGerando(false);
     }

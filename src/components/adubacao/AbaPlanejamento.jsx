@@ -432,27 +432,33 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, pl
     setSalvandoBP(true);
 
     const promises = NUTRIENTES_CHAVE.map(async n => {
-      const linha = linhasState[n.key];
-      if (!linha) return;
+    const linha = linhasState[n.key];
+    if (!linha) return;
 
-      const produto = todos.find(p => p.id === linha.produtoId) || null;
-      const payload = {
-        codigo_produtor: produtor.codigo,
-        safra,
-        talhao_id: talhao.id,
-        talhao_nome: talhao.nome,
-        nutriente_key: n.key,
-        nutriente_label: n.label,
-        // produto_id: null = "Nenhum produto" explícito; undefined = não selecionado
-        produto_id: linha.produtoId !== undefined ? linha.produtoId : null,
-        produto_nome: linha.produtoId === null ? 'Nenhum produto' : (produto?.nome || null),
-        dose_rec_manual: linha.doseRecManual,
-        num_aplic: linha.numAplic,
-        pcts: linha.pcts,
-        meses: linha.meses,
-        observacoes: linha.observacoes,
-        status: 'planejado',
-      };
+    const produto = todos.find(p => p.id === linha.produtoId) || null;
+
+    // Dose efetiva do NUTRIENTE (kg/ha): manual se preenchida, senão usa a recomendação calculada
+    const doseNutriHa = linha.doseRecManual !== ''
+      ? linha.doseRecManual
+      : (rec?.[n.recKey] != null ? String(rec[n.recKey]) : '');
+
+    const payload = {
+      codigo_produtor: produtor.codigo,
+      safra,
+      talhao_id: talhao.id,
+      talhao_nome: talhao.nome,
+      nutriente_key: n.key,
+      nutriente_label: n.label,
+      // produto_id: null = "Nenhum produto" explícito; undefined = não selecionado
+      produto_id: linha.produtoId !== undefined ? linha.produtoId : null,
+      produto_nome: linha.produtoId === null ? 'Nenhum produto' : (produto?.nome || null),
+      dose_rec_manual: doseNutriHa,
+      num_aplic: linha.numAplic,
+      pcts: linha.pcts,
+      meses: linha.meses,
+      observacoes: linha.observacoes,
+      status: 'planejado',
+    };
 
       const existente = registrosSalvos.find(r => r.nutriente_key === n.key);
       if (existente) {
