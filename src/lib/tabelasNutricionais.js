@@ -192,27 +192,29 @@ export const META_K = {
 };
 
 // Decisão de K com soma das duas camadas
-// Retorna: { kTotal, metaUsada, metaLabel, dispensar, deficit, classK0020 }
+// k0020 e k2040 são valores da análise em mmolc/dm³
+// Internamente converte para mg/dm³ (× 39,1) para classificação e comparação com META_K
 export function calcKSomaCamadas(k0020, k2040, mediaBienal, metaNivel = 'bom') {
-  const k1 = Number(k0020) || 0;
-  const k2 = Number(k2040) || 0;
+  // Converter mmolc/dm³ → mg/dm³ para classificação e comparação
+  const k1mg = k0020 != null ? Number(k0020) * 39.1 : 0;
+  const k2mg = k2040 != null ? Number(k2040) * 39.1 : 0;
   const ambas = k0020 != null && k2040 != null;
-  const kBase = ambas ? k1 + k2 : k1;
+  const kBase = ambas ? k1mg + k2mg : k1mg;
   const meta = META_K[metaNivel] ?? META_K.bom;
-  const classK = classificarK(ambas ? kBase : k1);
+  const classK = classificarK(ambas ? kBase : k1mg);
+  // kTotal exposto em mg/dm³ (para exibição na tela junto com META_K em mg/dm³)
+  const kTotal = ambas ? k1mg + k2mg : k1mg;
 
   if (ambas && kBase >= meta) {
-    return { kTotal: kBase, metaUsada: meta, metaLabel: metaNivel, dispensar: true, deficit: 0, classK };
+    return { kTotal, metaUsada: meta, metaLabel: metaNivel, dispensar: true, deficit: 0, classK };
   }
 
-  // Se temos soma mas abaixo da meta, calculamos com o déficit
   if (ambas && kBase < meta) {
-    // A recomendação padrão usa k0020, mas avisamos que a soma ainda é insuficiente
-    return { kTotal: kBase, metaUsada: meta, metaLabel: metaNivel, dispensar: false, deficit: meta - kBase, classK };
+    return { kTotal, metaUsada: meta, metaLabel: metaNivel, dispensar: false, deficit: meta - kBase, classK };
   }
 
   // Sem camada 2040: comportamento original
-  return { kTotal: k1, metaUsada: meta, metaLabel: metaNivel, dispensar: classK?.dispensar ?? false, deficit: null, classK };
+  return { kTotal, metaUsada: meta, metaLabel: metaNivel, dispensar: classK?.dispensar ?? false, deficit: null, classK };
 }
 
 // Alertas informativos da camada 20-40 cm

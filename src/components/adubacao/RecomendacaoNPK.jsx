@@ -69,6 +69,8 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
     : null;
 
   // K — lógica com soma de camadas
+  // analise.potassio e analise2040.potassio estão em mmolc/dm³
+  // calcKSomaCamadas converte internamente para mg/dm³ antes de classificar
   const kDecisao = k != null
     ? calcKSomaCamadas(k, analise2040?.potassio, mediaBienal, metaK)
     : null;
@@ -165,7 +167,7 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
               {/* Sub-info soma de camadas */}
               {analise2040?.potassio != null && k != null && (
                 <span className="text-xs text-muted-foreground">
-                  Soma: {k} + {analise2040.potassio} = <strong>{kDecisao?.kTotal?.toFixed(0)} mg/dm³</strong>
+                  Soma: {(k * 39.1).toFixed(0)} + {(analise2040.potassio * 39.1).toFixed(0)} = <strong>{kDecisao?.kTotal?.toFixed(0)} mg/dm³</strong>
                   {' '}(meta {metaK}: {META_K[metaK]} mg/dm³)
                 </span>
               )}
