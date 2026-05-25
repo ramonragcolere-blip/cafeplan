@@ -104,6 +104,81 @@ export function classificarK(k) {
   return { classe: 'Alto', fator: 0, dispensar: true };
 }
 
+// Classificação de Zinco (Zn) — mg/dm³
+export function classificarZn(zn) {
+  const v = Number(zn);
+  if (isNaN(v)) return null;
+  if (v < 0.6)  return { classe: 'Baixo',  recomendacao: 'Aplicar 2–4 kg Zn/ha' };
+  if (v <= 1.2) return { classe: 'Médio',  recomendacao: 'Aplicar 1–2 kg Zn/ha' };
+  if (v <= 2.4) return { classe: 'Bom',    recomendacao: 'Sem aplicação necessária' };
+  return             { classe: 'Alto',   recomendacao: 'Dispensar — avaliar fitotoxidez' };
+}
+
+// Classificação de Cobre (Cu) — mg/dm³
+export function classificarCu(cu) {
+  const v = Number(cu);
+  if (isNaN(v)) return null;
+  if (v < 0.4)  return { classe: 'Baixo',  recomendacao: 'Aplicar 1–3 kg Cu/ha' };
+  if (v <= 0.8) return { classe: 'Médio',  recomendacao: 'Aplicar 0.5–1 kg Cu/ha' };
+  if (v <= 1.5) return { classe: 'Bom',    recomendacao: 'Sem aplicação necessária' };
+  return             { classe: 'Alto',   recomendacao: 'Dispensar — risco de toxidez' };
+}
+
+// Classificação de Manganês (Mn) — mg/dm³
+export function classificarMn(mn) {
+  const v = Number(mn);
+  if (isNaN(v)) return null;
+  if (v < 1.5)  return { classe: 'Baixo',  recomendacao: 'Aplicar 3–5 kg Mn/ha' };
+  if (v <= 5.0) return { classe: 'Médio',  recomendacao: 'Aplicar 1–3 kg Mn/ha' };
+  if (v <= 10)  return { classe: 'Bom',    recomendacao: 'Sem aplicação necessária' };
+  return             { classe: 'Alto',   recomendacao: 'Dispensar — monitorar toxidez' };
+}
+
+// Calagem — baseada em pH e V% (saturação de bases)
+// V_desejado para cafeeiro = 60%
+// Fórmula PRNT 100%: NC = (V_desejado - V_atual) × CTC / 100  (t/ha)
+export function calcCalagem(ph, vPct, ctc) {
+  const vAtual = Number(vPct);
+  const ctcVal = Number(ctc);
+  const phVal  = Number(ph);
+
+  const resultado = {
+    ph: isNaN(phVal) ? null : phVal,
+    vAtual: isNaN(vAtual) ? null : vAtual,
+    necessidade: false,
+    nc: null,       // toneladas de corretivo/ha (PRNT 100%)
+    classe: null,   // 'Adequado' | 'Necessário'
+    observacao: '',
+  };
+
+  if (!isNaN(vAtual) && !isNaN(ctcVal) && ctcVal > 0) {
+    const V_des = 60;
+    if (vAtual >= V_des) {
+      resultado.necessidade = false;
+      resultado.classe = 'Adequado';
+      resultado.observacao = 'V% adequado para cafeeiro (≥60%)';
+    } else {
+      resultado.necessidade = true;
+      resultado.classe = 'Necessário';
+      const nc = ((V_des - vAtual) * ctcVal) / 100;
+      resultado.nc = parseFloat(nc.toFixed(2));
+      resultado.observacao = `NC = ${resultado.nc} t/ha de calcário (PRNT 100%)`;
+    }
+  } else if (!isNaN(phVal)) {
+    // fallback só por pH
+    if (phVal >= 5.5) {
+      resultado.necessidade = false;
+      resultado.classe = 'Adequado';
+      resultado.observacao = 'pH adequado (≥5,5)';
+    } else {
+      resultado.necessidade = true;
+      resultado.classe = 'Necessário';
+      resultado.observacao = 'pH abaixo do ideal — fornecer V% e CTC para calcular NC';
+    }
+  }
+  return resultado;
+}
+
 // Dose de boro
 export function calcB(b) {
   const v = Number(b);

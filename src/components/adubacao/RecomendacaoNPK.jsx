@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Save, Loader2, Calculator } from 'lucide-react';
-import { calcN, classificarP, classificarK, calcB, getDosesBase } from '@/lib/tabelasNutricionais';
+import { calcN, classificarP, classificarK, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcCalagem } from '@/lib/tabelasNutricionais';
 
 function Badge({ label, classe }) {
   const cores = {
@@ -42,9 +42,17 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
     setSafraEstimada(dados?.safra_estimada_sc_ha || '');
   }, [dados?.id]);
 
-  const p = analise?.fosforo;
-  const k = analise?.potassio;
-  const b = analise?.boro;
+  const p   = analise?.fosforo;
+  const k   = analise?.potassio;
+  const b   = analise?.boro;
+  const zn  = analise?.zinco;
+  const cu  = analise?.cobre;
+  const mn  = analise?.manganes;
+
+  const classZn   = zn != null ? classificarZn(zn) : null;
+  const classCu   = cu != null ? classificarCu(cu) : null;
+  const classMn   = mn != null ? classificarMn(mn) : null;
+  const calagem   = calcCalagem(analise?.ph, analise?.saturacao_bases, analise?.ctc);
   const mediaBienal = safraAnterior && safraEstimada
     ? (Number(safraAnterior) + Number(safraEstimada)) / 2
     : null;
@@ -180,6 +188,53 @@ export default function RecomendacaoNPK({ analise, talhao, dados, onSave, saving
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Micronutrientes: Zn, Cu, Mn */}
+        {(classZn || classCu || classMn) && (
+          <div className="lg:col-span-2 bg-muted/20 rounded-xl p-4 border border-border/50">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Micronutrientes</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { label: 'Zn (Zinco)', valor: zn, result: classZn },
+                { label: 'Cu (Cobre)', valor: cu, result: classCu },
+                { label: 'Mn (Manganês)', valor: mn, result: classMn },
+              ].filter(x => x.result).map(({ label, valor, result }) => (
+                <div key={label} className="bg-white rounded-lg p-3 border border-border/40">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium">{label}</span>
+                    <Badge classe={result.classe} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{valor} mg/dm³</p>
+                  <p className="text-xs text-foreground font-medium mt-1">{result.recomendacao}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Calagem */}
+        {(calagem.classe || calagem.observacao) && (
+          <div className={`lg:col-span-2 rounded-xl p-4 border ${calagem.necessidade ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Calagem</p>
+            <div className="flex flex-wrap items-center gap-3">
+              {calagem.classe && (
+                <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${calagem.necessidade ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                  {calagem.classe}
+                </span>
+              )}
+              {analise?.ph != null && (
+                <span className="text-xs text-muted-foreground">pH: <strong>{analise.ph}</strong></span>
+              )}
+              {calagem.vAtual != null && (
+                <span className="text-xs text-muted-foreground">V%: <strong>{calagem.vAtual}%</strong> → meta: 60%</span>
+              )}
+              {calagem.nc != null && (
+                <span className="text-sm font-bold text-amber-800">NC = {calagem.nc} t/ha</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">{calagem.observacao}</p>
           </div>
         )}
       </div>
