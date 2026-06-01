@@ -4,12 +4,12 @@ import { ptBR } from 'date-fns/locale';
 
 function Card({ label, value, sub }) {
   return (
-    <div className="bg-primary/5 border border-primary/15 rounded-xl p-4 text-center">
+    <div className="bg-primary/5 border border-primary/15 rounded-xl p-4 text-center my-1">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className="text-xl font-bold mt-1 text-foreground">{value}</p>
       {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-    </div>
-  );
+    </div>);
+
 }
 
 function fmt(n, decimals = 0) {
@@ -19,13 +19,13 @@ function fmt(n, decimals = 0) {
 
 function fmtDate(d) {
   if (!d) return '—';
-  try { return format(new Date(d), 'dd/MM/yyyy', { locale: ptBR }); } catch { return '—'; }
+  try {return format(new Date(d), 'dd/MM/yyyy', { locale: ptBR });} catch {return '—';}
 }
 
 export default function ResumoProdutor({ planejamento }) {
   const {
     totalLitros, totalMedidas, totalDias, totalSemanas,
-    totalSacas, totalCusto, dataInicioProdutor, dataFimGeral,
+    totalSacas, totalCusto, dataInicioProdutor, dataFimGeral
   } = planejamento;
 
   return (
@@ -43,6 +43,6 @@ export default function ResumoProdutor({ planejamento }) {
         <Card label="Data Início" value={fmtDate(dataInicioProdutor)} />
         <Card label="Data Fim Est." value={fmtDate(dataFimGeral)} />
       </div>
-    </div>
-  );
+    </div>);
+
 }
