@@ -47,7 +47,7 @@ export default function Sidebar() {
               <Leaf className="w-5 h-5 text-sidebar-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-bold text-lg leading-tight">Controle </h1>
+              <h1 className="font-bold text-lg leading-tight">G</h1>
               <p className="text-xs text-sidebar-foreground/60">Planejamento de Café</p>
             </div>
           </div>
