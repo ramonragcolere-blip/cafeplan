@@ -4,7 +4,7 @@ import { ptBR } from 'date-fns/locale';
 
 function Card({ label, value, sub }) {
   return (
-    <div className="bg-primary/5 border border-primary/15 rounded-xl text-center py-4 px-6">
+    <div className="bg-primary/5 border border-primary/15 rounded-xl text-center py-4 px-2">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className="text-xl font-bold mt-1 text-foreground">{value}</p>
       {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
