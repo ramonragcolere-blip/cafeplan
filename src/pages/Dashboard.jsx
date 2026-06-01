@@ -16,9 +16,9 @@ export default function Dashboard() {
 
   const totalMedidas = talhoes.reduce((sum, t) => {
     if (!t.litros_por_pe || !t.num_plantas) return sum;
-    const prod = produtores.find(p => p.codigo === t.codigo_produtor);
+    const prod = produtores.find((p) => p.codigo === t.codigo_produtor);
     const ref = prod?.ref_medida_litros || 60;
-    return sum + (t.litros_por_pe * t.num_plantas * (t.pct_colher || 1)) / ref;
+    return sum + t.litros_por_pe * t.num_plantas * (t.pct_colher || 1) / ref;
   }, 0);
 
   const totalColhidas = lancamentos.reduce((sum, l) => sum + (l.medidas_colhidas || 0), 0);
@@ -26,7 +26,7 @@ export default function Dashboard() {
 
   // Colheita por método
   const metodoCounts = {};
-  talhoes.forEach(t => {
+  talhoes.forEach((t) => {
     if (t.metodo_colheita) {
       metodoCounts[t.metodo_colheita] = (metodoCounts[t.metodo_colheita] || 0) + 1;
     }
@@ -34,16 +34,16 @@ export default function Dashboard() {
   const metodoData = Object.entries(metodoCounts).map(([name, value]) => ({ name, value }));
 
   // Top 5 produtores por medidas
-  const topProdutores = produtores.map(p => {
-    const pLancs = lancamentos.filter(l => l.codigo_produtor === p.codigo);
+  const topProdutores = produtores.map((p) => {
+    const pLancs = lancamentos.filter((l) => l.codigo_produtor === p.codigo);
     const total = pLancs.reduce((s, l) => s + (l.medidas_colhidas || 0), 0);
     return { name: p.nome?.split(' ').slice(0, 2).join(' '), medidas: total };
-  }).sort((a, b) => b.medidas - a.medidas).slice(0, 5).filter(p => p.medidas > 0);
+  }).sort((a, b) => b.medidas - a.medidas).slice(0, 5).filter((p) => p.medidas > 0);
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
         <p className="text-muted-foreground mt-1">Visão geral da colheita de café</p>
       </div>
 
@@ -55,8 +55,8 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {metodoData.length > 0 && (
-          <div className="bg-card rounded-2xl border border-border shadow-sm p-6">
+        {metodoData.length > 0 &&
+        <div className="bg-card rounded-2xl border border-border shadow-sm p-6">
             <h3 className="font-semibold text-lg mb-4">Talhões por Método de Colheita</h3>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
@@ -67,10 +67,10 @@ export default function Dashboard() {
               </PieChart>
             </ResponsiveContainer>
           </div>
-        )}
+        }
 
-        {topProdutores.length > 0 && (
-          <div className="bg-card rounded-2xl border border-border shadow-sm p-6">
+        {topProdutores.length > 0 &&
+        <div className="bg-card rounded-2xl border border-border shadow-sm p-6">
             <h3 className="font-semibold text-lg mb-4">Top Produtores — Medidas Colhidas</h3>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={topProdutores}>
@@ -82,20 +82,20 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        )}
+        }
       </div>
 
-      {produtores.length > 0 && (
-        <ProducerProgressTable produtores={produtores} talhoes={talhoes} lancamentos={lancamentos} />
-      )}
+      {produtores.length > 0 &&
+      <ProducerProgressTable produtores={produtores} talhoes={talhoes} lancamentos={lancamentos} />
+      }
 
-      {produtores.length === 0 && (
-        <div className="bg-card rounded-2xl border border-border p-12 text-center">
+      {produtores.length === 0 &&
+      <div className="bg-card rounded-2xl border border-border p-12 text-center">
           <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-semibold mb-2">Nenhum dado cadastrado</h3>
           <p className="text-muted-foreground text-sm">Comece cadastrando produtores para ver os dados aqui.</p>
         </div>
-      )}
-    </div>
-  );
+      }
+    </div>);
+
 }
