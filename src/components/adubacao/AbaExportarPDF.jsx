@@ -306,11 +306,19 @@ function gerarPDF(produtor, safra, talhoesComBlocos) {
           sf('bold', 10, BLACK);
           doc.text(`${pi + 1}ª aplicação — ${parc.pct}%`, ML + 4, y);
           sf('normal', 10, DARK);
+          const gPeParcela = parc.kg != null && talhao.num_plantas > 0
+            ? ((parc.kg * 1000) / talhao.num_plantas).toFixed(0)
+            : null;
+          const gMetroParcela = parc.kg != null && getMetros(talhao) > 0
+            ? ((parc.kg * 1000) / getMetros(talhao)).toFixed(0)
+            : null;
           const det = [
             parc.kg != null ? fmtTotal(parc.kg) : null,
-            parc.meses ? `Meses: ${parc.meses}` : null,
-          ].filter(Boolean).join('     ');
-          if (det) doc.text(det, ML + 60, y);
+            parc.meses ? parc.meses : null,
+            gPeParcela ? `${gPeParcela} g/pé` : null,
+            gMetroParcela ? `${gMetroParcela} g/metro` : null,
+          ].filter(Boolean).join('  ·  ');
+          if (det) doc.text(det, ML + 62, y);
           y += 7;
         });
       }
