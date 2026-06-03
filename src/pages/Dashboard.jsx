@@ -95,6 +95,7 @@ export default function Dashboard() {
         talhoes={talhoes}
         lancamentos={lancamentos}
         filtroProdutorCodigo={produtorFiltro}
+        onSelecionarProdutor={setProdutorFiltro}
       />
 
       {/* Seção Adubação */}
