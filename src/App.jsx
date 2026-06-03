@@ -16,6 +16,7 @@ import ParametrosTalhoes from './pages/ParametrosTalhoes';
 import Adubacao from './pages/Adubacao';
 import BaseFertilizantes from './pages/BaseFertilizantes';
 import AplicacoesFoliares from './pages/AplicacoesFoliares';
+import Calendario from './pages/Calendario';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -52,6 +53,7 @@ const AuthenticatedApp = () => {
         <Route path="/adubacao" element={<Adubacao />} />
         <Route path="/fertilizantes" element={<BaseFertilizantes />} />
         <Route path="/foliar" element={<AplicacoesFoliares />} />
+        <Route path="/calendario" element={<Calendario />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
