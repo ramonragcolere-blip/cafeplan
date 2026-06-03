@@ -81,6 +81,8 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
   const [busca, setBusca] = useState('');
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const triggerRef = useRef(null);
+  const portalRef = useRef(null);
+  const searchRef = useRef(null);
 
   const visiveis = useMemo(() => {
     const q = busca.toLowerCase();
@@ -97,14 +99,20 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
         left: rect.left + window.scrollX,
         width: Math.max(rect.width, 320),
       });
+      // Focar o input sem causar scroll (preventScroll)
+      requestAnimationFrame(() => {
+        searchRef.current?.focus({ preventScroll: true });
+      });
     }
   }, [dropAberto]);
 
-  // Fechar ao clicar fora
+  // Fechar ao clicar fora — verifica tanto o trigger quanto o portal
   useEffect(() => {
     if (!dropAberto) return;
     const handler = (e) => {
-      if (triggerRef.current && !triggerRef.current.contains(e.target)) {
+      const clickNoTrigger = triggerRef.current?.contains(e.target);
+      const clickNoPortal = portalRef.current?.contains(e.target);
+      if (!clickNoTrigger && !clickNoPortal) {
         setDropAberto(false);
         setBusca('');
       }
@@ -113,14 +121,21 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [dropAberto]);
 
+  const selecionarProduto = (id) => {
+    onChange(id);
+    setDropAberto(false);
+    setBusca('');
+  };
+
   const dropdown = dropAberto ? ReactDOM.createPortal(
     <div
+      ref={portalRef}
       style={{ position: 'absolute', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
       className="bg-popover border border-border rounded-lg shadow-2xl overflow-hidden"
-      onMouseDown={e => e.preventDefault()}
     >
       <div className="p-2 border-b border-border">
-        <input autoFocus
+        <input
+          ref={searchRef}
           className="w-full h-9 text-sm border border-input rounded px-3 bg-background"
           placeholder="Buscar produto..."
           value={busca}
@@ -130,13 +145,15 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
       <div className="max-h-72 overflow-y-auto">
         <button type="button"
           className="w-full text-left px-4 py-2.5 hover:bg-muted/60 text-sm border-b border-border/30 text-muted-foreground"
-          onClick={() => { onChange(null); setDropAberto(false); setBusca(''); }}>
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => selecionarProduto(null)}>
           — Nenhum produto —
         </button>
         {visiveis.map(p => (
           <button key={p.id} type="button"
             className="w-full text-left px-4 py-3 hover:bg-muted/60 border-b border-border/30 last:border-0"
-            onClick={() => { onChange(p.id); setDropAberto(false); setBusca(''); }}>
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => selecionarProduto(p.id)}>
             <div className="flex items-start justify-between gap-3">
               <span className="text-sm font-medium leading-snug">{p.nome}</span>
               <span className="text-muted-foreground text-xs whitespace-nowrap shrink-0 mt-0.5">
