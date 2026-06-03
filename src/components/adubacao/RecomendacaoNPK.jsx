@@ -195,7 +195,7 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
             )}
             {kDecisao?.dispensar && (
               <span className="text-xs text-green-700 font-medium">
-                {analise2040?.potassio != null ? 'K dispensado — soma das camadas atinge a meta' : 'K dispensado pelo teor no solo'}
+                K dispensado — teor Alto (&gt;200 mg/dm³)
               </span>
             )}
           </div>
