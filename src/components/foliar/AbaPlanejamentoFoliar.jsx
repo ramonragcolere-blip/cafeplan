@@ -230,6 +230,7 @@ function AplicacaoBlock({ aplicacao, insumos, faseTalhao, onChange, onRemover, o
 
 function TalhaoPlano({ talhao, aplicacoes, insumos, onSaveAplicacao, onRemoverAplicacao, saving }) {
   const [aberto, setAberto] = useState(false);
+  console.log('[TalhaoPlano] Talhão:', talhao.nome, '| fase_atual:', talhao.fase_atual, '| objeto completo:', talhao);
   // aplicacoes locais (podem ter id=null se ainda não salvas)
   const [local, setLocal] = useState(aplicacoes);
 
