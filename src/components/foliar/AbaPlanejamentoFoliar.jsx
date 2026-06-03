@@ -66,7 +66,7 @@ function AplicacaoBlock({ aplicacao, insumos, faseTalhao, onChange, onRemover, o
         doseAuto = ins.dose_producao || '';
         campoDose = 'dose_producao';
       }
-      console.log('[AbaPlanejamentoFoliar] Fase detectada:', fase || '(vazia)', '| Campo dose:', campoDose, '| Valor:', doseAuto, '| Produto:', ins.nome);
+      console.log('[AbaPlanejamentoFoliar] faseTalhao prop:', JSON.stringify(faseTalhao), '| fase (string):', JSON.stringify(fase), '| Campo dose:', campoDose, '| Valor:', doseAuto, '| dose_producao no produto:', ins.dose_producao, '| Produto:', ins.nome);
       setDose(doseAuto);
       setUnidade(ins.unidade_aplicacao || '');
     }

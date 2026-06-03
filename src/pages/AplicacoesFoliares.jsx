@@ -27,7 +27,7 @@ export default function AplicacoesFoliares() {
   const { toast } = useToast();
 
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
-  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
+  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list(), staleTime: 0 });
   const { data: analises = [] } = useQuery({ queryKey: ['analises_foliares'], queryFn: () => base44.entities.AnaliseFoliar.list() });
   const { data: aplicacoes = [] } = useQuery({ queryKey: ['aplicacoes_foliares'], queryFn: () => base44.entities.AplicacaoFoliar.list() });
   const { data: insumos = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
