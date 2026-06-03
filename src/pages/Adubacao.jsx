@@ -82,6 +82,16 @@ function TalhaoRow({ talhao, produtor, safra, analise, analise2040, plano, onSav
               <PlanoAplicacoes dados={plano} talhao={talhao} onSave={onSavePlano} saving={isPlanSaving} />
             </>
           )}
+          <div className="flex justify-end pt-2 border-t border-border/40">
+            <button
+              type="button"
+              onClick={() => setAberto(false)}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-muted/40"
+            >
+              <ChevronUp className="w-4 h-4" />
+              Recolher talhão
+            </button>
+          </div>
         </div>
       )}
     </div>
