@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas } from '@/lib/tabelasNutricionais';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -15,6 +15,13 @@ const NUTRIENTES_CHAVE = [
   { key: 'p2o5_pct', label: 'P₂O₅', recKey: 'P' },
   { key: 'k2o_pct',  label: 'K₂O',  recKey: 'K' },
   { key: 'b_pct',    label: 'B',     recKey: 'B' },
+  { key: 'ca_pct',   label: 'Ca',    recKey: 'Ca' },
+  { key: 'mg_pct',   label: 'Mg',    recKey: 'Mg' },
+  { key: 's_pct',    label: 'S',     recKey: 'S' },
+  { key: 'zn_pct',   label: 'Zn',    recKey: 'Zn' },
+  { key: 'mn_pct',   label: 'Mn',    recKey: 'Mn' },
+  { key: 'cu_pct',   label: 'Cu',    recKey: 'Cu' },
+  { key: 'fe_pct',   label: 'Fe',    recKey: 'Fe' },
 ];
 
 const PCT_DEFAULTS = {
@@ -24,6 +31,16 @@ const PCT_DEFAULTS = {
 };
 const APLIC_LABELS = ['1ª','2ª','3ª','4ª','5ª','6ª','7ª','8ª','9ª','10ª'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+
+// Todos os campos a mostrar na composição
+const TODOS_NUTRIENTES_COMPOSICAO = [
+  { key: 'n_pct', label: 'N' }, { key: 'p2o5_pct', label: 'P₂O₅' },
+  { key: 'k2o_pct', label: 'K₂O' }, { key: 'ca_pct', label: 'Ca' },
+  { key: 'mg_pct', label: 'Mg' }, { key: 's_pct', label: 'S' },
+  { key: 'b_pct', label: 'B' }, { key: 'zn_pct', label: 'Zn' },
+  { key: 'cu_pct', label: 'Cu' }, { key: 'mn_pct', label: 'Mn' },
+  { key: 'fe_pct', label: 'Fe' },
+];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getMetros(talhao) {
@@ -35,7 +52,6 @@ function getMetros(talhao) {
   return 0;
 }
 
-// analise2040 opcional — para soma de camadas K (igual ao RecomendacaoNPK)
 function calcRecomendacao(analise, plano, analise2040) {
   if (!analise && !plano) return null;
   const safrAnt = plano?.safra_anterior_sc_ha;
@@ -49,7 +65,6 @@ function calcRecomendacao(analise, plano, analise2040) {
   const classCu  = analise?.cobre    != null ? classificarCu(analise.cobre)   : null;
   const classMn  = analise?.manganes != null ? classificarMn(analise.manganes): null;
 
-  // K — usa calcKSomaCamadas (converte mmolc→mg/dm³ internamente, igual ao RecomendacaoNPK)
   const kDecisao = analise?.potassio != null
     ? calcKSomaCamadas(analise.potassio, analise2040?.potassio, media, 'bom')
     : null;
@@ -69,6 +84,7 @@ function calcRecomendacao(analise, plano, analise2040) {
     Ca: analise?.calcio    != null ? analise.calcio    : null,
     Mg: analise?.magnesio  != null ? analise.magnesio  : null,
     S:  analise?.enxofre   != null ? analise.enxofre   : null,
+    Fe: null,
   };
 }
 
@@ -110,8 +126,8 @@ function normalizarMeses(mesArr, numAplic) {
   });
 }
 
-// ── Linha de nutriente ─────────────────────────────────────────────────────────
-function LinhanutRec({ nutriente, recKgHa, talhao, todos, linhaState, onChange }) {
+// ── Fonte individual (seletor + dose + parcelamento) ──────────────────────────
+function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, onRemover, isFirst, infoCalagem }) {
   const { produtoId, doseRecManual, numAplic, pcts, meses = [], observacoes } = linhaState;
   const produto = useMemo(() => todos.find(p => p.id === produtoId) || null, [todos, produtoId]);
   const area = talhao?.area_ha || 0;
@@ -124,6 +140,7 @@ function LinhanutRec({ nutriente, recKgHa, talhao, todos, linhaState, onChange }
 
   const [busca, setBusca] = useState('');
   const [dropAberto, setDropAberto] = useState(false);
+  const dropRef = useRef(null);
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.toLowerCase();
@@ -148,178 +165,249 @@ function LinhanutRec({ nutriente, recKgHa, talhao, todos, linhaState, onChange }
     onChange({...linhaState, numAplic:num, pcts: PCT_DEFAULTS[num]||[100], meses: Array(num).fill([])});
   };
 
-  // Mostrar linha se houver recomendação OU dose manual OU produto já escolhido (inclusive null = Nenhum)
-  const temSelecaoProduto = produtoId !== undefined;
-  if (recKgHa == null && doseRecManual === '' && !temSelecaoProduto) return null;
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    if (!dropAberto) return;
+    const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) { setDropAberto(false); setBusca(''); } };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropAberto]);
+
+  return (
+    <div className={`p-4 space-y-4 ${!isFirst ? 'border-t border-border/50 pt-4 mt-2' : ''}`}>
+      {!isFirst && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-muted-foreground">Fonte adicional</span>
+          <Button variant="ghost" size="sm" onClick={onRemover} className="h-7 text-xs text-destructive hover:text-destructive gap-1">
+            <Trash2 className="w-3.5 h-3.5" /> Remover
+          </Button>
+        </div>
+      )}
+
+      {/* Info de calagem para Ca/Mg */}
+      {infoCalagem && (
+        <div className="bg-lime-50 border border-lime-200 rounded-lg p-3 text-xs space-y-1">
+          <p className="font-semibold text-lime-800">Calagem já prevista:</p>
+          <p className="text-lime-700">
+            Produto: <strong>{infoCalagem.produtoNome}</strong> — Dose: <strong>{infoCalagem.doseHa} kg/ha</strong>
+          </p>
+          {infoCalagem.repoeKgHa != null && (
+            <p className="text-lime-700">
+              Repõe {nutriente.label}: <strong>{infoCalagem.repoeKgHa.toFixed(2)} kg/ha</strong>
+              {infoCalagem.deficitKgHa != null && infoCalagem.deficitKgHa > 0
+                ? <span className="text-amber-700 ml-2">· Déficit restante: <strong>{infoCalagem.deficitKgHa.toFixed(2)} kg/ha</strong></span>
+                : <span className="text-green-700 ml-2">· Sem déficit</span>
+              }
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div ref={dropRef} className="relative">
+          <Label className="text-xs mb-1 block">Produto</Label>
+          <button type="button"
+            className="w-full h-9 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
+            onClick={() => setDropAberto(a => !a)}>
+            <span className={produto ? 'text-foreground truncate' : (produtoId === null ? 'text-muted-foreground italic' : 'text-muted-foreground')}>
+              {produto ? produto.nome : produtoId === null ? '— Nenhum produto —' : 'Selecionar produto...'}
+            </span>
+            <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
+          </button>
+          {dropAberto && (
+            <div className="absolute z-50 top-full left-0 w-80 mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+              <div className="p-2 border-b border-border">
+                <input autoFocus className="w-full h-7 text-xs border border-input rounded px-2 bg-background"
+                  placeholder="Buscar produto..." value={busca} onChange={e => setBusca(e.target.value)} />
+              </div>
+              <div className="max-h-56 overflow-y-auto">
+                <button type="button"
+                  className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 text-muted-foreground"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { onChange({...linhaState, produtoId: null}); setDropAberto(false); setBusca(''); }}>
+                  — Nenhum produto —
+                </button>
+                {produtosFiltrados.map(p => {
+                  const pctV = parseFloat(p[nutriente.key]) || 0;
+                  return (
+                    <button key={p.id} type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 last:border-0"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => { onChange({...linhaState, produtoId: p.id}); setDropAberto(false); setBusca(''); }}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{p.nome}</span>
+                        {pctV > 0 && <span className="text-primary text-xs font-semibold">{nutriente.label}: {pctV}%</span>}
+                      </div>
+                      <div className="text-muted-foreground">{p._tipo==='formulado'?'Formulado':'Fonte Simples'}{p.fornecedor?` · ${p.fornecedor}`:''}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {produto && pctNutriente === 0 && (
+            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Produto não tem {nutriente.label} cadastrado
+            </p>
+          )}
+        </div>
+
+        {produto && (
+          <div className="bg-muted/20 rounded-lg p-3 text-xs space-y-1">
+            <p className="font-semibold text-muted-foreground mb-1">Composição:</p>
+            <div className="flex flex-wrap gap-2">
+              {TODOS_NUTRIENTES_COMPOSICAO.map(n => {
+                const v = parseFloat(produto[n.key]) || 0;
+                if (!v) return null;
+                return (
+                  <span key={n.key} className={`px-2 py-0.5 rounded-full font-medium ${n.key===nutriente.key?'bg-primary/10 text-primary':'bg-muted text-muted-foreground'}`}>
+                    {n.label}: {v}%
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Label className="text-xs shrink-0">Dose manual (kg/ha):</Label>
+        <Input type="number" value={doseRecManual}
+          onChange={e => onChange({...linhaState, doseRecManual: e.target.value})}
+          className="h-7 w-28 text-xs" placeholder={recKgHa != null ? `${recKgHa}` : 'kg/ha'} />
+        {recKgHa != null && doseRecManual === '' && (
+          <span className="text-xs text-muted-foreground">usando recomendação: {recKgHa} kg/ha</span>
+        )}
+      </div>
+
+      {dosesCalc && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-green-800 mb-3 uppercase tracking-wide">Cálculo automático</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-3">
+            {[
+              { l:'Dose produto', v:`${dosesCalc.doseHa} kg/ha` },
+              { l:'Total', v:`${dosesCalc.total} kg` },
+              { l:'Sacos 50 kg', v:`${dosesCalc.sc50} sc` },
+              { l:'Toneladas', v:`${dosesCalc.ton} t` },
+              dosesCalc.gPlanta && { l:'g/planta', v:`${dosesCalc.gPlanta} g` },
+              dosesCalc.gMetro  && { l:'g/metro',  v:`${dosesCalc.gMetro} g` },
+            ].filter(Boolean).map(x => (
+              <div key={x.l} className="bg-white rounded-lg p-2.5 border border-green-100 text-center">
+                <p className="text-xs text-muted-foreground">{x.l}</p>
+                <p className="font-bold text-sm">{x.v}</p>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-green-200 pt-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-green-800 shrink-0">Parcelamento:</span>
+              <div className="flex flex-wrap gap-1">
+                {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                  <button key={n} type="button" onClick={() => setNumAplic(n)}
+                    className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${numAplic===n?'bg-green-700 text-white border-green-700':'bg-white text-muted-foreground border-border hover:bg-muted/30'}`}>
+                    {n}x
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {Array.from({length:numAplic}).map((_,i) => {
+                const pct = parseFloat(pcts[i]) || 0;
+                const kgAplic = dosesCalc.total * (pct/100);
+                const gPlantaAplic = numPlantas>0 ? ((kgAplic*1000)/numPlantas).toFixed(1) : null;
+                const gMetroAplic  = metros>0 ? ((kgAplic*1000)/metros).toFixed(1) : null;
+                return (
+                  <div key={i} className="bg-white rounded-lg border border-green-100 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-green-700">{APLIC_LABELS[i]} Aplicação</p>
+                    <div className="flex items-center gap-2">
+                      <Input type="number" value={pcts[i]} onChange={e=>setPct(i,e.target.value)}
+                        className="h-7 w-16 text-xs" min="0" max="100" />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </div>
+                    <div className="text-xs space-y-0.5 text-muted-foreground">
+                      <div><span className="font-semibold text-foreground">{Math.round(kgAplic)} kg</span> · {(area>0?(kgAplic/area):0).toFixed(1)} kg/ha</div>
+                      <div>{(kgAplic/50).toFixed(1)} sc · {(kgAplic/1000).toFixed(3)} t</div>
+                      {gPlantaAplic && <div>{gPlantaAplic} g/planta{gMetroAplic?` · ${gMetroAplic} g/metro`:''}</div>}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Meses (até 3):</p>
+                      <div className="flex flex-wrap gap-1">
+                        {MESES.map(m => {
+                          const mesArray = Array.isArray(meses[i]) ? meses[i] : (meses[i]?[meses[i]]:[]);
+                          return (
+                            <button key={m} type="button" onClick={()=>setMes(i,m)}
+                              className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${mesArray.includes(m)?'bg-green-700 text-white border-green-700':'bg-white text-muted-foreground border-border hover:bg-green-50'}`}>
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {(() => { const a=Array.isArray(meses[i])?meses[i]:(meses[i]?[meses[i]]:[]);
+                        return a.length>0 ? <p className="text-xs text-green-700 mt-1">{a.join(', ')}</p> : null; })()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {produto && pctNutriente > 0 && !dosesCalc && (
+        <div className="bg-muted/20 rounded-xl p-4 text-xs text-muted-foreground">
+          Informe a dose recomendada (kg/ha) para calcular automaticamente.
+        </div>
+      )}
+
+      <div>
+        <Label className="text-xs mb-1 block">Observações</Label>
+        <Input value={observacoes} onChange={e=>onChange({...linhaState, observacoes: e.target.value})}
+          className="h-8 text-sm" placeholder="Obs..." />
+      </div>
+    </div>
+  );
+}
+
+// ── Elemento completo por nutriente (cabeçalho + N fontes + botão adicionar) ──
+function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem }) {
+  const addFonte = () => onChange([...fontes, linhaVazia()]);
+  const removeFonte = (idx) => onChange(fontes.filter((_, i) => i !== idx));
+  const updateFonte = (idx, nova) => { const arr = [...fontes]; arr[idx] = nova; onChange(arr); };
 
   return (
     <div className="border border-border rounded-xl overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-muted/30 border-b border-border">
         <span className="font-bold text-sm text-primary w-10">{nutriente.label}</span>
         <span className="text-xs text-muted-foreground">Recomendado:</span>
-        <span className="font-semibold text-sm">{recKgHa != null ? `${recKgHa} kg/ha` : '—'}</span>
+        <span className="font-semibold text-sm">
+          {recKgHa != null ? `${recKgHa} kg/ha` : '—'}
+        </span>
         {recKgHa == null && (
           <span className="text-xs text-amber-600 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" /> Sem recomendação calculada (insira na aba Análise)
+            <AlertTriangle className="w-3 h-3" /> Sem recomendação calculada
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Dose manual (kg/ha):</span>
-          <Input type="number" value={doseRecManual}
-            onChange={e => onChange({...linhaState, doseRecManual: e.target.value})}
-            className="h-7 w-24 text-xs" placeholder={recKgHa != null ? `${recKgHa}` : 'kg/ha'} />
-        </div>
       </div>
 
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <Label className="text-xs mb-1 block">Produto selecionado</Label>
-            <div className="relative">
-              <button type="button"
-                className="w-full h-9 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
-                onClick={() => setDropAberto(a => !a)}>
-                <span className={produto ? 'text-foreground truncate' : (produtoId === null ? 'text-muted-foreground italic' : 'text-muted-foreground')}>
-                  {produto ? produto.nome : produtoId === null ? '— Nenhum produto —' : 'Selecionar produto...'}
-                </span>
-                <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
-              </button>
-              {dropAberto && (
-                <div className="absolute z-50 top-full left-0 w-80 mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
-                  <div className="p-2 border-b border-border">
-                    <input autoFocus className="w-full h-7 text-xs border border-input rounded px-2 bg-background"
-                      placeholder="Buscar produto..." value={busca} onChange={e => setBusca(e.target.value)} />
-                  </div>
-                  <div className="max-h-56 overflow-y-auto">
-                    <button type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 text-muted-foreground"
-                      onClick={() => { onChange({...linhaState, produtoId: null}); setDropAberto(false); setBusca(''); }}>
-                      — Nenhum produto —
-                    </button>
-                    {produtosFiltrados.map(p => {
-                      const pctV = parseFloat(p[nutriente.key]) || 0;
-                      return (
-                        <button key={p.id} type="button"
-                          className="w-full text-left px-3 py-2 hover:bg-muted/60 text-xs border-b border-border/30 last:border-0"
-                          onClick={() => { onChange({...linhaState, produtoId: p.id}); setDropAberto(false); setBusca(''); }}>
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium">{p.nome}</span>
-                            {pctV > 0 && <span className="text-primary text-xs font-semibold">{nutriente.label}: {pctV}%</span>}
-                          </div>
-                          <div className="text-muted-foreground">{p._tipo==='formulado'?'Formulado':'Fonte Simples'}{p.fornecedor?` · ${p.fornecedor}`:''}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-            {produto && pctNutriente === 0 && (
-              <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> Produto não tem {nutriente.label} cadastrado
-              </p>
-            )}
-          </div>
-          {produto && (
-            <div className="bg-muted/20 rounded-lg p-3 text-xs space-y-1">
-              <p className="font-semibold text-muted-foreground mb-1">Composição do produto:</p>
-              <div className="flex flex-wrap gap-2">
-                {NUTRIENTES_CHAVE.map(n => {
-                  const v = parseFloat(produto[n.key]) || 0;
-                  if (!v) return null;
-                  return (
-                    <span key={n.key} className={`px-2 py-0.5 rounded-full font-medium ${n.key===nutriente.key?'bg-primary/10 text-primary':'bg-muted text-muted-foreground'}`}>
-                      {n.label}: {v}%
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+      {fontes.map((fonte, idx) => (
+        <FonteBloco
+          key={idx}
+          nutriente={nutriente}
+          recKgHa={recKgHa}
+          talhao={talhao}
+          todos={todos}
+          linhaState={fonte}
+          onChange={nova => updateFonte(idx, nova)}
+          onRemover={() => removeFonte(idx)}
+          isFirst={idx === 0}
+          infoCalagem={idx === 0 ? infoCalagem : null}
+        />
+      ))}
 
-        {dosesCalc ? (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-            <p className="text-xs font-semibold text-green-800 mb-3 uppercase tracking-wide">Cálculo automático</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-3">
-              {[
-                { l:'Dose produto', v:`${dosesCalc.doseHa} kg/ha` },
-                { l:'Total', v:`${dosesCalc.total} kg` },
-                { l:'Sacos 50 kg', v:`${dosesCalc.sc50} sc` },
-                { l:'Toneladas', v:`${dosesCalc.ton} t` },
-                dosesCalc.gPlanta && { l:'g/planta', v:`${dosesCalc.gPlanta} g` },
-                dosesCalc.gMetro  && { l:'g/metro',  v:`${dosesCalc.gMetro} g` },
-              ].filter(Boolean).map(x => (
-                <div key={x.l} className="bg-white rounded-lg p-2.5 border border-green-100 text-center">
-                  <p className="text-xs text-muted-foreground">{x.l}</p>
-                  <p className="font-bold text-sm">{x.v}</p>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-green-200 pt-3">
-              <div className="flex flex-wrap items-center gap-2 mb-3">
-                <span className="text-xs font-semibold text-green-800 shrink-0">Parcelamento:</span>
-                <div className="flex flex-wrap gap-1">
-                  {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                    <button key={n} type="button" onClick={() => setNumAplic(n)}
-                      className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${numAplic===n?'bg-green-700 text-white border-green-700':'bg-white text-muted-foreground border-border hover:bg-muted/30'}`}>
-                      {n}x
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {Array.from({length:numAplic}).map((_,i) => {
-                  const pct = parseFloat(pcts[i]) || 0;
-                  const kgAplic = dosesCalc.total * (pct/100);
-                  const gPlantaAplic = numPlantas>0 ? ((kgAplic*1000)/numPlantas).toFixed(1) : null;
-                  const gMetroAplic  = metros>0 ? ((kgAplic*1000)/metros).toFixed(1) : null;
-                  return (
-                    <div key={i} className="bg-white rounded-lg border border-green-100 p-3 space-y-2">
-                      <p className="text-xs font-semibold text-green-700">{APLIC_LABELS[i]} Aplicação</p>
-                      <div className="flex items-center gap-2">
-                        <Input type="number" value={pcts[i]} onChange={e=>setPct(i,e.target.value)}
-                          className="h-7 w-16 text-xs" min="0" max="100" />
-                        <span className="text-xs text-muted-foreground">%</span>
-                      </div>
-                      <div className="text-xs space-y-0.5 text-muted-foreground">
-                        <div><span className="font-semibold text-foreground">{Math.round(kgAplic)} kg</span> · {(area>0?(kgAplic/area):0).toFixed(1)} kg/ha</div>
-                        <div>{(kgAplic/50).toFixed(1)} sc · {(kgAplic/1000).toFixed(3)} t</div>
-                        {gPlantaAplic && <div>{gPlantaAplic} g/planta{gMetroAplic?` · ${gMetroAplic} g/metro`:''}</div>}
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Meses (até 3):</p>
-                        <div className="flex flex-wrap gap-1">
-                          {MESES.map(m => {
-                            const mesArray = Array.isArray(meses[i]) ? meses[i] : (meses[i]?[meses[i]]:[]);
-                            return (
-                              <button key={m} type="button" onClick={()=>setMes(i,m)}
-                                className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${mesArray.includes(m)?'bg-green-700 text-white border-green-700':'bg-white text-muted-foreground border-border hover:bg-green-50'}`}>
-                                {m}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {(() => { const a=Array.isArray(meses[i])?meses[i]:(meses[i]?[meses[i]]:[]);
-                          return a.length>0 ? <p className="text-xs text-green-700 mt-1">{a.join(', ')}</p> : null; })()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        ) : produto && pctNutriente===0 ? null : produto ? (
-          <div className="bg-muted/20 rounded-xl p-4 text-xs text-muted-foreground">
-            Informe a dose recomendada (kg/ha) para calcular automaticamente.
-          </div>
-        ) : null}
-
-        <div>
-          <Label className="text-xs mb-1 block">Observações</Label>
-          <Input value={observacoes} onChange={e=>onChange({...linhaState,observacoes:e.target.value})}
-            className="h-8 text-sm" placeholder="Obs..." />
-        </div>
+      <div className="px-4 pb-4 pt-2 border-t border-border/40">
+        <Button variant="outline" size="sm" onClick={addFonte} className="gap-1.5 text-xs h-7">
+          <Plus className="w-3.5 h-3.5" /> Adicionar outra fonte
+        </Button>
       </div>
     </div>
   );
@@ -328,15 +416,14 @@ function LinhanutRec({ nutriente, recKgHa, talhao, todos, linhaState, onChange }
 // ── Componente principal ────────────────────────────────────────────────────────
 export default function AbaPlanejamento({ produtor, safra, talhoes, analises, analises2040, planos, saving, onSavePlano }) {
   const [talhaoId, setTalhaoId] = useState(null);
+  // linhasState: { [nutriente_key]: [fonte1, fonte2, ...] }
   const [linhasState, setLinhasState] = useState({});
-  // Rastreia qual ctxKey está atualmente carregado para evitar sobrescrita
   const ctxKeyCarregado = useRef(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
   const { data: fontesSimples = [] }  = useQuery({ queryKey: ['fontes_simples'],  queryFn: () => base44.entities.FonteSimples.list() });
-  // ── Fonte de verdade: BasePlanejamentoAdubacao ──────────────────────────────
   const { data: basePlano = [] } = useQuery({
     queryKey: ['base_planejamento'],
     queryFn: () => base44.entities.BasePlanejamentoAdubacao.list(),
@@ -350,6 +437,10 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
     mutationFn: ({ id, d }) => base44.entities.BasePlanejamentoAdubacao.update(id, d),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['base_planejamento'] }),
   });
+  const bpDelete = useMutation({
+    mutationFn: id => base44.entities.BasePlanejamentoAdubacao.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['base_planejamento'] }),
+  });
 
   const todos = useMemo(() => [
     ...fertilizantes.map(f => ({ ...f, _tipo: 'formulado' })),
@@ -359,19 +450,17 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
   const talhoesProdutor = useMemo(() =>
     talhoes.filter(t => t.codigo_produtor === produtor?.codigo), [talhoes, produtor]);
 
-  // Auto-selecionar o primeiro talhão quando o produtor mudar
   useEffect(() => {
     setTalhaoId(talhoesProdutor[0]?.id || null);
   }, [produtor?.id]);
 
-  const talhao     = useMemo(() => talhoesProdutor.find(t => t.id === talhaoId) || null, [talhoesProdutor, talhaoId]);
-  const analise    = useMemo(() => talhao && safra ? analises.find(a => a.talhao_id===talhao.id && a.safra===safra)||null : null, [analises, talhao, safra]);
+  const talhao      = useMemo(() => talhoesProdutor.find(t => t.id === talhaoId) || null, [talhoesProdutor, talhaoId]);
+  const analise     = useMemo(() => talhao && safra ? analises.find(a => a.talhao_id===talhao.id && a.safra===safra)||null : null, [analises, talhao, safra]);
   const analise2040obj = useMemo(() => talhao && safra && analises2040 ? analises2040.find(a => a.talhao_id===talhao.id && a.safra===safra)||null : null, [analises2040, talhao, safra]);
-  const plano      = useMemo(() => talhao && safra ? planos.find(p => p.talhao_id===talhao.id && p.safra===safra)||null : null, [planos, talhao, safra]);
-  const rec        = useMemo(() => calcRecomendacao(analise, plano, analise2040obj), [analise, plano, analise2040obj]);
-  const metros  = useMemo(() => getMetros(talhao), [talhao]);
+  const plano       = useMemo(() => talhao && safra ? planos.find(p => p.talhao_id===talhao.id && p.safra===safra)||null : null, [planos, talhao, safra]);
+  const rec         = useMemo(() => calcRecomendacao(analise, plano, analise2040obj), [analise, plano, analise2040obj]);
+  const metros      = useMemo(() => getMetros(talhao), [talhao]);
 
-  // Registros da BasePlanejamentoAdubacao para o contexto atual
   const registrosSalvos = useMemo(() => {
     if (!produtor?.codigo || !safra || !talhaoId) return [];
     return basePlano.filter(r =>
@@ -381,13 +470,30 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
     );
   }, [basePlano, produtor?.codigo, safra, talhaoId]);
 
-  // Chave do contexto atual
   const ctxKey = `${produtor?.id}__${talhaoId}__${safra}`;
 
-  // ── Carregar estado das linhas ao mudar contexto ────────────────────────────
-  // REGRA: dado salvo na BasePlanejamentoAdubacao SEMPRE tem prioridade.
-  // Sugestão automática só é usada quando NÃO há nenhum registro salvo.
-  // Re-executa sempre que o contexto (produtor/talhão/safra) ou os registros salvos mudarem.
+  // Registro de calagem para info de Ca/Mg
+  const regCalagem = useMemo(() => registrosSalvos.find(r => r.nutriente_key === 'calagem') || null, [registrosSalvos]);
+  const produtoCalagem = useMemo(() => regCalagem ? todos.find(p => p.id === regCalagem.produto_id) || null : null, [regCalagem, todos]);
+
+  function getInfoCalagem(nutrienteKey) {
+    if (!regCalagem || !produtoCalagem) return null;
+    const pctKey = nutrienteKey === 'ca_pct' ? 'ca_pct' : 'mg_pct';
+    const pct = parseFloat(produtoCalagem[pctKey]) || 0;
+    if (pct === 0) return null;
+    const doseHa = parseFloat(regCalagem.dose_rec_manual) || 0;
+    const repoeKgHa = doseHa * (pct / 100);
+    const recKgHa = nutrienteKey === 'ca_pct' ? rec?.Ca : rec?.Mg;
+    const deficitKgHa = recKgHa != null ? Math.max(0, recKgHa - repoeKgHa) : null;
+    return {
+      produtoNome: produtoCalagem.nome,
+      doseHa,
+      repoeKgHa,
+      deficitKgHa,
+    };
+  }
+
+  // ── Carregar estado das linhas ───────────────────────────────────────────────
   useEffect(() => {
     if (!talhao || !todos.length) return;
     if (ctxKeyCarregado.current === ctxKey) return;
@@ -395,34 +501,42 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
 
     const novoState = {};
     NUTRIENTES_CHAVE.forEach(n => {
-      const reg = registrosSalvos.find(r => r.nutriente_key === n.key);
-      if (reg) {
-        const numAplic = reg.num_aplic || 1;
-        novoState[n.key] = {
-          produtoId: 'produto_id' in reg ? reg.produto_id : undefined,
-          doseRecManual: reg.dose_rec_manual ?? '',
-          numAplic,
-          pcts: reg.pcts?.length ? reg.pcts : (PCT_DEFAULTS[numAplic] || [100]),
-          meses: normalizarMeses(reg.meses, numAplic),
-          observacoes: reg.observacoes ?? '',
-        };
+      // Registros salvos para este nutriente (pode ter múltiplos — fontes adicionais numeradas)
+      // Convenção: nutriente_key = "n_pct", "n_pct__1", "n_pct__2" etc.
+      const regsDoNutriente = registrosSalvos.filter(r =>
+        r.nutriente_key === n.key || r.nutriente_key?.startsWith(n.key + '__')
+      ).sort((a, b) => a.nutriente_key.localeCompare(b.nutriente_key));
+
+      if (regsDoNutriente.length > 0) {
+        novoState[n.key] = regsDoNutriente.map(reg => {
+          const numAplic = reg.num_aplic || 1;
+          return {
+            _regId: reg.id,
+            _regKey: reg.nutriente_key,
+            produtoId: 'produto_id' in reg ? reg.produto_id : undefined,
+            doseRecManual: reg.dose_rec_manual ?? '',
+            numAplic,
+            pcts: reg.pcts?.length ? reg.pcts : (PCT_DEFAULTS[numAplic] || [100]),
+            meses: normalizarMeses(reg.meses, numAplic),
+            observacoes: reg.observacoes ?? '',
+          };
+        });
       } else {
         const melhor = melhorProduto(todos, n.key);
-        novoState[n.key] = {
+        novoState[n.key] = [{
           produtoId: melhor?.id || null,
           doseRecManual: '',
           numAplic: 1,
           pcts: [100],
           meses: [[]],
           observacoes: '',
-        };
+        }];
       }
     });
     setLinhasState(novoState);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxKey, registrosSalvos.length, todos.length]);
 
-  // Resetar guard ao mudar contexto para forçar re-leitura
   useEffect(() => {
     ctxKeyCarregado.current = null;
   }, [ctxKey]);
@@ -434,48 +548,57 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
     if (!talhao || !produtor || !safra) return;
     setSalvandoBP(true);
 
-    const promises = NUTRIENTES_CHAVE.map(async n => {
-    const linha = linhasState[n.key];
-    if (!linha) return;
+    const promises = NUTRIENTES_CHAVE.flatMap(n => {
+      const fontes = linhasState[n.key] || [linhaVazia()];
+      return fontes.map(async (linha, idx) => {
+        const produto = todos.find(p => p.id === linha.produtoId) || null;
+        const doseNutriHa = linha.doseRecManual !== ''
+          ? linha.doseRecManual
+          : (rec?.[n.recKey] != null ? String(rec[n.recKey]) : '');
 
-    const produto = todos.find(p => p.id === linha.produtoId) || null;
+        // Chave única para esta fonte: primeira usa n.key, adicionais usam n.key__1, n.key__2...
+        const regKey = idx === 0 ? n.key : `${n.key}__${idx}`;
 
-    // Dose efetiva do NUTRIENTE (kg/ha): manual se preenchida, senão usa a recomendação calculada
-    const doseNutriHa = linha.doseRecManual !== ''
-      ? linha.doseRecManual
-      : (rec?.[n.recKey] != null ? String(rec[n.recKey]) : '');
+        const payload = {
+          codigo_produtor: produtor.codigo,
+          safra,
+          talhao_id: talhao.id,
+          talhao_nome: talhao.nome,
+          nutriente_key: regKey,
+          nutriente_label: n.label,
+          produto_id: linha.produtoId !== undefined ? linha.produtoId : null,
+          produto_nome: linha.produtoId === null ? 'Nenhum produto' : (produto?.nome || null),
+          dose_rec_manual: doseNutriHa,
+          num_aplic: linha.numAplic,
+          pcts: linha.pcts,
+          meses: linha.meses,
+          observacoes: linha.observacoes,
+          status: 'planejado',
+        };
 
-    const payload = {
-      codigo_produtor: produtor.codigo,
-      safra,
-      talhao_id: talhao.id,
-      talhao_nome: talhao.nome,
-      nutriente_key: n.key,
-      nutriente_label: n.label,
-      // produto_id: null = "Nenhum produto" explícito; undefined = não selecionado
-      produto_id: linha.produtoId !== undefined ? linha.produtoId : null,
-      produto_nome: linha.produtoId === null ? 'Nenhum produto' : (produto?.nome || null),
-      dose_rec_manual: doseNutriHa,
-      num_aplic: linha.numAplic,
-      pcts: linha.pcts,
-      meses: linha.meses,
-      observacoes: linha.observacoes,
-      status: 'planejado',
-    };
-
-      const existente = registrosSalvos.find(r => r.nutriente_key === n.key);
-      if (existente) {
-        await bpUpdate.mutateAsync({ id: existente.id, d: payload });
-      } else {
-        await bpCreate.mutateAsync(payload);
-      }
+        const existente = registrosSalvos.find(r => r.nutriente_key === regKey);
+        if (existente) {
+          await bpUpdate.mutateAsync({ id: existente.id, d: payload });
+        } else {
+          await bpCreate.mutateAsync(payload);
+        }
+      });
     });
 
-    await Promise.all(promises);
+    // Deletar registros removidos (fontes que existiam mas foram apagadas)
+    const keysAtivas = new Set(NUTRIENTES_CHAVE.flatMap(n =>
+      (linhasState[n.key] || [linhaVazia()]).map((_, idx) => idx === 0 ? n.key : `${n.key}__${idx}`)
+    ));
+    const parasApagar = registrosSalvos.filter(r =>
+      NUTRIENTES_CHAVE.some(n => r.nutriente_key === n.key || r.nutriente_key?.startsWith(n.key + '__')) &&
+      !keysAtivas.has(r.nutriente_key)
+    );
+    const deletePromises = parasApagar.map(r => bpDelete.mutateAsync(r.id));
 
-    // Também salvar no PlanoAdubacao (para compatibilidade com Execução/PDF)
+    await Promise.all([...promises, ...deletePromises]);
+
     const planejamentoNutrientes = {};
-    NUTRIENTES_CHAVE.forEach(n => { planejamentoNutrientes[n.key] = linhasState[n.key] || linhaVazia(); });
+    NUTRIENTES_CHAVE.forEach(n => { planejamentoNutrientes[n.key] = (linhasState[n.key] || [linhaVazia()])[0]; });
     onSavePlano(talhao, { planejamento_nutrientes: planejamentoNutrientes });
 
     setSalvandoBP(false);
@@ -487,7 +610,9 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
       const novo = { ...prev };
       NUTRIENTES_CHAVE.forEach(n => {
         const melhor = melhorProduto(todos, n.key);
-        if (melhor && novo[n.key]) novo[n.key] = { ...novo[n.key], produtoId: melhor.id };
+        if (melhor && novo[n.key]?.length > 0) {
+          novo[n.key] = [{ ...novo[n.key][0], produtoId: melhor.id }, ...novo[n.key].slice(1)];
+        }
       });
       return novo;
     });
@@ -500,7 +625,7 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
     </div>
   );
 
-  const isSaving = salvandoBP || saving || bpCreate.isPending || bpUpdate.isPending;
+  const isSaving = salvandoBP || saving || bpCreate.isPending || bpUpdate.isPending || bpDelete.isPending;
 
   return (
     <div className="space-y-5">
@@ -515,8 +640,7 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                 <SelectItem value="none">Selecione...</SelectItem>
                 {talhoesProdutor.map(t => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.nome}
-                    {registrosSalvos.filter(r=>r.talhao_id===t.id).length > 0 && ' ✓'}
+                    {t.nome}{registrosSalvos.filter(r=>r.talhao_id===t.id).length > 0 ? ' ✓' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -551,22 +675,20 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                 </p>
                 {rec ? (
                   <div className="space-y-2">
-                    {/* NPK + B */}
                     <div className="flex flex-wrap gap-2">
-                      {NUTRIENTES_CHAVE.map(n => (
+                      {NUTRIENTES_CHAVE.slice(0,4).map(n => (
                         <div key={n.key} className="bg-white rounded-lg px-3 py-1.5 border border-orange-100 text-center min-w-[64px]">
                           <p className="text-xs text-muted-foreground">{n.label}</p>
                           <p className="font-bold text-sm">{rec[n.recKey]!=null ? `${rec[n.recKey]} kg/ha` : <span className="text-muted-foreground text-xs">—</span>}</p>
                         </div>
                       ))}
                     </div>
-                    {/* Micronutrientes Zn, Cu, Mn */}
-                    {(rec.Zn || rec.Cu || rec.Mn) && (
+                    {(rec.Zn || rec.Cu || rec.Mn || rec.Ca != null || rec.Mg != null || rec.S != null) && (
                       <div className="flex flex-wrap gap-2">
                         {[
-                          { label: 'Zn', val: rec.Zn },
-                          { label: 'Cu', val: rec.Cu },
-                          { label: 'Mn', val: rec.Mn },
+                          { label: 'Zn', val: rec.Zn, tipo: 'acao' },
+                          { label: 'Cu', val: rec.Cu, tipo: 'acao' },
+                          { label: 'Mn', val: rec.Mn, tipo: 'acao' },
                         ].filter(x => x.val).map(x => {
                           const cor = x.val === 'Aplicar' ? 'bg-red-50 border-red-200 text-red-700'
                             : x.val === 'Avaliar' ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
@@ -578,7 +700,6 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                             </div>
                           );
                         })}
-                        {/* Ca, Mg, S — valores da análise */}
                         {[
                           { label: 'Ca', val: rec.Ca, unit: 'cmolc' },
                           { label: 'Mg', val: rec.Mg, unit: 'cmolc' },
@@ -605,51 +726,43 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
             </div>
           </div>
 
-          {/* Item de calagem — exibido se foi enviado do CalcCalagem */}
-          {(() => {
-            const regCalagem = registrosSalvos.find(r => r.nutriente_key === 'calagem');
-            if (!regCalagem) return null;
-            return (
-              <div className="bg-lime-50 border border-lime-200 rounded-xl p-4 space-y-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-lime-800 uppercase tracking-wide">Calagem / Correção</p>
-                  <span className="text-xs text-lime-600 bg-lime-100 px-2 py-0.5 rounded-full">{regCalagem.nutriente_label}</span>
-                </div>
-                <p className="text-sm font-medium">{regCalagem.produto_nome}</p>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  <span>Dose: <strong>{regCalagem.dose_rec_manual} kg/ha</strong></span>
-                  {talhao?.area_ha && <span>Total: <strong>{Math.round(Number(regCalagem.dose_rec_manual) * talhao.area_ha).toLocaleString()} kg</strong></span>}
-                </div>
-                {regCalagem.observacoes && <p className="text-xs text-muted-foreground">{regCalagem.observacoes}</p>}
+          {/* Item de calagem */}
+          {regCalagem && (
+            <div className="bg-lime-50 border border-lime-200 rounded-xl p-4 space-y-1">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-lime-800 uppercase tracking-wide">Calagem / Correção</p>
+                <span className="text-xs text-lime-600 bg-lime-100 px-2 py-0.5 rounded-full">{regCalagem.nutriente_label}</span>
               </div>
-            );
-          })()}
+              <p className="text-sm font-medium">{regCalagem.produto_nome}</p>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <span>Dose: <strong>{regCalagem.dose_rec_manual} kg/ha</strong></span>
+                {talhao?.area_ha && <span>Total: <strong>{Math.round(Number(regCalagem.dose_rec_manual) * talhao.area_ha).toLocaleString()} kg</strong></span>}
+              </div>
+              {regCalagem.observacoes && <p className="text-xs text-muted-foreground">{regCalagem.observacoes}</p>}
+            </div>
+          )}
 
           {/* Linhas por nutriente */}
           <div className="space-y-4">
             {NUTRIENTES_CHAVE.map(n => {
               const recKgHa = rec?.[n.recKey] ?? null;
-              const linhaS = linhasState[n.key] || linhaVazia();
-              const temSelecao = linhaS.produtoId !== undefined;
-              const temDados = temSelecao || linhaS.doseRecManual || linhaS.observacoes;
+              const fontes = linhasState[n.key] || [linhaVazia()];
+              const temDados = fontes.some(f => f.produtoId !== undefined || f.doseRecManual || f.observacoes);
 
-              if (recKgHa == null && !temDados) return (
-                <div key={n.key} className="border border-dashed border-border rounded-xl p-3 flex flex-wrap items-center gap-3">
-                  <span className="font-bold text-sm text-primary w-10">{n.label}</span>
-                  <span className="text-xs text-muted-foreground">Sem recomendação — insira a dose manualmente ou acesse a aba Análise</span>
-                  <div className="ml-auto flex items-center gap-2">
-                    <Input type="number" value={linhaS.doseRecManual}
-                      onChange={e => setLinhasState(prev => ({...prev, [n.key]: {...linhaS, doseRecManual: e.target.value}}))}
-                      className="h-7 w-24 text-xs" placeholder="kg/ha" />
-                    <span className="text-xs text-muted-foreground">kg/ha</span>
-                  </div>
-                </div>
-              );
+              // Para Ca e Mg: info do calcário
+              const infoCalagem = (n.key === 'ca_pct' || n.key === 'mg_pct') ? getInfoCalagem(n.key) : null;
 
               return (
-                <LinhanutRec key={n.key} nutriente={n} recKgHa={recKgHa}
-                  talhao={talhao} todos={todos} linhaState={linhaS}
-                  onChange={novaLinha => setLinhasState(prev => ({...prev, [n.key]: novaLinha}))} />
+                <ElementoNutriente
+                  key={n.key}
+                  nutriente={n}
+                  recKgHa={recKgHa}
+                  talhao={talhao}
+                  todos={todos}
+                  fontes={fontes}
+                  onChange={novasFontes => setLinhasState(prev => ({...prev, [n.key]: novasFontes}))}
+                  infoCalagem={infoCalagem}
+                />
               );
             })}
           </div>
