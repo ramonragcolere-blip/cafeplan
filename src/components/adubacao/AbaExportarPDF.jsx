@@ -128,26 +128,25 @@ function buildBlocosTalhao(talhao, planejamentos, todosProdutos) {
 function gerarPDF(produtor, safra, talhoesComBlocos) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const PW = 210, PH = 297;
-  const ML = 14, MR = 14;
+  const ML = 16, MR = 16;
   const CW = PW - ML - MR;
   const hoje = new Date().toLocaleDateString('pt-BR');
 
   let y = 0;
   let pagina = 1;
 
-  // Cores
-  const DARK   = [30, 30, 30];
-  const MED    = [80, 80, 80];
-  const LIGHT  = [150, 150, 150];
-  const BG_HDR = [28, 76, 38];    // verde escuro cabeçalho
-  const BG_TAL = [245, 248, 245]; // fundo cabeçalho talhão
-  const BG_CAL = [240, 248, 232]; // fundo bloco calagem
-  const BDR_CAL = [100, 150, 60];
-  const BG_FRT = [255, 255, 255]; // fundo bloco fertilizante
-  const LINE   = [210, 215, 210]; // linhas divisórias
-  const ACCENT = [46, 100, 58];   // verde médio
+  // Paleta de alto contraste
+  const BLACK    = [10, 10, 10];
+  const DARK     = [30, 30, 30];
+  const MED_DARK = [60, 60, 60];
+  const MED      = [100, 100, 100];
+  const LINE     = [200, 200, 200];  // linhas cinza
+  const WHITE    = [255, 255, 255];
+  const HDR_BG   = [26, 58, 42];    // #1a3a2a
+  const TAL_BG   = [26, 58, 42];    // mesmo verde escuro para talhão
+  const BADGE_BG = [26, 58, 42];
 
-  const setFont = (style, size, color = DARK) => {
+  const sf = (style, size, color = DARK) => {
     doc.setFont('helvetica', style);
     doc.setFontSize(size);
     doc.setTextColor(...color);
@@ -155,179 +154,180 @@ function gerarPDF(produtor, safra, talhoesComBlocos) {
 
   function rodape() {
     doc.setDrawColor(...LINE);
-    doc.setLineWidth(0.2);
-    doc.line(ML, PH - 11, PW - MR, PH - 11);
-    setFont('normal', 7, LIGHT);
+    doc.setLineWidth(0.3);
+    doc.line(ML, PH - 12, PW - MR, PH - 12);
+    sf('normal', 8, MED);
     doc.text(
-      `Pág. ${pagina}  ·  ${produtor.nome} — Safra ${safra}  ·  Emitido em ${hoje}`,
-      PW / 2, PH - 7, { align: 'center' }
+      `Página ${pagina}   |   ${produtor.nome}   |   Safra ${safra}`,
+      PW / 2, PH - 6, { align: 'center' }
     );
   }
 
   function novaPage() {
     doc.addPage();
     pagina++;
-    y = 15;
+    y = 16;
     rodape();
   }
 
   function checkY(h) {
-    if (y + h > PH - 16) novaPage();
+    if (y + h > PH - 18) novaPage();
+  }
+
+  function hLine(yPos, color = LINE, lw = 0.3) {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(lw);
+    doc.line(ML, yPos, PW - MR, yPos);
   }
 
   // ── CABEÇALHO ────────────────────────────────────────────────────────────────
-  doc.setFillColor(...BG_HDR);
-  doc.rect(0, 0, PW, 36, 'F');
+  doc.setFillColor(...HDR_BG);
+  doc.rect(0, 0, PW, 42, 'F');
 
-  setFont('bold', 16, [255, 255, 255]);
-  doc.text('Planejamento de Adubação do Cafeeiro', ML, 14);
+  sf('bold', 18, WHITE);
+  doc.text('Planejamento de Adubação', ML, 15);
+  sf('bold', 13, WHITE);
+  doc.text('do Cafeeiro', ML, 24);
 
-  setFont('normal', 9, [180, 220, 185]);
-  doc.text(`${produtor.nome}  ·  Fazenda ${produtor.fazenda || '—'}  ·  Safra ${safra}`, ML, 22);
+  sf('bold', 10, [200, 230, 210]);
+  doc.text(`${produtor.nome}   ·   Fazenda ${produtor.fazenda || '—'}   ·   Safra ${safra}`, ML, 33);
 
-  const infoLinha2 = [
+  const infoExtra = [
     produtor.municipio ? `${produtor.municipio}${produtor.uf ? '/' + produtor.uf : ''}` : null,
     produtor.eng_responsavel ? `Eng.: ${produtor.eng_responsavel}` : null,
     `Emissão: ${hoje}`,
-  ].filter(Boolean).join('   ·   ');
-  setFont('normal', 8, [140, 200, 150]);
-  doc.text(infoLinha2, ML, 29);
+  ].filter(Boolean).join('     ');
+  sf('normal', 9, [160, 210, 175]);
+  doc.text(infoExtra, ML, 39);
 
-  y = 44;
+  y = 50;
   rodape();
 
   // ── POR TALHÃO ────────────────────────────────────────────────────────────────
   for (const { talhao, blocos } of talhoesComBlocos) {
     if (blocos.length === 0) continue;
 
-    checkY(24);
+    checkY(22);
 
-    // Cabeçalho talhão
-    doc.setFillColor(...BG_TAL);
-    doc.setDrawColor(...LINE);
-    doc.setLineWidth(0.3);
-    doc.rect(ML, y, CW, 11, 'FD');
+    // Cabeçalho talhão — fundo verde escuro igual ao header
+    doc.setFillColor(...TAL_BG);
+    doc.rect(ML, y, CW, 13, 'F');
 
-    // Barra lateral colorida
-    doc.setFillColor(...ACCENT);
-    doc.rect(ML, y, 3, 11, 'F');
+    sf('bold', 13, WHITE);
+    doc.text(talhao.nome, ML + 5, y + 9);
 
-    setFont('bold', 11, ACCENT);
-    doc.text(talhao.nome, ML + 6, y + 7.5);
-
-    // Infos à direita
     const infos = [
       talhao.area_ha ? `${talhao.area_ha} ha` : null,
       talhao.num_plantas ? `${talhao.num_plantas.toLocaleString()} plantas` : null,
       getMetros(talhao) > 0 ? `${getMetros(talhao).toLocaleString()} m lin.` : null,
-      talhao.espacamento ? talhao.espacamento : null,
+      talhao.espacamento ? `Espaç. ${talhao.espacamento}` : null,
     ].filter(Boolean).join('   ');
-    setFont('normal', 8, MED);
-    doc.text(infos, PW - MR, y + 7.5, { align: 'right' });
+    sf('normal', 9, [200, 230, 210]);
+    doc.text(infos, PW - MR - 4, y + 9, { align: 'right' });
 
-    y += 14;
+    y += 16;
 
     // ── Blocos de produtos ──────────────────────────────────────────────────────
-    for (const bloco of blocos) {
+    for (let bi = 0; bi < blocos.length; bi++) {
+      const bloco = blocos[bi];
       const { isCalagem, nutriLabel, produtoNome, doseProdHa, totalKg, sc50, gPlanta, gMetro, numAplic, parcelas, observacoes } = bloco;
 
-      // Estimar altura necessária
-      const linhasParc = numAplic > 1 ? Math.ceil(numAplic / 4) * 8 + 6 : 0;
-      const altBloco = 26 + linhasParc + (observacoes ? 5 : 0);
+      // Altura do bloco: cabeçalho produto (16) + linha dados (10) + parcelamento + obs
+      const altParc = numAplic > 1 ? 6 + numAplic * 9 : 0;
+      const altObs  = observacoes ? 7 : 0;
+      const altBloco = 16 + 10 + altParc + altObs + 4;
       checkY(altBloco);
 
-      // Fundo e borda
-      if (isCalagem) {
-        doc.setFillColor(...BG_CAL);
-        doc.setDrawColor(...BDR_CAL);
-      } else {
-        doc.setFillColor(...BG_FRT);
-        doc.setDrawColor(...LINE);
+      // Separador entre blocos (não antes do primeiro)
+      if (bi > 0) {
+        hLine(y, LINE, 0.3);
+        y += 2;
       }
-      doc.setLineWidth(0.25);
-      doc.rect(ML, y, CW, altBloco, 'FD');
 
-      // Badge nutriente
-      const badgeColor = isCalagem ? [100, 150, 60] : ACCENT;
-      doc.setFillColor(...badgeColor);
-      doc.rect(ML, y, 22, 8.5, 'F');
-      setFont('bold', 7.5, [255, 255, 255]);
-      doc.text(nutriLabel, ML + 11, y + 5.5, { align: 'center' });
+      // ── Linha 1: badge nutriente + nome produto ──
+      doc.setFillColor(...BADGE_BG);
+      doc.rect(ML, y, 20, 8, 'F');
+      sf('bold', 8.5, WHITE);
+      doc.text(nutriLabel, ML + 10, y + 5.5, { align: 'center' });
 
-      // Nome do produto
-      setFont('bold', 10, DARK);
-      doc.text(produtoNome.substring(0, 60), ML + 26, y + 6);
+      sf('bold', 12, BLACK);
+      doc.text(produtoNome.substring(0, 58), ML + 24, y + 6);
 
-      // Linha de métricas
-      const metY = y + 14;
+      y += 11;
+
+      // ── Linha 2: dados principais ──
       const cols = [
-        { l: 'Dose',         v: `${fmtNum(doseProdHa, 1)} kg/ha` },
-        { l: 'Total',        v: fmtTotal(totalKg) },
-        sc50   ? { l: 'Sacos 50 kg',  v: `${sc50} sc` }      : null,
-        gPlanta ? { l: 'g / pé',       v: `${gPlanta} g` }    : null,
-        gMetro  ? { l: 'g / metro',    v: `${gMetro} g` }     : null,
+        { l: 'Dose',        v: `${fmtNum(doseProdHa, 1)} kg/ha` },
+        { l: 'Total',       v: fmtTotal(totalKg) },
+        sc50    ? { l: 'Sacos 50 kg', v: `${sc50} sc` }   : null,
+        gPlanta ? { l: 'g / pé',      v: `${gPlanta} g` } : null,
+        gMetro  ? { l: 'g / metro',   v: `${gMetro} g` }  : null,
       ].filter(Boolean);
 
-      let mx = ML + 4;
-      for (const col of cols) {
-        const wLabel = doc.getTextWidth(col.l);
-        const wValue = doc.getTextWidth(col.v);
-        const colW = Math.max(wLabel, wValue) + 8;
+      // Calcular largura de cada coluna e distribuir
+      const colWidths = cols.map(c => {
+        doc.setFontSize(11);
+        const wv = doc.getTextWidth(c.v);
+        doc.setFontSize(8);
+        const wl = doc.getTextWidth(c.l);
+        return Math.max(wv, wl) + 10;
+      });
 
-        setFont('normal', 7, LIGHT);
-        doc.text(col.l, mx + colW / 2, metY - 3, { align: 'center' });
-        setFont('bold', 9, isCalagem ? [50, 100, 30] : ACCENT);
-        doc.text(col.v, mx + colW / 2, metY + 2.5, { align: 'center' });
-
-        // Separador vertical sutil entre colunas
-        if (mx > ML + 4) {
+      let cx = ML + 2;
+      cols.forEach((col, ci) => {
+        const cw = colWidths[ci];
+        // Label cinza pequeno
+        sf('normal', 8, MED);
+        doc.text(col.l, cx + cw / 2, y, { align: 'center' });
+        // Valor preto negrito grande
+        sf('bold', 11, BLACK);
+        doc.text(col.v, cx + cw / 2, y + 6, { align: 'center' });
+        // Separador vertical entre colunas
+        if (ci < cols.length - 1) {
           doc.setDrawColor(...LINE);
-          doc.setLineWidth(0.15);
-          doc.line(mx, metY - 5, mx, metY + 4);
+          doc.setLineWidth(0.3);
+          doc.line(cx + cw, y - 3, cx + cw, y + 7);
         }
-        mx += colW;
-      }
+        cx += cw;
+      });
 
-      // Parcelamento (se > 1 aplicação)
+      y += 10;
+
+      // ── Parcelamento ──
       if (numAplic > 1) {
-        const pY = y + 22;
-        doc.setDrawColor(...LINE);
-        doc.setLineWidth(0.15);
-        doc.line(ML + 4, pY - 1, ML + CW - 4, pY - 1);
+        hLine(y, LINE, 0.3);
+        y += 5;
 
-        setFont('bold', 7, MED);
-        doc.text('Parcelamento:', ML + 4, pY + 3);
+        sf('bold', 9, MED_DARK);
+        doc.text('Parcelamento:', ML + 2, y);
+        y += 5;
 
-        // Grade de parcelas — 4 por linha
-        const PARC_W = 42;
-        parcelas.forEach((parc, i) => {
-          const col = i % 4;
-          const row = Math.floor(i / 4);
-          const px = ML + 4 + col * (PARC_W + 2);
-          const py = pY + 6 + row * 8;
-
-          setFont('bold', 7.5, DARK);
-          doc.text(`${i + 1}ª (${parc.pct}%)`, px, py);
-          setFont('normal', 7, MED);
-          const detalhes = [
+        parcelas.forEach((parc, pi) => {
+          sf('bold', 10, BLACK);
+          doc.text(`${pi + 1}ª aplicação — ${parc.pct}%`, ML + 4, y);
+          sf('normal', 10, DARK);
+          const det = [
             parc.kg != null ? fmtTotal(parc.kg) : null,
-            parc.meses ? parc.meses : null,
-          ].filter(Boolean).join(' · ');
-          doc.text(detalhes, px, py + 4.5);
+            parc.meses ? `Meses: ${parc.meses}` : null,
+          ].filter(Boolean).join('     ');
+          if (det) doc.text(det, ML + 60, y);
+          y += 7;
         });
       }
 
-      // Observações
+      // ── Observações ──
       if (observacoes) {
-        const obsY = y + altBloco - 3.5;
-        setFont('italic', 7, LIGHT);
-        doc.text(`Obs: ${observacoes.substring(0, 100)}`, ML + 4, obsY);
+        sf('italic', 8.5, MED_DARK);
+        doc.text(`Obs: ${observacoes.substring(0, 100)}`, ML + 2, y + 2);
+        y += 6;
       }
 
-      y += altBloco + 3;
+      y += 5;
     }
 
-    y += 6;
+    // Linha final separando talhões
+    hLine(y, [160, 160, 160], 0.5);
+    y += 8;
   }
 
   doc.save(`Adubacao_${produtor.codigo}_Safra${safra.replace('/', '-')}.pdf`);
