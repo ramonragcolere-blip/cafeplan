@@ -2,12 +2,13 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, TreePine, UserCheck, ClipboardList,
-  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind
+  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind, CalendarDays
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const topItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/calendario', label: 'Calendário', icon: CalendarDays },
   { path: '/produtores', label: 'Produtores', icon: Users },
   { path: '/talhoes', label: 'Talhões', icon: TreePine },
 ];
