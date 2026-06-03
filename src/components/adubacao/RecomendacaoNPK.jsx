@@ -11,7 +11,6 @@ function Badge({ label, classe }) {
     'Baixo': 'bg-red-100 text-red-700',
     'Médio': 'bg-yellow-100 text-yellow-700',
     'Bom': 'bg-green-100 text-green-700',
-    'Bom+': 'bg-green-100 text-green-700',
     'Ótimo': 'bg-blue-100 text-blue-700',
     'Alto': 'bg-purple-100 text-purple-700',
   };
@@ -63,19 +62,24 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
   const classP    = p != null ? classificarP(p) : null;
   const calcBoro  = b != null ? calcB(b) : null;
 
-  const doseP = classP && dosesBase.P != null
-    ? classP.dispensar ? 0 : Math.round(dosesBase.P * classP.fator)
+  // P₂O₅: dose base da tabela × fator de ajuste pelo teor no solo
+  const dosePBase = dosesBase.P;
+  const dosePFator = classP?.fator ?? null;
+  const doseP = classP && dosePBase != null
+    ? classP.dispensar ? 0 : Math.round(dosePBase * classP.fator)
     : null;
 
-  // K — lógica com soma de camadas
+  // K₂O — lógica com soma de camadas
   // analise.potassio e analise2040.potassio estão em mmolc/dm³
   // calcKSomaCamadas converte internamente para mg/dm³ antes de classificar
   const kDecisao = k != null
     ? calcKSomaCamadas(k, analise2040?.potassio, mediaBienal, metaK)
     : null;
 
-  const doseKBase = kDecisao?.classK && dosesBase.K != null
-    ? kDecisao.classK.dispensar ? 0 : Math.round(dosesBase.K * kDecisao.classK.fator)
+  const doseKBaseBruto = dosesBase.K;
+  const doseKFator = kDecisao?.classK?.fator ?? null;
+  const doseKBase = kDecisao?.classK && doseKBaseBruto != null
+    ? kDecisao.classK.dispensar ? 0 : Math.round(doseKBaseBruto * kDecisao.classK.fator)
     : null;
   // Se dispensado pela soma, doseK = 0
   const doseK = kDecisao?.dispensar ? 0 : doseKBase;
@@ -142,44 +146,58 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
             </div>
           </div>
 
-          {/* P */}
-          <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">P₂O₅</span>
-              {classP && <Badge classe={classP.classe} />}
+          {/* P₂O₅ */}
+          <div className="flex flex-col py-1.5 border-b border-border/40 gap-0.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">P₂O₅</span>
+                {classP && <Badge classe={classP.classe} />}
+                {p != null && <span className="text-xs text-muted-foreground">{p} mg/dm³</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm">
+                  {doseP != null ? (classP?.dispensar ? 'Dispensar' : `${doseP} kg/ha`) : '—'}
+                </span>
+                {doseP > 0 && <span className="text-xs text-muted-foreground">(total: {totP.total || '—'} kg)</span>}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm">
-                {doseP != null ? (classP?.dispensar ? 'Dispensar' : `${doseP} kg/ha`) : '—'}
+            {classP && !classP.dispensar && dosePBase != null && (
+              <span className="text-xs text-muted-foreground">
+                Base: {dosePBase} kg/ha × {dosePFator} = <strong>{doseP} kg/ha</strong>
               </span>
-              {doseP > 0 && <span className="text-xs text-muted-foreground">(total: {totP.total || '—'} kg)</span>}
-            </div>
+            )}
           </div>
 
-          {/* K — com lógica de soma de camadas */}
-          <div className="flex items-start justify-between py-1.5 border-b border-border/40 gap-2">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
+          {/* K₂O — com lógica de soma de camadas */}
+          <div className="flex flex-col py-1.5 border-b border-border/40 gap-0.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-medium">K₂O</span>
                 {kDecisao?.classK && <Badge classe={kDecisao.classK.classe} />}
+                {k != null && (
+                  <span className="text-xs text-muted-foreground">
+                    {(k * 39.1).toFixed(0)} mg/dm³
+                    {analise2040?.potassio != null && ` + ${(analise2040.potassio * 39.1).toFixed(0)} = ${kDecisao?.kTotal?.toFixed(0)} mg/dm³`}
+                  </span>
+                )}
               </div>
-              {/* Sub-info soma de camadas */}
-              {analise2040?.potassio != null && k != null && (
-                <span className="text-xs text-muted-foreground">
-                  Soma: {(k * 39.1).toFixed(0)} + {(analise2040.potassio * 39.1).toFixed(0)} = <strong>{kDecisao?.kTotal?.toFixed(0)} mg/dm³</strong>
-                  {' '}(meta {metaK}: {META_K[metaK]} mg/dm³)
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="font-bold text-sm">
+                  {doseK != null ? (kDecisao?.dispensar ? 'Dispensar' : `${doseK} kg/ha`) : '—'}
                 </span>
-              )}
-              {kDecisao?.dispensar && analise2040?.potassio != null && (
-                <span className="text-xs text-green-700 font-medium">K dispensado — soma das camadas atinge a meta</span>
-              )}
+                {doseK > 0 && <span className="text-xs text-muted-foreground">(total: {totK.total || '—'} kg)</span>}
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="font-bold text-sm">
-                {doseK != null ? (kDecisao?.dispensar ? 'Dispensar' : `${doseK} kg/ha`) : '—'}
+            {kDecisao?.classK && !kDecisao.dispensar && doseKBaseBruto != null && doseKFator != null && (
+              <span className="text-xs text-muted-foreground">
+                Base: {doseKBaseBruto} kg/ha × {doseKFator} = <strong>{doseKBase} kg/ha</strong>
               </span>
-              {doseK > 0 && <span className="text-xs text-muted-foreground">(total: {totK.total || '—'} kg)</span>}
-            </div>
+            )}
+            {kDecisao?.dispensar && (
+              <span className="text-xs text-green-700 font-medium">
+                {analise2040?.potassio != null ? 'K dispensado — soma das camadas atinge a meta' : 'K dispensado pelo teor no solo'}
+              </span>
+            )}
           </div>
 
           {/* Seletor de meta K */}
