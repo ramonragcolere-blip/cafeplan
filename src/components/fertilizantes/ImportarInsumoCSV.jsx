@@ -9,8 +9,9 @@ import { Upload, Loader2, CheckCircle2, AlertCircle, FileText, RefreshCw } from 
 
 const CSV_COLUNAS = [
   'nome', 'ingrediente_ativo', 'fornecedor', 'grupo',
-  'dose_viveiro', 'dose_plantio', 'dose_1ano_recepa', 'unidade_aplicacao',
-  'dose_producao', 'dose_esqueletado', 'instrucoes_uso', 'funcao_composicao', 'intervalo_seguranca'
+  'dose_viveiro', 'dose_plantio', 'dose_1ano_recepa', 'unidade_costal',
+  'dose_producao', 'dose_esqueletado', 'unidade_aplicacao',
+  'instrucoes_uso', 'funcao_composicao', 'intervalo_seguranca'
 ];
 
 function parseCSV(texto) {

@@ -134,8 +134,13 @@
     "dose_esqueletado": {
       "type": "string"
     },
+    "unidade_costal": {
+      "type": "string",
+      "description": "Unidade para doses de viveiro, plantio e 1ano/recepa (bomba costal)"
+    },
     "unidade_aplicacao": {
-      "type": "string"
+      "type": "string",
+      "description": "Unidade para doses de produ\u00e7\u00e3o e esqueletado (atomizador/ha)"
     },
     "instrucoes_uso": {
       "type": "string"
