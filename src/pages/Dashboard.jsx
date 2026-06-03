@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Users, TreePine, ClipboardList, AlertTriangle } from 'lucide-react';
@@ -8,6 +8,7 @@ import ColheitaProgressoSection from '@/components/dashboard/ColheitaProgressoSe
 import AdubacaoSection from '@/components/dashboard/AdubacaoSection';
 import AlertasSection from '@/components/dashboard/AlertasSection';
 import ResumoProdutorSection from '@/components/dashboard/ResumoProdutorSection';
+import CustosPlanejadosSection from '@/components/dashboard/CustosPlanejadosSection';
 
 export default function Dashboard() {
   const [produtorFiltro, setProdutorFiltro] = useState('');
@@ -17,8 +18,20 @@ export default function Dashboard() {
   const { data: lancamentos = [] } = useQuery({ queryKey: ['lancamentos'], queryFn: () => base44.entities.Lancamento.list() });
   const { data: analises = [] } = useQuery({ queryKey: ['analises_solo'], queryFn: () => base44.entities.AnaliseSolo.list() });
   const { data: planos = [] } = useQuery({ queryKey: ['base_planejamento'], queryFn: () => base44.entities.BasePlanejamentoAdubacao.list() });
+  const { data: aplicacoesFoliares = [] } = useQuery({ queryKey: ['aplicacoes_foliares'], queryFn: () => base44.entities.AplicacaoFoliar.list() });
 
   const produtorAtivo = produtorFiltro ? produtores.find(p => p.codigo === produtorFiltro) : null;
+
+  // Safra predominante: a mais comum entre os planos/aplicações filtrados
+  const safraAtiva = useMemo(() => {
+    const fonte = produtorFiltro
+      ? planos.filter(p => p.codigo_produtor === produtorFiltro)
+      : planos;
+    if (!fonte.length) return null;
+    const contagem = {};
+    fonte.forEach(p => { if (p.safra) contagem[p.safra] = (contagem[p.safra] || 0) + 1; });
+    return Object.entries(contagem).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  }, [planos, produtorFiltro]);
 
   // Cards resumo
   const produtoresAtivos = produtores.filter(p => p.status !== 'inativo');
@@ -110,6 +123,15 @@ export default function Dashboard() {
         talhoes={talhoes}
         analises={analises}
         filtroProdutorCodigo={produtorFiltro}
+      />
+
+      {/* Seção Custos Planejados */}
+      <CustosPlanejadosSection
+        produtor={produtorAtivo}
+        planos={planos}
+        aplicacoesFoliares={aplicacoesFoliares}
+        talhoes={talhoes}
+        safra={safraAtiva}
       />
     </div>
   );
