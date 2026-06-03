@@ -29,7 +29,7 @@ function ProdutoRow({ produto, onRemover }) {
   );
 }
 
-function AplicacaoBlock({ aplicacao, insumos, onChange, onRemover, onSave, saving }) {
+function AplicacaoBlock({ aplicacao, insumos, faseTalhao, onChange, onRemover, onSave, saving }) {
   const [busca, setBusca] = useState('');
   const [produtoSel, setProdutoSel] = useState('');
   const [dose, setDose] = useState('');
@@ -45,13 +45,25 @@ function AplicacaoBlock({ aplicacao, insumos, onChange, onRemover, onSave, savin
     );
   }, [insumos, busca]);
 
-  // Auto-preenche dose/unidade ao selecionar produto
+  // Auto-preenche dose/unidade ao selecionar produto conforme fase do talhão
   const handleSelectProduto = (id) => {
     setProdutoSel(id);
     const ins = insumos.find(p => p.id === id);
     if (ins) {
-      setDose(ins.dose_producao || '');
-      setUnidade(ins.unidade_aplicacao || 'L/ha');
+      let doseAuto = '';
+      const fase = faseTalhao || '';
+      if (fase === 'Em formação') {
+        doseAuto = ins.dose_plantio || '';
+      } else if (fase === 'Recepado/Brotando') {
+        doseAuto = ins.dose_1ano_recepa || '';
+      } else if (fase === 'Esqueletado/Decotado') {
+        doseAuto = ins.dose_esqueletado || '';
+      } else {
+        // Em produção, Safra zero e qualquer outro
+        doseAuto = ins.dose_producao || '';
+      }
+      setDose(doseAuto);
+      setUnidade(ins.unidade_aplicacao || '');
     }
   };
 
@@ -269,6 +281,7 @@ function TalhaoPlano({ talhao, aplicacoes, insumos, onSaveAplicacao, onRemoverAp
               key={aplic.id || aplic._tmpId || idx}
               aplicacao={aplic}
               insumos={insumos}
+              faseTalhao={talhao.fase_atual}
               onChange={(updated) => handleChange(idx, updated)}
               onRemover={() => handleRemover(idx)}
               onSave={() => handleSave(idx)}
