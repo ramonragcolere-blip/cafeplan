@@ -81,7 +81,7 @@ export default function TabelaFertilizantes({ dados, loading, onNovo, onEditar, 
           <Button variant="outline" onClick={() => setImportarOpen(true)} className="gap-2"><Upload className="w-4 h-4" />Importar CSV</Button>
           <Button onClick={onNovo} className="gap-2"><Plus className="w-4 h-4" />Novo Produto</Button>
         </div>
-        <ImportarInsumoCSV open={importarOpen} onOpenChange={setImportarOpen} nomesExistentes={dados.map(p => p.nome)} onImportado={onImportado} />
+        <ImportarInsumoCSV open={importarOpen} onOpenChange={setImportarOpen} produtosExistentes={dados} onImportado={onImportado} />
       </div>
 
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">

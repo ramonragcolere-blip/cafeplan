@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { base44 } from '@/api/base44Client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/use-toast';
-import { Upload, Loader2, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertCircle, FileText, RefreshCw } from 'lucide-react';
 
 const CSV_COLUNAS = [
   'nome', 'ingrediente_ativo', 'fornecedor', 'grupo',
@@ -18,7 +18,6 @@ function parseCSV(texto) {
   if (linhas.length < 2) return [];
   const cabecalho = linhas[0].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
   return linhas.slice(1).map(linha => {
-    // Handle quoted fields with commas
     const cols = [];
     let current = '';
     let inQuotes = false;
@@ -35,13 +34,18 @@ function parseCSV(texto) {
   }).filter(r => r.nome);
 }
 
-export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes, onImportado }) {
+export default function ImportarInsumoCSV({ open, onOpenChange, produtosExistentes = [], onImportado }) {
   const [preview, setPreview] = useState([]);
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Mapa nome (lowercase) → produto existente completo (com id)
+  const mapaExistentes = new Map(
+    produtosExistentes.map(p => [p.nome.toLowerCase().trim(), p])
+  );
 
   const handleFile = (e) => {
     const file = e.target.files[0];
@@ -50,37 +54,45 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
     setResultado(null);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const linhas = parseCSV(ev.target.result);
-      setPreview(linhas);
+      setPreview(parseCSV(ev.target.result));
     };
     reader.readAsText(file, 'UTF-8');
   };
 
-  const nomesSet = new Set((nomesExistentes || []).map(n => n.toLowerCase().trim()));
-
-  const novos = preview.filter(r => !nomesSet.has((r.nome || '').toLowerCase().trim()));
-  const duplicatas = preview.filter(r => nomesSet.has((r.nome || '').toLowerCase().trim()));
+  const novos = preview.filter(r => !mapaExistentes.has((r.nome || '').toLowerCase().trim()));
+  const aAtualizar = preview.filter(r => mapaExistentes.has((r.nome || '').toLowerCase().trim()));
 
   const handleImportar = async () => {
-    if (!novos.length) return;
+    if (!novos.length && !aAtualizar.length) return;
     setLoading(true);
     let criados = 0;
+    let atualizados = 0;
     let erros = 0;
+
     for (const row of novos) {
       const data = {};
       CSV_COLUNAS.forEach(col => { if (row[col]) data[col] = row[col]; });
       try {
         await base44.entities.FertilizanteFormulado.create(data);
         criados++;
-      } catch {
-        erros++;
-      }
+      } catch { erros++; }
     }
+
+    for (const row of aAtualizar) {
+      const existente = mapaExistentes.get((row.nome || '').toLowerCase().trim());
+      const data = {};
+      CSV_COLUNAS.forEach(col => { if (row[col]) data[col] = row[col]; });
+      try {
+        await base44.entities.FertilizanteFormulado.update(existente.id, data);
+        atualizados++;
+      } catch { erros++; }
+    }
+
     setLoading(false);
-    setResultado({ criados, erros, duplicatas: duplicatas.length });
+    setResultado({ criados, atualizados, erros });
     queryClient.invalidateQueries({ queryKey: ['fertilizantes'] });
     if (onImportado) onImportado();
-    toast({ title: `Importação concluída: ${criados} produto(s) criado(s)` + (erros ? `, ${erros} erro(s)` : '') });
+    toast({ title: `Importação concluída: ${criados} criado(s), ${atualizados} atualizado(s)` + (erros ? `, ${erros} erro(s)` : '') });
   };
 
   const handleClose = () => {
@@ -89,6 +101,8 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
     setResultado(null);
     onOpenChange(false);
   };
+
+  const totalParaImportar = novos.length + aAtualizar.length;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -104,7 +118,7 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
             <div className="flex flex-wrap gap-1">
               {CSV_COLUNAS.map(c => <code key={c} className="bg-card border border-border rounded px-1.5 py-0.5 text-xs">{c}</code>)}
             </div>
-            <p className="text-xs text-muted-foreground">A coluna <strong>nome</strong> é obrigatória. Produtos com nome já existente serão pulados.</p>
+            <p className="text-xs text-muted-foreground">A coluna <strong>nome</strong> é obrigatória. Produtos com nome já existente serão <strong>atualizados</strong>.</p>
           </div>
 
           {/* Upload */}
@@ -117,9 +131,13 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
           {/* Preview */}
           {preview.length > 0 && !resultado && (
             <div className="space-y-2">
-              <div className="flex gap-3 text-sm">
-                <span className="flex items-center gap-1.5 text-green-700"><CheckCircle2 className="w-4 h-4" />{novos.length} para importar</span>
-                {duplicatas.length > 0 && <span className="flex items-center gap-1.5 text-amber-600"><AlertCircle className="w-4 h-4" />{duplicatas.length} duplicata(s) serão puladas</span>}
+              <div className="flex gap-4 text-sm flex-wrap">
+                {novos.length > 0 && (
+                  <span className="flex items-center gap-1.5 text-green-700"><CheckCircle2 className="w-4 h-4" />{novos.length} novo(s)</span>
+                )}
+                {aAtualizar.length > 0 && (
+                  <span className="flex items-center gap-1.5 text-blue-600"><RefreshCw className="w-4 h-4" />{aAtualizar.length} a atualizar</span>
+                )}
               </div>
               <div className="border border-border rounded-lg overflow-auto max-h-48">
                 <table className="w-full text-xs">
@@ -133,15 +151,15 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
                   </thead>
                   <tbody>
                     {preview.map((r, i) => {
-                      const isDup = nomesSet.has((r.nome || '').toLowerCase().trim());
+                      const isExistente = mapaExistentes.has((r.nome || '').toLowerCase().trim());
                       return (
                         <tr key={i} className="border-t border-border/50">
                           <td className="px-3 py-1.5">{r.nome}</td>
                           <td className="px-3 py-1.5 text-muted-foreground">{r.grupo || '—'}</td>
                           <td className="px-3 py-1.5 text-muted-foreground">{r.fornecedor || '—'}</td>
                           <td className="px-3 py-1.5">
-                            {isDup
-                              ? <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Duplicata</Badge>
+                            {isExistente
+                              ? <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">Atualizar</Badge>
                               : <Badge variant="outline" className="text-xs text-green-700 border-green-300">Novo</Badge>}
                           </td>
                         </tr>
@@ -157,8 +175,8 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
           {resultado && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm space-y-1">
               <p className="font-medium text-green-800">Importação concluída!</p>
-              <p className="text-green-700">{resultado.criados} produto(s) criado(s)</p>
-              {resultado.duplicatas > 0 && <p className="text-amber-600">{resultado.duplicatas} duplicata(s) pulada(s)</p>}
+              {resultado.criados > 0 && <p className="text-green-700">{resultado.criados} produto(s) criado(s)</p>}
+              {resultado.atualizados > 0 && <p className="text-blue-700">{resultado.atualizados} produto(s) atualizado(s)</p>}
               {resultado.erros > 0 && <p className="text-red-600">{resultado.erros} erro(s)</p>}
             </div>
           )}
@@ -166,10 +184,10 @@ export default function ImportarInsumoCSV({ open, onOpenChange, nomesExistentes,
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>Fechar</Button>
-          {!resultado && novos.length > 0 && (
+          {!resultado && totalParaImportar > 0 && (
             <Button onClick={handleImportar} disabled={loading} className="gap-2">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Importar {novos.length} produto(s)
+              Importar {totalParaImportar} produto(s)
             </Button>
           )}
         </DialogFooter>
