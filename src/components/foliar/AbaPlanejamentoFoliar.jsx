@@ -52,16 +52,21 @@ function AplicacaoBlock({ aplicacao, insumos, faseTalhao, onChange, onRemover, o
     if (ins) {
       let doseAuto = '';
       const fase = faseTalhao || '';
+      let campoDose = 'dose_producao';
       if (fase.includes('Em formação')) {
         doseAuto = ins.dose_plantio || '';
+        campoDose = 'dose_plantio';
       } else if (fase.includes('Recepado')) {
         doseAuto = ins.dose_1ano_recepa || '';
+        campoDose = 'dose_1ano_recepa';
       } else if (fase.includes('Esqueletado')) {
         doseAuto = ins.dose_esqueletado || '';
+        campoDose = 'dose_esqueletado';
       } else {
-        // Em produção, Safra zero, vazio ou qualquer outro
         doseAuto = ins.dose_producao || '';
+        campoDose = 'dose_producao';
       }
+      console.log('[AbaPlanejamentoFoliar] Fase detectada:', fase || '(vazia)', '| Campo dose:', campoDose, '| Valor:', doseAuto, '| Produto:', ins.nome);
       setDose(doseAuto);
       setUnidade(ins.unidade_aplicacao || '');
     }
