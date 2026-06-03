@@ -33,12 +33,12 @@ export default function Lancamentos() {
   const { data: safristas = [] } = useQuery({ queryKey: ['safristas'], queryFn: () => base44.entities.Safrista.list() });
   const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
 
-  const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Lancamento.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); setDialogOpen(false); }
-  });
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Lancamento.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); setDialogOpen(false); }
+  });
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.Lancamento.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); setDialogOpen(false); }
   });
   const deleteMutation = useMutation({
@@ -54,28 +54,29 @@ export default function Lancamentos() {
     else createMutation.mutate(data);
   };
 
-  const handleSalvarLote = async (registros) => {
+  const handleSalvarLote = async (registros, onReset) => {
     if (!registros.length) return;
     setSavingLote(true);
     try {
       for (const r of registros) {
-        await base44.entities.Lancamento.create(r);
+        await base44.entities.Lancamento.create({ ...r, codigo_produtor: produtorSelecionado });
       }
       queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      onReset?.();
     } finally {
       setSavingLote(false);
     }
   };
 
-  const filteredSafristas = safristas.filter(s => !form.codigo_produtor || s.codigo_produtor === form.codigo_produtor);
-  const filteredTalhoes = talhoes.filter(t => !form.codigo_produtor || t.codigo_produtor === form.codigo_produtor);
-
-  const produtorAtivo = produtorSelecionado || (produtores[0]?.codigo ?? '');
+  const filteredForm = {
+    safristas: safristas.filter(s => !form.codigo_produtor || s.codigo_produtor === form.codigo_produtor),
+    talhoes: talhoes.filter(t => !form.codigo_produtor || t.codigo_produtor === form.codigo_produtor),
+  };
 
   const filtered = lancamentos.filter(l => {
     const matchSearch = (l.safrista || '').toLowerCase().includes(search.toLowerCase()) ||
       (l.talhao || '').toLowerCase().includes(search.toLowerCase());
-    const matchProdutor = verTodos || !produtorAtivo || l.codigo_produtor === produtorAtivo;
+    const matchProdutor = verTodos || !produtorSelecionado || l.codigo_produtor === produtorSelecionado;
     return matchSearch && matchProdutor;
   });
 
@@ -96,7 +97,11 @@ export default function Lancamentos() {
           <p className="text-muted-foreground mt-1">Registro diário de colheita</p>
         </div>
         <Button onClick={() => {
-          setForm({ codigo_produtor: produtorAtivo, data: format(new Date(), 'yyyy-MM-dd'), safrista: '', talhao: '', tipo_colheita: 'Manual', medidas_colhidas: '', valor_medida: '', valor_total: '', observacoes: '' });
+          setForm({
+            codigo_produtor: produtorSelecionado, data: format(new Date(), 'yyyy-MM-dd'),
+            safrista: '', talhao: '', tipo_colheita: 'Manual',
+            medidas_colhidas: '', valor_medida: '', valor_total: '', observacoes: ''
+          });
           setEditingId(null);
           setDialogOpen(true);
         }} className="gap-2">
@@ -104,18 +109,19 @@ export default function Lancamentos() {
         </Button>
       </div>
 
-      {/* Seletor de produtor */}
-      <div className="bg-card border border-border rounded-xl p-4">
-        <Label className="text-xs mb-2 block font-semibold text-muted-foreground uppercase tracking-wide">Produtor</Label>
-        <div className="flex flex-wrap gap-2">
-          {produtores.map(p => (
-            <button key={p.id} type="button"
-              onClick={() => { setProdutorSelecionado(p.codigo); setVerTodos(false); }}
-              className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${produtorAtivo === p.codigo && !verTodos ? 'bg-primary text-white border-primary' : 'border-border hover:bg-muted/40'}`}>
-              {p.nome}
-            </button>
-          ))}
-        </div>
+      {/* Seletor de produtor — dropdown */}
+      <div className="max-w-sm">
+        <Label className="text-xs mb-1 block font-medium">Produtor</Label>
+        <Select value={produtorSelecionado} onValueChange={setProdutorSelecionado}>
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione o produtor..." />
+          </SelectTrigger>
+          <SelectContent>
+            {produtores.map(p => (
+              <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Tabs defaultValue="lote">
@@ -126,14 +132,14 @@ export default function Lancamentos() {
 
         {/* Aba lançamento em lote */}
         <TabsContent value="lote" className="mt-4">
-          {!produtorAtivo ? (
-            <p className="text-center text-muted-foreground py-8">Selecione um produtor acima para iniciar o lançamento em lote.</p>
+          {!produtorSelecionado ? (
+            <p className="text-center text-muted-foreground py-10">Selecione um produtor acima para registrar lançamentos.</p>
           ) : (
             <LancamentoEmLote
-              produtorCodigo={produtorAtivo}
+              produtorCodigo={produtorSelecionado}
               talhoes={talhoes}
               safristas={safristas}
-              onSalvar={handleSalvarLote}
+              onSalvarRegistros={handleSalvarLote}
               saving={savingLote}
             />
           )}
@@ -161,7 +167,8 @@ export default function Lancamentos() {
           <div className="flex flex-col sm:flex-row gap-3 items-center">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Buscar safrista ou talhão..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
+              <Input placeholder="Buscar safrista ou talhão..." value={search}
+                onChange={e => setSearch(e.target.value)} className="pl-10" />
             </div>
             <Button variant={verTodos ? 'default' : 'outline'} size="sm" onClick={() => setVerTodos(v => !v)}>
               {verTodos ? 'Filtrar por produtor' : 'Ver todos os produtores'}
@@ -200,8 +207,12 @@ export default function Lancamentos() {
                       <TableCell className="text-right font-semibold">R$ {(l.valor_total || 0).toFixed(2)}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => { setForm({ ...l }); setEditingId(l.id); setDialogOpen(true); }}><Pencil className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(l.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => { setForm({ ...l }); setEditingId(l.id); setDialogOpen(true); }}>
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(l.id)}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -230,14 +241,14 @@ export default function Lancamentos() {
               <Label>Safrista</Label>
               <Select value={form.safrista} onValueChange={v => setForm({ ...form, safrista: v })}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{filteredSafristas.map(s => <SelectItem key={s.id} value={s.nome}>{s.nome}</SelectItem>)}</SelectContent>
+                <SelectContent>{filteredForm.safristas.map(s => <SelectItem key={s.id} value={s.nome}>{s.nome}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
               <Label>Talhão</Label>
               <Select value={form.talhao} onValueChange={v => setForm({ ...form, talhao: v })}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{filteredTalhoes.map(t => <SelectItem key={t.id} value={t.nome}>{t.nome}</SelectItem>)}</SelectContent>
+                <SelectContent>{filteredForm.talhoes.map(t => <SelectItem key={t.id} value={t.nome}>{t.nome}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
@@ -245,7 +256,8 @@ export default function Lancamentos() {
               <Select value={form.tipo_colheita} onValueChange={v => setForm({ ...form, tipo_colheita: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {['Manual', 'Derriçadeira', 'Colhedora', 'Recolhedora', 'Varrição Manual', 'Varrição Mecanizada'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  {['Manual', 'Derriçadeira', 'Colhedora', 'Recolhedora', 'Varrição Manual', 'Varrição Mecanizada'].map(m =>
+                    <SelectItem key={m} value={m}>{m}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
