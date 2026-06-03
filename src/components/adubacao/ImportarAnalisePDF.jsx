@@ -49,67 +49,71 @@ const CAMPOS_2040 = [
 
 const buildPrompt = (textoPDF) => `
 Você é um especialista em análise de solos agrícolas brasileiro.
-Abaixo está o TEXTO BRUTO extraído de um laudo de análise de solo. Leia com atenção e extraia os dados.
+Extraia TODOS os dados do laudo abaixo com máxima precisão.
 
 === TEXTO DO PDF ===
 ${textoPDF}
-=== FIM DO TEXTO ===
+=== FIM ===
 
-PASSO 1 — IDENTIFIQUE O LABORATÓRIO pelo texto:
-- COOXUPÉ: contém "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé".
-  Unidades típicas: K em mmolc/dm³, Ca e Mg em mmolc/dm³.
-  IMPORTANTE: para este lab, use os valores de K, Ca e Mg DIRETAMENTE, sem conversão.
-- LAB_VICOSA: contém "Laboratório de Análise de Solo Viçosa" ou "labsolosvicosa@gmail.com".
-  Unidades típicas: Ca e Mg em cmolc/dm³, K pode aparecer em cmolc/dm³ — nesse caso converter: K_mg = K_cmolc × 391.
-- OUTRO: qualquer outro laboratório.
+PASSO 1 — IDENTIFIQUE O LABORATÓRIO:
+- COOXUPE: contém "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé"
+- LAB_VICOSA: contém "labsolosvicosa" ou "Laboratório de Análise de Solo Viçosa"
+- OUTRO: qualquer outro
 
-PASSO 2 — LOCALIZE OS CAMPOS PELOS RÓTULOS no texto (não por posição fixa):
-Para COOXUPÉ, procure rótulos como: "pH CaCl2", "M.O.", "P mg/dm³", "K mmol", "Ca mmol", "Mg mmol",
-"H+Al", "S.B.", "C.T.C.", "V%", "B mg", "Cu mg", "Fe mg", "Mn mg", "Zn mg", "S mg", "Al".
-Para LAB_VICOSA, procure: "pH", "P", "K", "Ca", "Mg", "Al", "H + Al", "SB", "(t)", "(T)", "V", "m", "MO", "Zn", "Fe", "Mn", "Cu", "B", "S".
-Para outros labs, tente identificar pelos nomes dos elementos.
+PASSO 2 — LOCALIZE os campos pelos RÓTULOS (não por posição). Procure variações como "pH CaCl2", "M.O.", "P mg/dm³", "K mmol", "Ca mmol", "H+Al", "S.B.", "C.T.C.", "V%", "B mg", "Zn mg", etc.
 
-PASSO 3 — Se houver múltiplos talhões ou camadas (0-20 e 20-40), retorne uma entrada para cada combinação.
+PASSO 3 — CONVERTA as unidades para o padrão abaixo ANTES de retornar:
+• Ca, Mg, Al, H+Al, SB, CTC → cmolc/dm³
+  (se o laudo usar mmolc/dm³, DIVIDA por 10)
+• K → mg/dm³
+  (se o laudo usar mmolc/dm³, MULTIPLIQUE por 39,1)
+  (se o laudo usar cmolc/dm³, MULTIPLIQUE por 391)
+• M.O. → g/dm³ (se estiver em dag/kg, MULTIPLIQUE por 10)
+• P, B, Zn, Cu, Fe, Mn, S → mg/dm³ (sem conversão)
+• pH, V% → sem conversão
 
-PASSO 4 — Para campos não encontrados, use null. NÃO retorne erro geral — sempre retorne o JSON mesmo com campos em null.
+CONVERSÃO COOXUPE: K, Ca, Mg, CTC, H+Al, SB estão em mmolc/dm³ — converta TODOS.
+CONVERSÃO LAB_VICOSA: Ca, Mg já em cmolc. K pode estar em cmolc/dm³ — se K < 3, multiplique por 391.
 
-Retorne SOMENTE este JSON (sem markdown, sem explicações):
+PASSO 4 — Se houver múltiplas camadas (0-20 e 20-40), retorne UMA ENTRADA POR CAMADA.
+PASSO 5 — Campos não encontrados → null. SEMPRE retorne o JSON.
+
+Retorne SOMENTE este JSON (sem markdown, sem texto extra):
 {
-  "laboratorio": "COOXUPE" | "LAB_VICOSA" | "OUTRO",
+  "laboratorio": "COOXUPE" ou "LAB_VICOSA" ou "OUTRO",
   "identificacao": {
-    "cliente": "nome do cliente/proprietário ou null",
-    "propriedade": "nome da fazenda ou null",
-    "referencia_talhao": "referência ou nome do talhão ou null",
-    "data_liberacao": "YYYY-MM-DD ou null"
+    "cliente": null,
+    "propriedade": null,
+    "referencia_talhao": null,
+    "data_liberacao": null
   },
   "talhoes": [
     {
-      "nome_talhao": "nome do talhão conforme consta no texto",
+      "nome_talhao": "nome do talhão",
       "profundidade": "0-20" ou "20-40",
       "dados": {
-        "ph": número ou null,
-        "materia_organica": número ou null,
-        "fosforo": número ou null,
-        "potassio": número ou null (sempre em mg/dm³),
-        "calcio": número ou null (sempre em cmolc/dm³),
-        "magnesio": número ou null (sempre em cmolc/dm³),
-        "aluminio": número ou null,
-        "h_al": número ou null,
-        "sb": número ou null,
-        "ctc": número ou null,
-        "saturacao_bases": número ou null (V%),
-        "enxofre": número ou null,
-        "boro": número ou null,
-        "zinco": número ou null,
-        "cobre": número ou null,
-        "manganes": número ou null,
-        "ferro": número ou null,
-        "data_analise": "YYYY-MM-DD" ou null
+        "ph": null,
+        "materia_organica": null,
+        "fosforo": null,
+        "potassio": null,
+        "calcio": null,
+        "magnesio": null,
+        "aluminio": null,
+        "h_al": null,
+        "sb": null,
+        "ctc": null,
+        "saturacao_bases": null,
+        "enxofre": null,
+        "boro": null,
+        "zinco": null,
+        "cobre": null,
+        "manganes": null,
+        "ferro": null,
+        "data_analise": null
       }
     }
   ]
-}
-`;
+}`;
 
 const LAB_LABEL = {
   COOXUPE: 'COOXUPÉ',

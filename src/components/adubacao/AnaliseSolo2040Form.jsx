@@ -9,16 +9,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 
 // Campos específicos da camada 20-40 cm
 const CAMPOS_2040 = [
-  { key: 'materia_organica', label: 'M.O. (g/dm³)',       type: 'number', step: '0.01'  },
-  { key: 'fosforo',          label: 'P (mg/dm³)',          type: 'number', step: '0.01'  },
-  { key: 'potassio',         label: 'K (mmolc/dm³)',       type: 'number', step: '0.01'  },
-  { key: 'calcio',           label: 'Ca (mmolc/dm³)',      type: 'number', step: '0.01'  },
-  { key: 'magnesio',         label: 'Mg (mmolc/dm³)',      type: 'number', step: '0.01'  },
-  { key: 'boro',             label: 'B (mg/dm³)',          type: 'number', step: '0.001' },
-  { key: 'zinco',            label: 'Zn (mg/dm³)',         type: 'number', step: '0.01'  },
-  { key: 'ferro',            label: 'Fe (mg/dm³)',         type: 'number', step: '0.01'  },
-  { key: 'manganes',         label: 'Mn (mg/dm³)',         type: 'number', step: '0.01'  },
-  { key: 'cobre',            label: 'Cu (mg/dm³)',         type: 'number', step: '0.01'  },
+  { key: 'ph',              label: 'pH',               type: 'number', step: '0.01'  },
+  { key: 'materia_organica', label: 'M.O. (g/dm³)',    type: 'number', step: '0.01'  },
+  { key: 'fosforo',         label: 'P (mg/dm³)',        type: 'number', step: '0.01'  },
+  { key: 'potassio',        label: 'K (mg/dm³)',        type: 'number', step: '0.01'  },
+  { key: 'calcio',          label: 'Ca (cmolc/dm³)',    type: 'number', step: '0.01'  },
+  { key: 'magnesio',        label: 'Mg (cmolc/dm³)',    type: 'number', step: '0.01'  },
+  { key: 'aluminio',        label: 'Al (cmolc/dm³)',    type: 'number', step: '0.001' },
+  { key: 'h_al',            label: 'H+Al (cmolc/dm³)', type: 'number', step: '0.01'  },
+  { key: 'sb',              label: 'SB (cmolc/dm³)',    type: 'number', step: '0.01'  },
+  { key: 'ctc',             label: 'CTC (cmolc/dm³)',   type: 'number', step: '0.01'  },
+  { key: 'saturacao_bases', label: 'V%',                type: 'number', step: '0.1'   },
+  { key: 'boro',            label: 'B (mg/dm³)',        type: 'number', step: '0.001' },
+  { key: 'zinco',           label: 'Zn (mg/dm³)',       type: 'number', step: '0.01'  },
+  { key: 'ferro',           label: 'Fe (mg/dm³)',       type: 'number', step: '0.01'  },
+  { key: 'manganes',        label: 'Mn (mg/dm³)',       type: 'number', step: '0.01'  },
+  { key: 'cobre',           label: 'Cu (mg/dm³)',       type: 'number', step: '0.01'  },
+  { key: 'enxofre',         label: 'S (mg/dm³)',        type: 'number', step: '0.01'  },
 ];
 
 const empty2040 = () => CAMPOS_2040.reduce((acc, c) => ({ ...acc, [c.key]: '' }), { observacoes: '' });
@@ -57,15 +64,29 @@ function BotaoImportar2040({ onImportado }) {
 Extraia SOMENTE os dados da camada 20-40 cm do texto abaixo.
 Se houver múltiplas camadas, retorne apenas os valores da camada 20-40 cm.
 
-Texto: ${textoPDF || '[não extraído]'}
+Texto: ${textoPDF || '[não extraído — tente extrair diretamente do arquivo]'}
 
-Retorne SOMENTE o JSON com os valores numéricos (null para campos não encontrados):
+CONVERSÃO DE UNIDADES OBRIGATÓRIA antes de retornar:
+• Ca, Mg, Al, H+Al, SB, CTC → cmolc/dm³ (se vier em mmolc/dm³, DIVIDA por 10)
+• K → mg/dm³ (se vier em mmolc/dm³, MULTIPLIQUE por 39,1; se vier em cmolc/dm³, MULTIPLIQUE por 391)
+• M.O. → g/dm³ (se vier em dag/kg, MULTIPLIQUE por 10)
+• P, B, Zn, Cu, Fe, Mn, S → mg/dm³ (sem conversão)
+• pH, V% → sem conversão
+
+Retorne SOMENTE o JSON (sem markdown):
 {
+  "ph": null,
   "materia_organica": null,
   "fosforo": null,
   "potassio": null,
   "calcio": null,
   "magnesio": null,
+  "aluminio": null,
+  "h_al": null,
+  "sb": null,
+  "ctc": null,
+  "saturacao_bases": null,
+  "enxofre": null,
   "boro": null,
   "zinco": null,
   "ferro": null,
@@ -80,11 +101,18 @@ Retorne SOMENTE o JSON com os valores numéricos (null para campos não encontra
         response_json_schema: {
           type: 'object',
           properties: {
+            ph:               { type: 'number' },
             materia_organica: { type: 'number' },
             fosforo:          { type: 'number' },
             potassio:         { type: 'number' },
             calcio:           { type: 'number' },
             magnesio:         { type: 'number' },
+            aluminio:         { type: 'number' },
+            h_al:             { type: 'number' },
+            sb:               { type: 'number' },
+            ctc:              { type: 'number' },
+            saturacao_bases:  { type: 'number' },
+            enxofre:          { type: 'number' },
             boro:             { type: 'number' },
             zinco:            { type: 'number' },
             ferro:            { type: 'number' },

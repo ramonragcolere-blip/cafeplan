@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Save, Loader2, Calculator, AlertTriangle } from 'lucide-react';
-import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcCalagem, calcKSomaCamadas, alertas2040, META_K } from '@/lib/tabelasNutricionais';
+import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas, alertas2040, META_K } from '@/lib/tabelasNutricionais';
 import CalcCalagem from '@/components/adubacao/CalcCalagem';
 
 function Badge({ label, classe }) {
@@ -54,7 +54,6 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
   const classZn   = zn != null ? classificarZn(zn) : null;
   const classCu   = cu != null ? classificarCu(cu) : null;
   const classMn   = mn != null ? classificarMn(mn) : null;
-  const calagem   = calcCalagem(analise?.ph, analise?.saturacao_bases, analise?.ctc);
   const mediaBienal = safraAnterior && safraEstimada
     ? (Number(safraAnterior) + Number(safraEstimada)) / 2
     : null;
@@ -286,29 +285,7 @@ export default function RecomendacaoNPK({ analise, analise2040, talhao, dados, o
           </div>
         )}
 
-        {/* Calagem */}
-        {(calagem.classe || calagem.observacao) && (
-          <div className={`lg:col-span-2 rounded-xl p-4 border ${calagem.necessidade ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Calagem</p>
-            <div className="flex flex-wrap items-center gap-3">
-              {calagem.classe && (
-                <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${calagem.necessidade ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                  {calagem.classe}
-                </span>
-              )}
-              {analise?.ph != null && (
-                <span className="text-xs text-muted-foreground">pH: <strong>{analise.ph}</strong></span>
-              )}
-              {calagem.vAtual != null && (
-                <span className="text-xs text-muted-foreground">V%: <strong>{calagem.vAtual}%</strong> → meta: 60%</span>
-              )}
-              {calagem.nc != null && (
-                <span className="text-sm font-bold text-amber-800">NC = {calagem.nc} t/ha</span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">{calagem.observacao}</p>
-          </div>
-        )}
+
       </div>
       <div className="px-5 pb-4 flex justify-end">
         <Button size="sm" onClick={() => onSave({ safra_anterior_sc_ha: Number(safraAnterior) || undefined, safra_estimada_sc_ha: Number(safraEstimada) || undefined })} disabled={saving} className="gap-2">

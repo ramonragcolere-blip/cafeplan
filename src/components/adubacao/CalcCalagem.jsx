@@ -78,59 +78,82 @@ function calcCalagemVpct({ ctc, v1, v2, prnt, produto, area }) {
 function SeletorCorretivo({ produto, corretivos, onChange }) {
   const [dropAberto, setDropAberto] = useState(false);
   const [busca, setBusca] = useState('');
+  const btnRef = useRef(null);
+  const [posicao, setPosicao] = useState({ top: 0, left: 0, width: 300 });
 
   const visiveis = useMemo(() => {
     const q = busca.toLowerCase();
-    return corretivos.filter(p =>
+    return (corretivos || []).filter(p =>
       (p.nome || '').toLowerCase().includes(q) || (p.fornecedor || '').toLowerCase().includes(q)
     );
   }, [corretivos, busca]);
 
+  const abrirDrop = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPosicao({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: Math.max(rect.width, 320),
+      });
+    }
+    setDropAberto(a => !a);
+  };
+
   return (
     <div>
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Fonte corretiva</p>
-      <div className="relative w-full">
-        <button type="button"
-          className="w-full h-10 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
-          onClick={() => setDropAberto(a => !a)}>
-          <span className={produto ? 'text-foreground' : 'text-muted-foreground'}>
-            {produto ? produto.nome : 'Selecionar produto...'}
-          </span>
-          <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
-        </button>
-        {dropAberto && (
-          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-xl overflow-hidden min-w-[320px]">
-            <div className="p-2 border-b border-border">
-              <input autoFocus
-                className="w-full h-9 text-sm border border-input rounded px-3 bg-background"
-                placeholder="Buscar corretivo..."
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-              />
-            </div>
-            <div className="max-h-72 overflow-y-auto">
-              <button type="button"
-                className="w-full text-left px-4 py-2.5 hover:bg-muted/60 text-sm border-b border-border/30 text-muted-foreground"
-                onClick={() => { onChange(null); setDropAberto(false); setBusca(''); }}>
-                — Nenhum produto —
-              </button>
-              {visiveis.map(p => (
-                <button key={p.id} type="button"
-                  className="w-full text-left px-4 py-3 hover:bg-muted/60 border-b border-border/30 last:border-0"
-                  onClick={() => { onChange(p.id); setDropAberto(false); setBusca(''); }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-sm font-medium leading-snug">{p.nome}</span>
-                    <span className="text-muted-foreground text-xs whitespace-nowrap shrink-0 mt-0.5">
-                      {p.ca_pct > 0 ? `Ca: ${p.ca_pct}%` : ''}{p.ca_pct > 0 && p.mg_pct > 0 ? ' · ' : ''}{p.mg_pct > 0 ? `Mg: ${p.mg_pct}%` : ''}
-                    </span>
-                  </div>
-                  {p.fornecedor && <div className="text-xs text-muted-foreground mt-0.5">{p.fornecedor}</div>}
-                </button>
-              ))}
-            </div>
+      {corretivos.length === 0 && (
+        <p className="text-xs text-amber-600 mb-1">Nenhum produto corretivo cadastrado. Adicione produtos com Ca% ou Mg% na base de fertilizantes.</p>
+      )}
+      <button ref={btnRef} type="button"
+        className="w-full h-10 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
+        onClick={abrirDrop}>
+        <span className={produto ? 'text-foreground' : 'text-muted-foreground'}>
+          {produto ? produto.nome : 'Selecionar produto...'}
+        </span>
+        <ChevronDown className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
+      </button>
+
+      {dropAberto && (
+        <div
+          className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-2xl overflow-hidden"
+          style={{ top: posicao.top, left: posicao.left, width: posicao.width }}
+        >
+          <div className="p-2 border-b border-border">
+            <input autoFocus
+              className="w-full h-9 text-sm border border-input rounded px-3 bg-background"
+              placeholder="Buscar corretivo..."
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              onBlur={() => setTimeout(() => setDropAberto(false), 150)}
+            />
           </div>
-        )}
-      </div>
+          <div className="max-h-72 overflow-y-auto">
+            <button type="button"
+              className="w-full text-left px-4 py-2.5 hover:bg-muted/60 text-sm border-b border-border/30 text-muted-foreground"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => { onChange(null); setDropAberto(false); setBusca(''); }}>
+              — Nenhum produto —
+            </button>
+            {visiveis.map(p => (
+              <button key={p.id} type="button"
+                className="w-full text-left px-4 py-3 hover:bg-muted/60 border-b border-border/30 last:border-0"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(p.id); setDropAberto(false); setBusca(''); }}>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-medium leading-snug">{p.nome}</span>
+                  <span className="text-muted-foreground text-xs whitespace-nowrap shrink-0 mt-0.5">
+                    {p.ca_pct > 0 ? `Ca: ${p.ca_pct}%` : ''}{p.ca_pct > 0 && p.mg_pct > 0 ? ' · ' : ''}{p.mg_pct > 0 ? `Mg: ${p.mg_pct}%` : ''}
+                  </span>
+                </div>
+                {p.fornecedor && <div className="text-xs text-muted-foreground mt-0.5">{p.fornecedor}</div>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {produto && (
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           {produto.ca_pct > 0 && <span className="bg-lime-100 text-lime-700 px-2 py-0.5 rounded-full font-medium">Ca: {produto.ca_pct}%</span>}
@@ -342,13 +365,13 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
   const podeEnviar = resultado && produto && resultado.doseFinalHa > 0 && !!codigoProdutor && !!safra && !!talhaoId;
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+    <div className="bg-card border border-border rounded-2xl">
       {/* Cabeçalho */}
       <div className="flex items-center gap-2 px-5 py-3 bg-lime-50 border-b border-border">
         <span className="font-semibold text-sm text-lime-800">Calagem — Necessidade de Calagem</span>
       </div>
 
-      <div className="p-5 space-y-5">
+      <div className="p-5 space-y-5 overflow-visible">
 
         {/* Seletor de protocolo */}
         <div className="flex flex-wrap items-center gap-3">
