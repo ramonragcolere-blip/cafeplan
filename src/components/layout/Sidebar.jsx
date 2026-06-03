@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, TreePine, UserCheck, ClipboardList,
-  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight
+  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -20,6 +20,7 @@ const colheitaItems = [
 
 const bottomItems = [
   { path: '/adubacao', label: 'Adubação do Cafeeiro', icon: Sprout },
+  { path: '/foliar', label: 'Aplicações Foliares', icon: Wind },
   { path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical },
 ];
 

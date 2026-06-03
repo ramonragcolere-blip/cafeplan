@@ -1,0 +1,74 @@
+{
+  "name": "AnaliseFoliar",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "talhao_id": {
+      "type": "string"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "data_analise": {
+      "type": "string",
+      "format": "date"
+    },
+    "n_pct": {
+      "type": "number",
+      "description": "N %"
+    },
+    "p_pct": {
+      "type": "number",
+      "description": "P %"
+    },
+    "k_pct": {
+      "type": "number",
+      "description": "K %"
+    },
+    "ca_pct": {
+      "type": "number",
+      "description": "Ca %"
+    },
+    "mg_pct": {
+      "type": "number",
+      "description": "Mg %"
+    },
+    "s_pct": {
+      "type": "number",
+      "description": "S %"
+    },
+    "zn_ppm": {
+      "type": "number",
+      "description": "Zn ppm"
+    },
+    "b_ppm": {
+      "type": "number",
+      "description": "B ppm"
+    },
+    "cu_ppm": {
+      "type": "number",
+      "description": "Cu ppm"
+    },
+    "mn_ppm": {
+      "type": "number",
+      "description": "Mn ppm"
+    },
+    "fe_ppm": {
+      "type": "number",
+      "description": "Fe ppm"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "talhao_id",
+    "safra"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "name": "PlanoFoliar",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "talhao_id": {
+      "type": "string"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "equipamento": {
+      "type": "string",
+      "enum": [
+        "Bomba costal",
+        "Atomizador",
+        "Drone",
+        "Canh\u00e3o"
+      ]
+    },
+    "epocas": {
+      "type": "object",
+      "description": "Mapa \u00e9poca \u2192 lista de produtos {produto_id, produto_nome, dose, unidade}"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "talhao_id",
+    "safra"
+  ]
+}
