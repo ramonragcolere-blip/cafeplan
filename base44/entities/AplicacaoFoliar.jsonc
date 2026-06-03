@@ -39,7 +39,7 @@
       "items": {
         "type": "object"
       },
-      "description": "Lista de produtos: [{produto_id, produto_nome, dose, unidade, tipo_formulacao, grupo}]"
+      "description": "Lista de produtos: [{produto_id, produto_nome, dose, unidade, tipo_formulacao, grupo, preco}]"
     },
     "observacoes": {
       "type": "string"

@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw, Plus, Trash2, DollarSign } from 'lucide-react';
+import ResumoCustosAdubacao from './ResumoCustosAdubacao';
 import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas } from '@/lib/tabelasNutricionais';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -114,7 +115,7 @@ function calcDoses(doseRecKgHa, produtoPct, areaHa, numPlantas, metros) {
 }
 
 function linhaVazia() {
-  return { produtoId: undefined, doseRecManual: '', numAplic: 1, pcts: [100], meses: [[]], observacoes: '' };
+  return { produtoId: undefined, doseRecManual: '', numAplic: 1, pcts: [100], meses: [[]], observacoes: '', preco: '' };
 }
 
 function normalizarMeses(mesArr, numAplic) {
@@ -128,7 +129,7 @@ function normalizarMeses(mesArr, numAplic) {
 
 // ── Fonte individual (seletor + dose + parcelamento) ──────────────────────────
 function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, onRemover, isFirst, infoCalagem }) {
-  const { produtoId, doseRecManual, numAplic, pcts, meses = [], observacoes } = linhaState;
+  const { produtoId, doseRecManual, numAplic, pcts, meses = [], observacoes, preco = '' } = linhaState;
   const produto = useMemo(() => todos.find(p => p.id === produtoId) || null, [todos, produtoId]);
   const area = talhao?.area_ha || 0;
   const numPlantas = talhao?.num_plantas || 0;
@@ -141,6 +142,10 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
   const [busca, setBusca] = useState('');
   const [dropAberto, setDropAberto] = useState(false);
   const dropRef = useRef(null);
+
+  const precoNum = parseFloat(String(preco).replace(',', '.')) || 0;
+  const custoHa = dosesCalc && precoNum > 0 ? dosesCalc.doseHa * precoNum : null;
+  const custoTotal = custoHa && area > 0 ? custoHa * area : null;
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.toLowerCase();
@@ -270,15 +275,40 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <Label className="text-xs shrink-0">Dose manual (kg/ha):</Label>
-        <Input type="number" value={doseRecManual}
-          onChange={e => onChange({...linhaState, doseRecManual: e.target.value})}
-          className="h-7 w-28 text-xs" placeholder={recKgHa != null ? `${recKgHa}` : 'kg/ha'} />
-        {recKgHa != null && doseRecManual === '' && (
-          <span className="text-xs text-muted-foreground">usando recomendação: {recKgHa} kg/ha</span>
-        )}
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Label className="text-xs shrink-0">Dose manual (kg/ha):</Label>
+          <Input type="number" value={doseRecManual}
+            onChange={e => onChange({...linhaState, doseRecManual: e.target.value})}
+            className="h-7 w-28 text-xs" placeholder={recKgHa != null ? `${recKgHa}` : 'kg/ha'} />
+          {recKgHa != null && doseRecManual === '' && (
+            <span className="text-xs text-muted-foreground">usando recomendação: {recKgHa} kg/ha</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
+          <Label className="text-xs shrink-0">Preço (R$/kg ou R$/L):</Label>
+          <Input type="number" value={preco}
+            onChange={e => onChange({...linhaState, preco: e.target.value})}
+            className="h-7 w-24 text-xs" placeholder="0,00" min="0" step="0.01" />
+        </div>
       </div>
+      {(custoHa != null || custoTotal != null) && (
+        <div className="flex flex-wrap gap-3">
+          {custoHa != null && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-center">
+              <p className="text-amber-600">Custo/ha</p>
+              <p className="font-bold text-amber-800">{custoHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+          )}
+          {custoTotal != null && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-center">
+              <p className="text-amber-600">Custo total talhão</p>
+              <p className="font-bold text-amber-800">{custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {dosesCalc && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
@@ -519,6 +549,7 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
             pcts: reg.pcts?.length ? reg.pcts : (PCT_DEFAULTS[numAplic] || [100]),
             meses: normalizarMeses(reg.meses, numAplic),
             observacoes: reg.observacoes ?? '',
+            preco: reg.preco ?? '',
           };
         });
       } else {
@@ -573,6 +604,7 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
           pcts: linha.pcts,
           meses: linha.meses,
           observacoes: linha.observacoes,
+          preco: linha.preco || '',
           status: 'planejado',
         };
 
@@ -617,6 +649,29 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
       return novo;
     });
   };
+
+  // Calcula custo total de adubação via solo para um talhão + linhasState
+  function calcCustoTalhao(talhaoObj, linhas, recObj) {
+    if (!talhaoObj) return 0;
+    const area = talhaoObj.area_ha || 0;
+    let total = 0;
+    NUTRIENTES_CHAVE.forEach(n => {
+      const fontes = linhas[n.key] || [];
+      fontes.forEach(linha => {
+        const produto = todos.find(p => p.id === linha.produtoId) || null;
+        const precoNum = parseFloat(String(linha.preco || '').replace(',', '.')) || 0;
+        if (!produto || !precoNum) return;
+        const pctNut = parseFloat(produto[n.key]) || 0;
+        if (!pctNut) return;
+        const recKgHa = recObj?.[n.recKey] ?? null;
+        const doseNut = linha.doseRecManual !== '' ? parseFloat(linha.doseRecManual) : recKgHa;
+        if (!doseNut) return;
+        const doseHa = doseNut / (pctNut / 100);
+        total += doseHa * precoNum * area;
+      });
+    });
+    return total;
+  }
 
   if (!produtor || !safra) return (
     <div className="text-center py-12 text-muted-foreground">
@@ -770,13 +825,53 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
       )}
 
       {talhao && (
-        <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Salvar Planejamento — {talhao.nome}
-          </Button>
-        </div>
+        <>
+          {/* Resumo de custo do talhão */}
+          {(() => {
+            const custo = calcCustoTalhao(talhao, linhasState, rec);
+            return custo > 0 ? (
+              <ResumoCustosAdubacao label={`Custo total adubação via solo — ${talhao.nome}`} custoTotal={custo} />
+            ) : null;
+          })()}
+
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={isSaving} className="gap-2">
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Salvar Planejamento — {talhao.nome}
+            </Button>
+          </div>
+        </>
       )}
+
+      {/* Custo total do produtor — todos os talhões */}
+      {(() => {
+        if (talhoesProdutor.length < 2) return null;
+        // Para calcular corretamente precisamos dos dados salvos (basePlano)
+        let totalProdutor = 0;
+        talhoesProdutor.forEach(t => {
+          const regs = basePlano.filter(r =>
+            r.codigo_produtor === produtor.codigo && r.safra === safra && r.talhao_id === t.id
+          );
+          const area = t.area_ha || 0;
+          NUTRIENTES_CHAVE.forEach(n => {
+            const regsNut = regs.filter(r => r.nutriente_key === n.key || r.nutriente_key?.startsWith(n.key + '__'));
+            regsNut.forEach(reg => {
+              const produto = todos.find(p => p.id === reg.produto_id) || null;
+              const precoNum = parseFloat(String(reg.preco || '').replace(',', '.')) || 0;
+              if (!produto || !precoNum) return;
+              const pctNut = parseFloat(produto[n.key]) || 0;
+              if (!pctNut) return;
+              const doseNut = reg.dose_rec_manual ? parseFloat(reg.dose_rec_manual) : null;
+              if (!doseNut) return;
+              const doseHa = doseNut / (pctNut / 100);
+              totalProdutor += doseHa * precoNum * area;
+            });
+          });
+        });
+        return totalProdutor > 0 ? (
+          <ResumoCustosAdubacao label="Custo total adubação via solo — todos os talhões" custoTotal={totalProdutor} className="border-2 border-amber-300" />
+        ) : null;
+      })()}
     </div>
   );
 }

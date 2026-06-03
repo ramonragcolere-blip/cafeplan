@@ -60,6 +60,10 @@
       },
       "description": "Meses por aplica\u00e7\u00e3o (array de arrays)"
     },
+    "preco": {
+      "type": "string",
+      "description": "Pre\u00e7o do produto (R$/kg ou R$/L)"
+    },
     "observacoes": {
       "type": "string",
       "description": "Observa\u00e7\u00f5es livres"
