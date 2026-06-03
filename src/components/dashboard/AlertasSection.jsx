@@ -30,12 +30,13 @@ export default function AlertasSection({ talhoes, analises, filtroProdutorCodigo
 
   const semAnalise = talhoesFiltrados.filter(t => !analiseMap[t.id]);
   const phBaixo    = talhoesFiltrados.filter(t => { const a = analiseMap[t.id]; return a && a.ph != null && a.ph < 5.5; });
-  const kAlto      = talhoesFiltrados.filter(t => { const a = analiseMap[t.id]; return a && a.potassio != null && a.potassio > 200; });
+  // potassio salvo em cmolc/dm³ — converter para mg/dm³: × 391. Limiar K alto = 200 mg/dm³ ≈ 0.51 cmolc/dm³
+  const kAlto      = talhoesFiltrados.filter(t => { const a = analiseMap[t.id]; return a && a.potassio != null && (a.potassio * 391) > 200; });
 
   const todosAlertas = [
     ...semAnalise.map(t => ({ tipo: 'warning', msg: `${t.nome} — sem análise de solo cadastrada` })),
     ...phBaixo.map(t =>    ({ tipo: 'danger',  msg: `${t.nome} — pH ${analiseMap[t.id].ph} (abaixo de 5,5)` })),
-    ...kAlto.map(t =>      ({ tipo: 'info',    msg: `${t.nome} — K ${analiseMap[t.id].potassio} mg/dm³ (Alto — dispensado)` })),
+    ...kAlto.map(t =>      ({ tipo: 'info',    msg: `${t.nome} — K ${Math.round(analiseMap[t.id].potassio * 391)} mg/dm³ (Alto — dispensado)` })),
   ];
 
   const alertasFiltrados = filtroAtivo === 'todos'
