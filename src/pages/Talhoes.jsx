@@ -13,9 +13,16 @@ import { useToast } from '@/components/ui/use-toast';
 
 const emptyTalhao = {
   codigo_produtor: null, nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
-  metodo_colheita: 'Manual', litros_por_pe: '', pct_colher: 1, preco_por_medida: '',
+  metodo_colheita: 'Manual', fase_atual: 'Em produção', litros_por_pe: '', pct_colher: 1, preco_por_medida: '',
   seq_colheita: '', medidas_dia_manual: '', horas_dia_maq: '', metros_hora_maq: '', medidas_hora_maq: '',
   status: 'ativo', observacoes: ''
+};
+
+const FASE_CONFIG = {
+  'Em produção':      { label: 'Em produção',      className: 'bg-green-100 text-green-800 border-green-200' },
+  'Em formação':      { label: 'Em formação',       className: 'bg-blue-100 text-blue-800 border-blue-200' },
+  'Safra zero':       { label: 'Safra zero',        className: 'bg-gray-100 text-gray-700 border-gray-200' },
+  'Recepado/Brotando':{ label: 'Recepado/Brotando', className: 'bg-orange-100 text-orange-800 border-orange-200' },
 };
 
 export default function Talhoes() {
@@ -142,7 +149,16 @@ export default function Talhoes() {
               ) : filtered.map(t => (
                 <TableRow key={t.id}>
                   <TableCell className="text-xs">{getProdutorNome(t.codigo_produtor)}</TableCell>
-                  <TableCell className="font-medium">{t.nome}</TableCell>
+                  <TableCell className="font-medium">
+                   <div className="flex items-center gap-2 flex-wrap">
+                     <span>{t.nome}</span>
+                     {t.fase_atual && (
+                       <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${FASE_CONFIG[t.fase_atual]?.className || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                         {t.fase_atual}
+                       </span>
+                     )}
+                   </div>
+                  </TableCell>
                   <TableCell>{t.num_plantas?.toLocaleString() || '—'}</TableCell>
                   <TableCell>{t.cultivar || '—'}</TableCell>
                   <TableCell><Badge variant="secondary">{t.metodo_colheita || '—'}</Badge></TableCell>
@@ -175,6 +191,18 @@ export default function Talhoes() {
               </Select>
             </div>
             <div><Label>Nome do Talhão</Label><Input value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
+            <div>
+              <Label>Fase atual do talhão</Label>
+              <Select value={form.fase_atual || 'Em produção'} onValueChange={v => setForm({...form, fase_atual: v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Em produção">Em produção — lavoura adulta em colheita normal</SelectItem>
+                  <SelectItem value="Em formação">Em formação — lavoura jovem, antes da 1ª colheita</SelectItem>
+                  <SelectItem value="Safra zero">Safra zero — ano de repouso bienal</SelectItem>
+                  <SelectItem value="Recepado/Brotando">Recepado/Brotando — pós esqueletamento, em recuperação</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label>Nº Plantas</Label><Input type="number" value={form.num_plantas} onChange={e => setForm({...form, num_plantas: e.target.value})} /></div>
             <div><Label>Cultivar</Label><Input value={form.cultivar} onChange={e => setForm({...form, cultivar: e.target.value})} /></div>
             <div><Label>Espaçamento</Label><Input value={form.espacamento} onChange={e => setForm({...form, espacamento: e.target.value})} /></div>
