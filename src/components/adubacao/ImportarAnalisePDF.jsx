@@ -78,9 +78,9 @@ CONVERSÃO LAB_VICOSA: Ca, Mg já em cmolc. K pode estar em cmolc/dm³ — se K 
 PASSO 4 — Se houver múltiplas camadas (0-20 e 20-40), retorne UMA ENTRADA POR CAMADA.
 PASSO 5 — Campos não encontrados → null. SEMPRE retorne o JSON.
 
-Retorne SOMENTE este JSON (sem markdown, sem texto extra):
+Retorne SOMENTE JSON válido neste formato exato (substitua os nulls pelos valores encontrados):
 {
-  "laboratorio": "COOXUPE" ou "LAB_VICOSA" ou "OUTRO",
+  "laboratorio": "OUTRO",
   "identificacao": {
     "cliente": null,
     "propriedade": null,
@@ -89,8 +89,8 @@ Retorne SOMENTE este JSON (sem markdown, sem texto extra):
   },
   "talhoes": [
     {
-      "nome_talhao": "nome do talhão",
-      "profundidade": "0-20" ou "20-40",
+      "nome_talhao": "nome do talhao",
+      "profundidade": "0-20",
       "dados": {
         "ph": null,
         "materia_organica": null,
@@ -113,7 +113,11 @@ Retorne SOMENTE este JSON (sem markdown, sem texto extra):
       }
     }
   ]
-}`;
+}
+
+Importante: "laboratorio" deve ser exatamente "COOXUPE", "LAB_VICOSA" ou "OUTRO".
+"profundidade" deve ser exatamente "0-20" ou "20-40".
+Se houver camadas 0-20 e 20-40, inclua duas entradas no array "talhoes".`;
 
 const LAB_LABEL = {
   COOXUPE: 'COOXUPÉ',

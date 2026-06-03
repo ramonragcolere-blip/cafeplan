@@ -78,8 +78,6 @@ function calcCalagemVpct({ ctc, v1, v2, prnt, produto, area }) {
 function SeletorCorretivo({ produto, corretivos, onChange }) {
   const [dropAberto, setDropAberto] = useState(false);
   const [busca, setBusca] = useState('');
-  const btnRef = useRef(null);
-  const [posicao, setPosicao] = useState({ top: 0, left: 0, width: 300 });
 
   const visiveis = useMemo(() => {
     const q = busca.toLowerCase();
@@ -88,27 +86,15 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
     );
   }, [corretivos, busca]);
 
-  const abrirDrop = () => {
-    if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setPosicao({
-        top: rect.bottom + window.scrollY + 4,
-        left: rect.left + window.scrollX,
-        width: Math.max(rect.width, 320),
-      });
-    }
-    setDropAberto(a => !a);
-  };
-
   return (
-    <div>
+    <div className="relative">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Fonte corretiva</p>
       {corretivos.length === 0 && (
         <p className="text-xs text-amber-600 mb-1">Nenhum produto corretivo cadastrado. Adicione produtos com Ca% ou Mg% na base de fertilizantes.</p>
       )}
-      <button ref={btnRef} type="button"
+      <button type="button"
         className="w-full h-10 text-sm border border-input rounded-md px-3 text-left flex items-center justify-between bg-transparent hover:bg-muted/30"
-        onClick={abrirDrop}>
+        onClick={() => setDropAberto(a => !a)}>
         <span className={produto ? 'text-foreground' : 'text-muted-foreground'}>
           {produto ? produto.nome : 'Selecionar produto...'}
         </span>
@@ -116,10 +102,7 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
       </button>
 
       {dropAberto && (
-        <div
-          className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-2xl overflow-hidden"
-          style={{ top: posicao.top, left: posicao.left, width: posicao.width }}
-        >
+        <div className="absolute z-[200] top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-2xl overflow-hidden min-w-[320px]">
           <div className="p-2 border-b border-border">
             <input autoFocus
               className="w-full h-9 text-sm border border-input rounded px-3 bg-background"
