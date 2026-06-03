@@ -47,9 +47,35 @@ const CAMPOS_2040 = [
   { key: 'data_analise',     label: 'Data da Análise', date: true },
 ];
 
+// Converte valores brutos do laudo COOXUPÉ para as unidades padrão do sistema.
+// K, Ca, Mg, H+Al, S.B., C.T.C. vêm em mmolc/dm³ no COOXUPÉ → dividir por 10 para cmolc/dm³
+// K adicionalmente × 39,1 para mg/dm³ (mmolc × 39,1 mg/mmolc)
+// Os demais laboratórios: Ca/Mg já podem vir em cmolc — não converter se já forem pequenos
+function converterUnidades(dados, laboratorio) {
+  const d = { ...dados };
+  const n = v => (v != null && !isNaN(Number(v))) ? Number(v) : null;
+
+  if (laboratorio === 'COOXUPE') {
+    // K: mmolc/dm³ → mg/dm³  (× 39,1)
+    if (n(d.potassio) != null) d.potassio = +(n(d.potassio) * 39.1).toFixed(1);
+    // Ca, Mg, H+Al, SB, CTC: mmolc/dm³ → cmolc/dm³  (÷ 10)
+    ['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'ctc'].forEach(k => {
+      if (n(d[k]) != null) d[k] = +(n(d[k]) / 10).toFixed(3);
+    });
+  } else if (laboratorio === 'LAB_VICOSA') {
+    // K: se valor < 3 provavelmente está em cmolc → × 391
+    if (n(d.potassio) != null && n(d.potassio) < 3) d.potassio = +(n(d.potassio) * 391).toFixed(1);
+    // Ca, Mg já em cmolc — sem conversão
+  }
+  // Outros laboratórios: sem conversão automática
+
+  return d;
+}
+
 const buildPrompt = (textoPDF) => `
 Você é um especialista em análise de solos agrícolas brasileiro.
 Extraia TODOS os dados do laudo abaixo com máxima precisão.
+NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
 
 === TEXTO DO PDF ===
 ${textoPDF}
@@ -60,25 +86,29 @@ PASSO 1 — IDENTIFIQUE O LABORATÓRIO:
 - LAB_VICOSA: contém "labsolosvicosa" ou "Laboratório de Análise de Solo Viçosa"
 - OUTRO: qualquer outro
 
-PASSO 2 — LOCALIZE os campos pelos RÓTULOS (não por posição). Procure variações como "pH CaCl2", "M.O.", "P mg/dm³", "K mmol", "Ca mmol", "H+Al", "S.B.", "C.T.C.", "V%", "B mg", "Zn mg", etc.
+PASSO 2 — LOCALIZE os campos pelos RÓTULOS exatos do laudo (não por posição):
+- pH: rótulo "pH CaCl2" ou "pH"
+- materia_organica: rótulo "M.O." em g/dm³
+- fosforo: rótulo "P" em mg/dm³
+- potassio: rótulo "K" (pode estar em mmol/dm³ ou mg/dm³ — extraia o valor bruto)
+- calcio: rótulo "Ca" (pode estar em mmol/dm³ ou cmolc/dm³ — extraia o valor bruto)
+- magnesio: rótulo "Mg" (mesmo critério)
+- aluminio: rótulo "Al" ou "Al³⁺"
+- h_al: rótulo "H+Al" ou "H + Al"
+- sb: rótulo "S.B." ou "SB" (Soma de Bases)
+- ctc: rótulo "C.T.C." ou "CTC"
+- saturacao_bases: rótulo "V%" nos Índices de Saturação
+- enxofre: rótulo "S" em mg/dm³
+- boro: rótulo "B" em mg/dm³
+- zinco: rótulo "Zn" em mg/dm³
+- cobre: rótulo "Cu" em mg/dm³
+- manganes: rótulo "Mn" em mg/dm³
+- ferro: rótulo "Fe" em mg/dm³
 
-PASSO 3 — CONVERTA as unidades para o padrão abaixo ANTES de retornar:
-• Ca, Mg, Al, H+Al, SB, CTC → cmolc/dm³
-  (se o laudo usar mmolc/dm³, DIVIDA por 10)
-• K → mg/dm³
-  (se o laudo usar mmolc/dm³, MULTIPLIQUE por 39,1)
-  (se o laudo usar cmolc/dm³, MULTIPLIQUE por 391)
-• M.O. → g/dm³ (se estiver em dag/kg, MULTIPLIQUE por 10)
-• P, B, Zn, Cu, Fe, Mn, S → mg/dm³ (sem conversão)
-• pH, V% → sem conversão
+PASSO 3 — Se houver múltiplas camadas (0-20 e 20-40), retorne UMA ENTRADA POR CAMADA.
+PASSO 4 — Campos não encontrados → null. SEMPRE retorne o JSON.
 
-CONVERSÃO COOXUPE: K, Ca, Mg, CTC, H+Al, SB estão em mmolc/dm³ — converta TODOS.
-CONVERSÃO LAB_VICOSA: Ca, Mg já em cmolc. K pode estar em cmolc/dm³ — se K < 3, multiplique por 391.
-
-PASSO 4 — Se houver múltiplas camadas (0-20 e 20-40), retorne UMA ENTRADA POR CAMADA.
-PASSO 5 — Campos não encontrados → null. SEMPRE retorne o JSON.
-
-Retorne SOMENTE JSON válido neste formato exato (substitua os nulls pelos valores encontrados):
+Retorne SOMENTE JSON válido neste formato exato:
 {
   "laboratorio": "OUTRO",
   "identificacao": {
@@ -115,7 +145,7 @@ Retorne SOMENTE JSON válido neste formato exato (substitua os nulls pelos valor
   ]
 }
 
-Importante: "laboratorio" deve ser exatamente "COOXUPE", "LAB_VICOSA" ou "OUTRO".
+"laboratorio" deve ser exatamente "COOXUPE", "LAB_VICOSA" ou "OUTRO".
 "profundidade" deve ser exatamente "0-20" ou "20-40".
 Se houver camadas 0-20 e 20-40, inclua duas entradas no array "talhoes".`;
 
@@ -241,10 +271,10 @@ export default function ImportarAnalisePDF({
         return;
       }
 
-      // Normalizar campos null/undefined dos dados
+      // Normalizar campos null/undefined dos dados e converter unidades no JS
       const talhoes = parsed.talhoes.map(t => ({
         ...t,
-        dados: t.dados || {},
+        dados: converterUnidades(t.dados || {}, parsed.laboratorio),
       }));
 
       setResultado({ ...parsed, talhoes });

@@ -255,11 +255,12 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
   const { data: fontesSimples = [] }  = useQuery({ queryKey: ['fontes_simples'],  queryFn: () => base44.entities.FonteSimples.list() });
 
   const corretivos = useMemo(() => {
+    const temCaOuMg = f => parseFloat(f.ca_pct) > 0 || parseFloat(f.mg_pct) > 0;
     const ferts = fertilizantes
-      .filter(f => GRUPOS_CORRETIVO.some(g => (f.grupo || '').includes(g)) || (f.ca_pct > 0 || f.mg_pct > 0))
+      .filter(f => GRUPOS_CORRETIVO.some(g => (f.grupo || '').includes(g)) || temCaOuMg(f))
       .map(f => ({ ...f, _tipo: 'formulado' }));
     const fontes = fontesSimples
-      .filter(f => f.ca_pct > 0 || f.mg_pct > 0)
+      .filter(temCaOuMg)
       .map(f => ({ ...f, _tipo: 'fonte' }));
     return [...ferts, ...fontes];
   }, [fertilizantes, fontesSimples]);

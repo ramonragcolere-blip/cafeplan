@@ -30,6 +30,21 @@ const CAMPOS_2040 = [
 
 const empty2040 = () => CAMPOS_2040.reduce((acc, c) => ({ ...acc, [c.key]: '' }), { observacoes: '' });
 
+// Converte valores brutos do laudo para unidades padrão do sistema (mesmo que ImportarAnalisePDF)
+function converterUnidades2040(dados, laboratorio) {
+  const d = { ...dados };
+  const n = v => (v != null && !isNaN(Number(v))) ? Number(v) : null;
+  if (laboratorio === 'COOXUPE') {
+    if (n(d.potassio) != null) d.potassio = +(n(d.potassio) * 39.1).toFixed(1);
+    ['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'ctc'].forEach(k => {
+      if (n(d[k]) != null) d[k] = +(n(d[k]) / 10).toFixed(3);
+    });
+  } else if (laboratorio === 'LAB_VICOSA') {
+    if (n(d.potassio) != null && n(d.potassio) < 3) d.potassio = +(n(d.potassio) * 391).toFixed(1);
+  }
+  return d;
+}
+
 // ── Mini-importador PDF exclusivo para camada 20-40 cm ──────────────────────
 function BotaoImportar2040({ onImportado }) {
   const fileRef = useRef();
@@ -63,18 +78,32 @@ function BotaoImportar2040({ onImportado }) {
       const prompt = `Você é especialista em análise de solos brasileiros.
 Extraia SOMENTE os dados da camada 20-40 cm do texto abaixo.
 Se houver múltiplas camadas, retorne apenas os valores da camada 20-40 cm.
+NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
 
 Texto: ${textoPDF || '[não extraído — tente extrair diretamente do arquivo]'}
 
-CONVERSÃO DE UNIDADES OBRIGATÓRIA antes de retornar:
-• Ca, Mg, Al, H+Al, SB, CTC → cmolc/dm³ (se vier em mmolc/dm³, DIVIDA por 10)
-• K → mg/dm³ (se vier em mmolc/dm³, MULTIPLIQUE por 39,1; se vier em cmolc/dm³, MULTIPLIQUE por 391)
-• M.O. → g/dm³ (se vier em dag/kg, MULTIPLIQUE por 10)
-• P, B, Zn, Cu, Fe, Mn, S → mg/dm³ (sem conversão)
-• pH, V% → sem conversão
+Localize os campos pelos rótulos exatos do laudo:
+- ph: rótulo "pH CaCl2" ou "pH"
+- materia_organica: rótulo "M.O." em g/dm³
+- fosforo: rótulo "P" em mg/dm³
+- potassio: rótulo "K" (valor bruto, qualquer unidade)
+- calcio: rótulo "Ca" (valor bruto, qualquer unidade)
+- magnesio: rótulo "Mg" (valor bruto, qualquer unidade)
+- aluminio: rótulo "Al" ou "Al³⁺"
+- h_al: rótulo "H+Al" ou "H + Al"
+- sb: rótulo "S.B." ou "SB"
+- ctc: rótulo "C.T.C." ou "CTC"
+- saturacao_bases: rótulo "V%"
+- enxofre: rótulo "S" em mg/dm³
+- boro: rótulo "B" em mg/dm³
+- zinco: rótulo "Zn" em mg/dm³
+- ferro: rótulo "Fe" em mg/dm³
+- manganes: rótulo "Mn" em mg/dm³
+- cobre: rótulo "Cu" em mg/dm³
 
-Retorne SOMENTE o JSON (sem markdown):
+Campos não encontrados → null. Retorne SOMENTE o JSON (sem markdown):
 {
+  "laboratorio": "OUTRO",
   "ph": null,
   "materia_organica": null,
   "fosforo": null,
@@ -92,7 +121,9 @@ Retorne SOMENTE o JSON (sem markdown):
   "ferro": null,
   "manganes": null,
   "cobre": null
-}`;
+}
+
+"laboratorio" deve ser "COOXUPE" se o texto contiver "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé", "LAB_VICOSA" se contiver "labsolosvicosa", ou "OUTRO".`;
 
       const resp = await base44.integrations.Core.InvokeLLM({
         prompt,
@@ -101,6 +132,7 @@ Retorne SOMENTE o JSON (sem markdown):
         response_json_schema: {
           type: 'object',
           properties: {
+            laboratorio:      { type: 'string' },
             ph:               { type: 'number' },
             materia_organica: { type: 'number' },
             fosforo:          { type: 'number' },
@@ -122,9 +154,15 @@ Retorne SOMENTE o JSON (sem markdown):
         },
       });
 
+      // Extrai o laboratório da resposta e converte unidades no JS
+      const laboratorio = resp?.laboratorio || 'OUTRO';
+      const dadosConvertidos = converterUnidades2040(resp || {}, laboratorio);
       // Normaliza null → '' para inputs controlados
       const norm = {};
-      Object.entries(resp || {}).forEach(([k, v]) => { norm[k] = v != null ? String(v) : ''; });
+      Object.entries(dadosConvertidos).forEach(([k, v]) => {
+        if (k === 'laboratorio') return;
+        norm[k] = v != null ? String(v) : '';
+      });
       setCampos(norm);
     } catch (err) {
       setErro(`Erro ao processar PDF: ${err?.message || String(err)}`);
