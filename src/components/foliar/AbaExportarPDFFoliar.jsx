@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FileDown, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import { EPOCAS, ordenarCalda, FAIXAS, NUTRIENTES_KEYS, classificar, CLASS_LABEL } from './FoliarNutrienteUtils';
+import { FAIXAS, NUTRIENTES_KEYS, classificar, CLASS_LABEL } from './FoliarNutrienteUtils';
 
-function gerarPDF(produtor, safra, talhoes, analises, planos, insumos) {
+function gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos) {
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const PW = 210; const PH = 297;
@@ -34,7 +34,6 @@ function gerarPDF(produtor, safra, talhoes, analises, planos, insumos) {
 
   talhoesProdutor.forEach((talhao, ti) => {
     const analise = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
-    const plano = planos.find(p => p.talhao_id === talhao.id && p.safra === safra);
 
     checkNewPage(20);
     doc.setFillColor(...cor.light);
@@ -83,34 +82,42 @@ function gerarPDF(produtor, safra, talhoes, analises, planos, insumos) {
       doc.text('Sem análise foliar registrada.', ML + 3, y); y += 8;
     }
 
-    // Planejamento
-    if (plano && plano.epocas) {
+    // Planejamento — lista de aplicações livres
+    const aplicacoesTalhao = aplicacoes.filter(a => a.talhao_id === talhao.id && a.safra === safra);
+    if (aplicacoesTalhao.length > 0) {
       checkNewPage(8);
       doc.setTextColor(...cor.dark); doc.setFontSize(9); doc.setFont(undefined, 'bold');
-      doc.text(`Planejamento de Aplicações${plano.equipamento ? ` — ${plano.equipamento}` : ''}`, ML, y); y += 5;
+      doc.text('Planejamento de Aplicações', ML, y); y += 5;
 
-      EPOCAS.forEach(epoca => {
-        const prods = plano.epocas[epoca] || [];
-        if (!prods.length) return;
-        checkNewPage(10 + prods.length * 6);
+      aplicacoesTalhao.forEach(aplic => {
+        const prods = aplic.produtos || [];
+        checkNewPage(12 + prods.length * 6);
 
         doc.setFillColor(...cor.light);
-        doc.rect(ML, y, CW, 6, 'F');
+        doc.rect(ML, y, CW, 7, 'F');
         doc.setTextColor(...cor.primary); doc.setFontSize(8); doc.setFont(undefined, 'bold');
-        doc.text(epoca, ML + 2, y + 4); y += 7;
+        const mesesStr = (aplic.meses || []).join(', ');
+        doc.text(aplic.titulo || 'Aplicação', ML + 2, y + 4);
+        if (mesesStr) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal'); doc.text(mesesStr, ML + CW * 0.5, y + 4); }
+        if (aplic.equipamento) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.text(aplic.equipamento, ML + CW - 2, y + 4, { align: 'right' }); }
+        y += 8;
 
-        const ordenados = ordenarCalda(prods.map(p => ({ ...p, ...(insumoById[p.produto_id] || {}) })));
-        ordenados.forEach((p, pi) => {
-          checkNewPage(6);
-          if (pi % 2 === 0) { doc.setFillColor(248, 250, 248); doc.rect(ML, y, CW, 5.5, 'F'); }
-          doc.setTextColor(...cor.dark); doc.setFontSize(7.5); doc.setFont(undefined, 'normal');
-          doc.text(`${pi + 1}. ${p.produto_nome}`, ML + 3, y + 3.8);
-          const doseStr = p.dose ? `${p.dose} ${p.unidade || ''}` : '';
-          const formStr = insumoById[p.produto_id]?.tipo_formulacao || '';
-          doc.setTextColor(...cor.muted); doc.setFontSize(7);
-          doc.text([doseStr, formStr].filter(Boolean).join(' | '), ML + CW * 0.6, y + 3.8);
-          y += 5.5;
-        });
+        if (prods.length === 0) {
+          doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'italic');
+          doc.text('Sem produtos', ML + 3, y); y += 6;
+        } else {
+          prods.forEach((p, pi) => {
+            checkNewPage(6);
+            if (pi % 2 === 0) { doc.setFillColor(248, 250, 248); doc.rect(ML, y, CW, 5.5, 'F'); }
+            doc.setTextColor(...cor.dark); doc.setFontSize(7.5); doc.setFont(undefined, 'normal');
+            doc.text(`${pi + 1}. ${p.produto_nome}`, ML + 3, y + 3.8);
+            const doseStr = p.dose ? `${p.dose} ${p.unidade || ''}` : '';
+            const formStr = p.tipo_formulacao || '';
+            doc.setTextColor(...cor.muted); doc.setFontSize(7);
+            doc.text([doseStr, formStr].filter(Boolean).join(' | '), ML + CW * 0.6, y + 3.8);
+            y += 5.5;
+          });
+        }
         y += 3;
       });
     } else {
@@ -134,21 +141,21 @@ function gerarPDF(produtor, safra, talhoes, analises, planos, insumos) {
   doc.save(`foliar_${produtor.codigo}_${safra.replace('/', '-')}.pdf`);
 }
 
-export default function AbaExportarPDFFoliar({ produtor, safra, talhoes, analises, planos, insumos }) {
+export default function AbaExportarPDFFoliar({ produtor, safra, talhoes, analises, aplicacoes, insumos }) {
   const [loading, setLoading] = useState(false);
   const talhoesProdutor = talhoes.filter(t => t.codigo_produtor === produtor?.codigo);
 
   const handleExport = () => {
     setLoading(true);
     setTimeout(() => {
-      gerarPDF(produtor, safra, talhoes, analises, planos, insumos);
+      gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos);
       setLoading(false);
     }, 50);
   };
 
   const comDados = talhoesProdutor.filter(t =>
     analises.some(a => a.talhao_id === t.id && a.safra === safra) ||
-    planos.some(p => p.talhao_id === t.id && p.safra === safra)
+    aplicacoes.some(a => a.talhao_id === t.id && a.safra === safra)
   );
 
   return (
@@ -174,12 +181,12 @@ export default function AbaExportarPDFFoliar({ produtor, safra, talhoes, analise
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Talhões incluídos:</p>
             {comDados.map(t => {
               const temAnalise = analises.some(a => a.talhao_id === t.id && a.safra === safra);
-              const temPlano = planos.some(p => p.talhao_id === t.id && p.safra === safra);
+              const temPlano = aplicacoes.some(a => a.talhao_id === t.id && a.safra === safra);
               return (
                 <div key={t.id} className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{t.nome}</span>
                   {temAnalise && <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">Análise</span>}
-                  {temPlano && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Planejamento</span>}
+                  {temPlano && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Aplicações</span>}
                 </div>
               );
             })}

@@ -1,0 +1,53 @@
+{
+  "name": "AplicacaoFoliar",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "talhao_id": {
+      "type": "string"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "titulo": {
+      "type": "string",
+      "description": "Nome/t\u00edtulo da aplica\u00e7\u00e3o (ex: P\u00f3s-colheita, Controle ferrugem)"
+    },
+    "meses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Meses selecionados: JAN, FEV, MAR, ABR, MAI, JUN, JUL, AGO, SET, OUT, NOV, DEZ"
+    },
+    "equipamento": {
+      "type": "string",
+      "enum": [
+        "Bomba costal",
+        "Atomizador",
+        "Drone",
+        "Canh\u00e3o"
+      ]
+    },
+    "produtos": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Lista de produtos: [{produto_id, produto_nome, dose, unidade, tipo_formulacao, grupo}]"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "talhao_id",
+    "safra"
+  ]
+}

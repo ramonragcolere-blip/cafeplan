@@ -29,7 +29,7 @@ export default function AplicacoesFoliares() {
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
   const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
   const { data: analises = [] } = useQuery({ queryKey: ['analises_foliares'], queryFn: () => base44.entities.AnaliseFoliar.list() });
-  const { data: planos = [] } = useQuery({ queryKey: ['planos_foliares'], queryFn: () => base44.entities.PlanoFoliar.list() });
+  const { data: aplicacoes = [] } = useQuery({ queryKey: ['aplicacoes_foliares'], queryFn: () => base44.entities.AplicacaoFoliar.list() });
   const { data: insumos = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
 
   const produtor = useMemo(() => produtores.find(p => p.id === produtorId) || null, [produtores, produtorId]);
@@ -47,15 +47,20 @@ export default function AplicacoesFoliares() {
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
-  // ── Mutations PlanoFoliar ────────────────────────────────────────────────────
-  const planoCreate = useMutation({
-    mutationFn: data => base44.entities.PlanoFoliar.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['planos_foliares'] }); toast({ title: 'Planejamento foliar salvo!' }); },
+  // ── Mutations AplicacaoFoliar ────────────────────────────────────────────────
+  const aplicacaoCreate = useMutation({
+    mutationFn: data => base44.entities.AplicacaoFoliar.create(data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['aplicacoes_foliares'] }); toast({ title: 'Aplicação salva!' }); },
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
-  const planoUpdate = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.PlanoFoliar.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['planos_foliares'] }); toast({ title: 'Planejamento foliar atualizado!' }); },
+  const aplicacaoUpdate = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.AplicacaoFoliar.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['aplicacoes_foliares'] }); toast({ title: 'Aplicação atualizada!' }); },
+    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
+  });
+  const aplicacaoDelete = useMutation({
+    mutationFn: (id) => base44.entities.AplicacaoFoliar.delete(id),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['aplicacoes_foliares'] }); toast({ title: 'Aplicação removida.' }); },
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
@@ -71,16 +76,19 @@ export default function AplicacoesFoliares() {
     handleSaveAnalise(talhao, data);
   };
 
-  const handleSavePlano = (talhao, data) => {
-    const existing = planos.find(p => p.talhao_id === talhao.id && p.safra === safra);
+  const handleSaveAplicacao = (talhao, data) => {
     const payload = { ...data, codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra };
-    if (existing) planoUpdate.mutate({ id: existing.id, data: payload });
-    else planoCreate.mutate(payload);
+    if (data.id) aplicacaoUpdate.mutate({ id: data.id, data: payload });
+    else aplicacaoCreate.mutate(payload);
+  };
+
+  const handleRemoverAplicacao = (id) => {
+    aplicacaoDelete.mutate(id);
   };
 
   const pronto = produtor && safra;
   const isAnaliseSaving = analiseCreate.isPending || analiseUpdate.isPending;
-  const isPlanSaving = planoCreate.isPending || planoUpdate.isPending;
+  const isPlanSaving = aplicacaoCreate.isPending || aplicacaoUpdate.isPending;
 
   return (
     <div className="space-y-6">
@@ -181,9 +189,10 @@ export default function AplicacoesFoliares() {
                 produtor={produtor}
                 safra={safra}
                 talhoes={talhoes}
-                planos={planos}
+                aplicacoes={aplicacoes}
                 insumos={insumos}
-                onSave={handleSavePlano}
+                onSaveAplicacao={handleSaveAplicacao}
+                onRemoverAplicacao={handleRemoverAplicacao}
                 saving={isPlanSaving}
               />
             )}
@@ -193,7 +202,7 @@ export default function AplicacoesFoliares() {
                 safra={safra}
                 talhoes={talhoes}
                 analises={analises}
-                planos={planos}
+                aplicacoes={aplicacoes}
                 insumos={insumos}
               />
             )}
