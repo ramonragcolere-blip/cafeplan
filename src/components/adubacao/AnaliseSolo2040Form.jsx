@@ -63,6 +63,7 @@ function BotaoImportar2040({ onImportado }) {
     setLoading(true);
     try {
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      console.log('[Importar2040] file_url obtido:', file_url);
 
       let textoPDF = '';
       try {
@@ -70,99 +71,72 @@ function BotaoImportar2040({ onImportado }) {
           file_url,
           json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
         });
+        console.log('[Importar2040] ExtractDataFromUploadedFile:', JSON.stringify(ext)?.slice(0, 300));
         if (ext?.status === 'success' && ext?.output?.texto_completo) {
           textoPDF = ext.output.texto_completo;
         }
-      } catch (_) {}
+      } catch (extErr) {
+        console.warn('[Importar2040] ExtractDataFromUploadedFile falhou:', extErr?.message);
+      }
+
+      console.log('[Importar2040] textoPDF (primeiros 500 chars):', textoPDF.slice(0, 500) || '(vazio)');
 
       const prompt = `Você é especialista em análise de solos brasileiros.
-Extraia SOMENTE os dados da camada 20-40 cm do texto abaixo.
+Extraia SOMENTE os dados da camada 20-40 cm do PDF anexo.
 Se houver múltiplas camadas, retorne apenas os valores da camada 20-40 cm.
 NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
 
-Texto: ${textoPDF || '[não extraído — tente extrair diretamente do arquivo]'}
+${textoPDF ? `Texto extraído do PDF:\n${textoPDF}` : 'Leia os dados diretamente do arquivo PDF anexo.'}
 
 Localize os campos pelos rótulos exatos do laudo:
-- ph: rótulo "pH CaCl2" ou "pH"
-- materia_organica: rótulo "M.O." em g/dm³
-- fosforo: rótulo "P" em mg/dm³
-- potassio: rótulo "K" (valor bruto, qualquer unidade)
-- calcio: rótulo "Ca" (valor bruto, qualquer unidade)
-- magnesio: rótulo "Mg" (valor bruto, qualquer unidade)
-- aluminio: rótulo "Al" ou "Al³⁺"
-- h_al: rótulo "H+Al" ou "H + Al"
-- sb: rótulo "S.B." ou "SB"
-- ctc: rótulo "C.T.C." ou "CTC"
-- saturacao_bases: rótulo "V%"
-- enxofre: rótulo "S" em mg/dm³
-- boro: rótulo "B" em mg/dm³
-- zinco: rótulo "Zn" em mg/dm³
-- ferro: rótulo "Fe" em mg/dm³
-- manganes: rótulo "Mn" em mg/dm³
-- cobre: rótulo "Cu" em mg/dm³
+- ph: rotulo "pH CaCl2" ou "pH"
+- materia_organica: rotulo "M.O." em g/dm3
+- fosforo: rotulo "P" em mg/dm3
+- potassio: rotulo "K" (valor bruto, qualquer unidade)
+- calcio: rotulo "Ca" (valor bruto, qualquer unidade)
+- magnesio: rotulo "Mg" (valor bruto, qualquer unidade)
+- aluminio: rotulo "Al"
+- h_al: rotulo "H+Al" ou "H + Al"
+- sb: rotulo "S.B." ou "SB"
+- ctc: rotulo "C.T.C." ou "CTC"
+- saturacao_bases: rotulo "V%"
+- enxofre: rotulo "S" em mg/dm3
+- boro: rotulo "B" em mg/dm3
+- zinco: rotulo "Zn" em mg/dm3
+- ferro: rotulo "Fe" em mg/dm3
+- manganes: rotulo "Mn" em mg/dm3
+- cobre: rotulo "Cu" em mg/dm3
+- laboratorio: "COOXUPE" se conter "Cooxupe" ou "Cooperativa Regional de Cafeicultores em Guaxupe", "LAB_VICOSA" se conter "labsolosvicosa", senao "OUTRO"
 
-Campos não encontrados → null. Retorne SOMENTE o JSON (sem markdown):
-{
-  "laboratorio": "OUTRO",
-  "ph": null,
-  "materia_organica": null,
-  "fosforo": null,
-  "potassio": null,
-  "calcio": null,
-  "magnesio": null,
-  "aluminio": null,
-  "h_al": null,
-  "sb": null,
-  "ctc": null,
-  "saturacao_bases": null,
-  "enxofre": null,
-  "boro": null,
-  "zinco": null,
-  "ferro": null,
-  "manganes": null,
-  "cobre": null
-}
+Campos nao encontrados use null. Retorne SOMENTE JSON valido sem markdown.`;
 
-"laboratorio" deve ser "COOXUPE" se o texto contiver "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé", "LAB_VICOSA" se contiver "labsolosvicosa", ou "OUTRO".`;
+      console.log('[Importar2040] Enviando ao LLM, tamanho do prompt:', prompt.length);
 
       const resp = await base44.integrations.Core.InvokeLLM({
         prompt,
-        file_urls: textoPDF ? undefined : [file_url],
+        file_urls: [file_url], // sempre envia o arquivo
         model: 'claude_sonnet_4_6',
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            laboratorio:      { type: 'string' },
-            ph:               { type: 'number' },
-            materia_organica: { type: 'number' },
-            fosforo:          { type: 'number' },
-            potassio:         { type: 'number' },
-            calcio:           { type: 'number' },
-            magnesio:         { type: 'number' },
-            aluminio:         { type: 'number' },
-            h_al:             { type: 'number' },
-            sb:               { type: 'number' },
-            ctc:              { type: 'number' },
-            saturacao_bases:  { type: 'number' },
-            enxofre:          { type: 'number' },
-            boro:             { type: 'number' },
-            zinco:            { type: 'number' },
-            ferro:            { type: 'number' },
-            manganes:         { type: 'number' },
-            cobre:            { type: 'number' },
-          },
-        },
       });
 
+      console.log('[Importar2040] Resposta bruta do LLM:', JSON.stringify(resp)?.slice(0, 1000));
+
+      // Parse da resposta (pode ser objeto ou string com JSON)
+      let dadosRaw = resp;
+      if (typeof resp === 'string') {
+        const m = resp.match(/\{[\s\S]*\}/);
+        dadosRaw = m ? JSON.parse(m[0]) : {};
+      }
+
       // Extrai o laboratório da resposta e converte unidades no JS
-      const laboratorio = resp?.laboratorio || 'OUTRO';
-      const dadosConvertidos = converterUnidades2040(resp || {}, laboratorio);
+      const laboratorio = dadosRaw?.laboratorio || 'OUTRO';
+      const dadosConvertidos = converterUnidades2040(dadosRaw || {}, laboratorio);
       // Normaliza null → '' para inputs controlados
       const norm = {};
       Object.entries(dadosConvertidos).forEach(([k, v]) => {
         if (k === 'laboratorio') return;
         norm[k] = v != null ? String(v) : '';
       });
+      console.log('[Importar2040] campos normalizados:', norm);
       setCampos(norm);
     } catch (err) {
       setErro(`Erro ao processar PDF: ${err?.message || String(err)}`);

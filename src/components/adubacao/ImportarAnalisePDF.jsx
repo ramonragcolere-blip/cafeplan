@@ -210,8 +210,10 @@ export default function ImportarAnalisePDF({
     try {
       // 1. Upload do arquivo
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      console.log('[ImportarPDF] file_url obtido:', file_url);
 
-      // 2. Extrair texto bruto do PDF usando a API de extração de dados
+      // 2. Enviar o arquivo diretamente ao LLM via file_urls (Claude lê PDFs nativamente)
+      //    Tentamos também extrair o texto para reforçar o prompt, mas não dependemos disso.
       let textoPDF = '';
       try {
         const extracao = await base44.integrations.Core.ExtractDataFromUploadedFile({
@@ -223,38 +225,36 @@ export default function ImportarAnalisePDF({
             },
           },
         });
+        console.log('[ImportarPDF] ExtractDataFromUploadedFile resultado:', JSON.stringify(extracao)?.slice(0, 300));
         if (extracao?.status === 'success' && extracao?.output?.texto_completo) {
           textoPDF = extracao.output.texto_completo;
         }
-      } catch (_) {
-        // falha silenciosa — tenta enviar o arquivo direto ao LLM abaixo
+      } catch (extErr) {
+        console.warn('[ImportarPDF] ExtractDataFromUploadedFile falhou:', extErr?.message);
       }
 
-      // 3. Chamar o LLM com o texto extraído (ou arquivo direto como fallback)
-      const promptFinal = textoPDF
-        ? buildPrompt(textoPDF)
-        : buildPrompt('[Texto não pôde ser extraído — analise o arquivo diretamente]');
+      console.log('[ImportarPDF] textoPDF extraído (primeiros 500 chars):', textoPDF.slice(0, 500) || '(vazio — usando file_urls)');
+
+      // 3. Chamar o LLM — SEMPRE envia o arquivo via file_urls para garantir leitura
+      //    O texto extraído é passado no prompt como reforço adicional quando disponível
+      const promptFinal = buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.');
+
+      console.log('[ImportarPDF] Enviando prompt ao LLM, tamanho:', promptFinal.length);
 
       const resposta = await base44.integrations.Core.InvokeLLM({
         prompt: promptFinal,
-        // se não extraiu texto, manda o arquivo para o LLM tentar ler
-        file_urls: textoPDF ? undefined : [file_url],
+        file_urls: [file_url], // sempre envia o arquivo — Claude lê PDF diretamente
         model: 'claude_sonnet_4_6',
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            laboratorio: { type: 'string' },
-            identificacao: { type: 'object' },
-            talhoes: { type: 'array', items: { type: 'object' } },
-          },
-        },
       });
+
+      console.log('[ImportarPDF] Resposta bruta do LLM:', JSON.stringify(resposta)?.slice(0, 1000));
 
       let parsed = resposta;
       if (typeof resposta === 'string') {
         const m = resposta.match(/\{[\s\S]*\}/);
         parsed = m ? JSON.parse(m[0]) : null;
       }
+      console.log('[ImportarPDF] parsed:', JSON.stringify(parsed)?.slice(0, 500));
 
       // Fallback: se não encontrou talhões, abre formulário vazio para preenchimento manual
       if (!parsed || !parsed.talhoes?.length) {
