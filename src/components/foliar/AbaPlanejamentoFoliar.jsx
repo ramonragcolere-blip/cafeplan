@@ -52,14 +52,14 @@ function AplicacaoBlock({ aplicacao, insumos, faseTalhao, onChange, onRemover, o
     if (ins) {
       let doseAuto = '';
       const fase = faseTalhao || '';
-      if (fase === 'Em formação') {
+      if (fase.includes('Em formação')) {
         doseAuto = ins.dose_plantio || '';
-      } else if (fase === 'Recepado/Brotando') {
+      } else if (fase.includes('Recepado')) {
         doseAuto = ins.dose_1ano_recepa || '';
-      } else if (fase === 'Esqueletado/Decotado') {
+      } else if (fase.includes('Esqueletado')) {
         doseAuto = ins.dose_esqueletado || '';
       } else {
-        // Em produção, Safra zero e qualquer outro
+        // Em produção, Safra zero, vazio ou qualquer outro
         doseAuto = ins.dose_producao || '';
       }
       setDose(doseAuto);
