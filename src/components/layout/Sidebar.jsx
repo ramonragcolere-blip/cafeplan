@@ -20,7 +20,7 @@ const colheitaItems = [
 
 const bottomItems = [
   { path: '/adubacao', label: 'Adubação do Cafeeiro', icon: Sprout },
-  { path: '/fertilizantes', label: 'Base de Fertilizantes', icon: FlaskConical },
+  { path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical },
 ];
 
 function NavLink({ path, label, icon: Icon, indent, onClick, isActive }) {

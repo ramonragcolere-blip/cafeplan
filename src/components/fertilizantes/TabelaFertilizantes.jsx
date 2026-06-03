@@ -3,13 +3,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, Upload } from 'lucide-react';
+import ImportarInsumoCSV from './ImportarInsumoCSV';
 
 const GRUPOS = [
   'Todos', 'Fertilizante Solo', 'Fertilizante Solo + Nematicida Biológico', 'Fertilizante Foliar',
   'Fosfatado', 'Fonte de Nitrogênio', 'Fonte de Fósforo', 'Fonte de Potássio',
   'Fonte de Magnésio', 'Fonte de Boro', 'Fonte de Zinco', 'Fonte de Cobre',
-  'Corretivo', 'Condicionador de Solo', 'Organomineral', 'Outro',
+  'Corretivo', 'Condicionador de Solo', 'Organomineral', 'Liberação Gradual',
+  'Fungicida', 'Inseticida', 'Inseticida Biológico', 'Inseticida de Solo',
+  'Acaricida', 'Herbicida', 'Adjuvante', 'Bioestimulante', 'Aminoácido',
+  'Ácido Húmico e Fúlvico', 'Foliar — Nutrição', 'Cobre', 'Boro', 'Zinco',
+  'Manganês', 'Magnésio', 'Fósforo', 'Outro',
 ];
 
 const NUTRIENTES_PCT = ['n_pct', 'p2o5_pct', 'k2o_pct', 'ca_pct', 'mg_pct', 's_pct', 'b_pct', 'zn_pct', 'cu_pct'];
@@ -33,6 +38,8 @@ function DetalheRow({ p }) {
           {p.dose_producao && <div><span className="font-medium">Produção: </span>{p.dose_producao}</div>}
           {p.dose_esqueletado && <div><span className="font-medium">Esqueletado: </span>{p.dose_esqueletado}</div>}
           {p.unidade_aplicacao && <div><span className="font-medium">Unidade: </span>{p.unidade_aplicacao}</div>}
+          {p.tipo_formulacao && <div><span className="font-medium">Formulação: </span>{p.tipo_formulacao}</div>}
+          {p.funcao_composicao && <div><span className="font-medium">Alvo/Função: </span>{p.funcao_composicao}</div>}
           {p.intervalo_seguranca && <div><span className="font-medium">Intervalo: </span>{p.intervalo_seguranca}</div>}
           {p.instrucoes_uso && <div className="col-span-2 sm:col-span-4"><span className="font-medium">Instruções: </span>{p.instrucoes_uso}</div>}
           {p.observacoes && <div className="col-span-2 sm:col-span-4"><span className="font-medium">Obs: </span>{p.observacoes}</div>}
@@ -42,10 +49,11 @@ function DetalheRow({ p }) {
   );
 }
 
-export default function TabelaFertilizantes({ dados, loading, onNovo, onEditar, onDeletar }) {
+export default function TabelaFertilizantes({ dados, loading, onNovo, onEditar, onDeletar, onImportado }) {
   const [busca, setBusca] = useState('');
   const [grupo, setGrupo] = useState('Todos');
   const [expandido, setExpandido] = useState(null);
+  const [importarOpen, setImportarOpen] = useState(false);
 
   const filtrados = dados.filter(p => {
     const matchBusca = (p.nome || '').toLowerCase().includes(busca.toLowerCase()) ||
@@ -69,7 +77,11 @@ export default function TabelaFertilizantes({ dados, loading, onNovo, onEditar, 
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={onNovo} className="gap-2"><Plus className="w-4 h-4" />Novo Produto</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportarOpen(true)} className="gap-2"><Upload className="w-4 h-4" />Importar CSV</Button>
+          <Button onClick={onNovo} className="gap-2"><Plus className="w-4 h-4" />Novo Produto</Button>
+        </div>
+        <ImportarInsumoCSV open={importarOpen} onOpenChange={setImportarOpen} nomesExistentes={dados.map(p => p.nome)} onImportado={onImportado} />
       </div>
 
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">

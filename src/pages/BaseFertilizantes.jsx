@@ -70,8 +70,8 @@ export default function BaseFertilizantes() {
           <FlaskConical className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Base de Fertilizantes</h1>
-          <p className="text-muted-foreground mt-0.5">Fertilizantes, formulados e fontes nutricionais para o cafeeiro</p>
+          <h1 className="text-3xl font-bold tracking-tight">Base de Insumos</h1>
+          <p className="text-muted-foreground mt-0.5">Fertilizantes, defensivos, foliares e demais insumos para o cafeeiro</p>
         </div>
       </div>
 
@@ -89,6 +89,7 @@ export default function BaseFertilizantes() {
             onNovo={() => { setEditingFert(null); setDialogFertOpen(true); }}
             onEditar={f => { setEditingFert(f); setDialogFertOpen(true); }}
             onDeletar={f => fertDelete.mutate(f.id)}
+            onImportado={() => queryClient.invalidateQueries({ queryKey: ['fertilizantes'] })}
           />
         </TabsContent>
 

@@ -27,12 +27,47 @@
         "Corretivo",
         "Condicionador de Solo",
         "Organomineral",
+        "Libera\u00e7\u00e3o Gradual",
+        "Fungicida",
+        "Inseticida",
+        "Inseticida Biol\u00f3gico",
+        "Inseticida de Solo",
+        "Acaricida",
+        "Herbicida",
+        "Adjuvante",
+        "Bioestimulante",
+        "Amino\u00e1cido",
+        "\u00c1cido H\u00famico e F\u00falvico",
+        "Foliar \u2014 Nutri\u00e7\u00e3o",
+        "Cobre",
+        "Boro",
+        "Zinco",
+        "Mangan\u00eas",
+        "Magn\u00e9sio",
+        "F\u00f3sforo",
         "Outro"
       ]
     },
     "tipo_produto": {
       "type": "string",
       "description": "Tipo: formulado NPK, organomineral, simples, foliar..."
+    },
+    "tipo_formulacao": {
+      "type": "string",
+      "enum": [
+        "WG",
+        "SC",
+        "SL",
+        "EC",
+        "EW",
+        "PM",
+        "outro"
+      ],
+      "description": "Tipo de formula\u00e7\u00e3o"
+    },
+    "funcao_composicao": {
+      "type": "string",
+      "description": "Alvo/fun\u00e7\u00e3o do produto (ex: Controle de ferrugem, Fonte de boro)"
     },
     "ingrediente_ativo": {
       "type": "string"

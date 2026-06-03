@@ -12,11 +12,17 @@ const GRUPOS = [
   'Fertilizante Solo', 'Fertilizante Solo + Nematicida Biológico', 'Fertilizante Foliar',
   'Fosfatado', 'Fonte de Nitrogênio', 'Fonte de Fósforo', 'Fonte de Potássio',
   'Fonte de Magnésio', 'Fonte de Boro', 'Fonte de Zinco', 'Fonte de Cobre',
-  'Corretivo', 'Condicionador de Solo', 'Organomineral', 'Outro',
+  'Corretivo', 'Condicionador de Solo', 'Organomineral', 'Liberação Gradual',
+  'Fungicida', 'Inseticida', 'Inseticida Biológico', 'Inseticida de Solo',
+  'Acaricida', 'Herbicida', 'Adjuvante', 'Bioestimulante', 'Aminoácido',
+  'Ácido Húmico e Fúlvico', 'Foliar — Nutrição', 'Cobre', 'Boro', 'Zinco',
+  'Manganês', 'Magnésio', 'Fósforo', 'Outro',
 ];
 
+const FORMULACOES = ['WG', 'SC', 'SL', 'EC', 'EW', 'PM', 'outro'];
+
 const empty = () => ({
-  nome: '', fornecedor: '', grupo: '', tipo_produto: '', ingrediente_ativo: '',
+  nome: '', fornecedor: '', grupo: '', tipo_produto: '', tipo_formulacao: '', funcao_composicao: '', ingrediente_ativo: '',
   n_pct: '', p2o5_pct: '', k2o_pct: '', ca_pct: '', mg_pct: '', s_pct: '',
   b_pct: '', zn_pct: '', cu_pct: '', mn_pct: '', fe_pct: '',
   outros_nutrientes: '',
@@ -75,8 +81,22 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
             <Input value={form.tipo_produto} onChange={e => set('tipo_produto', e.target.value)} placeholder="Ex: Formulado NPK" />
           </div>
           <div>
+            <Label className="text-xs mb-1 block">Tipo de Formulação</Label>
+            <Select value={form.tipo_formulacao || 'none'} onValueChange={v => set('tipo_formulacao', v === 'none' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Selecione...</SelectItem>
+                {FORMULACOES.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <Label className="text-xs mb-1 block">Ingrediente Ativo</Label>
             <Input value={form.ingrediente_ativo} onChange={e => set('ingrediente_ativo', e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Alvo / Função</Label>
+            <Input value={form.funcao_composicao} onChange={e => set('funcao_composicao', e.target.value)} placeholder="Ex: Controle de ferrugem, Fonte de boro" />
           </div>
           <div className="col-span-2">
             <Label className="text-xs mb-1 block">Composição (texto original)</Label>
