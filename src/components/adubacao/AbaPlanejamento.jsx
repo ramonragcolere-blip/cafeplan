@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw, Plus, Trash2, DollarSign } from 'lucide-react';
 import ResumoCustosAdubacao from './ResumoCustosAdubacao';
+import BalancoNutricional from './BalancoNutricional';
 import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas } from '@/lib/tabelasNutricionais';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -399,7 +400,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
 }
 
 // ── Elemento completo por nutriente (cabeçalho + N fontes + botão adicionar) ──
-function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem }) {
+function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState }) {
   const addFonte = () => onChange([...fontes, linhaVazia()]);
   const removeFonte = (idx) => onChange(fontes.filter((_, i) => i !== idx));
   const updateFonte = (idx, nova) => { const arr = [...fontes]; arr[idx] = nova; onChange(arr); };
@@ -418,6 +419,16 @@ function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange
           </span>
         )}
       </div>
+      {linhasState && (
+        <div className="px-4 pb-2">
+          <BalancoNutricional
+            nutriente={nutriente}
+            recKgHa={recKgHa}
+            linhasState={linhasState}
+            todos={todos}
+          />
+        </div>
+      )}
 
       {fontes.map((fonte, idx) => (
         <FonteBloco
@@ -817,6 +828,7 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                   fontes={fontes}
                   onChange={novasFontes => setLinhasState(prev => ({...prev, [n.key]: novasFontes}))}
                   infoCalagem={infoCalagem}
+                  linhasState={linhasState}
                 />
               );
             })}
