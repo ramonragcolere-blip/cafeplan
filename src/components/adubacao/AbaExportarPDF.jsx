@@ -289,6 +289,15 @@ function gerarPDF(produtor, safra, talhoesComBlocos) {
 
       y += 14;
 
+      // ── Época (aplicação única) ──
+      if (numAplic === 1 && parcelas[0]?.meses) {
+        sf('normal', 9, MED);
+        doc.text('Época:', ML + 2, y + 4);
+        sf('bold', 9, BLACK);
+        doc.text(parcelas[0].meses, ML + 20, y + 4);
+        y += 7;
+      }
+
       // ── Tabela de parcelamento ──
       if (numAplic > 1) {
         hLine(y, LINE, 0.3);
