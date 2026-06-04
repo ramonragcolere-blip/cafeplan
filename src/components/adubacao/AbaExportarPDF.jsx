@@ -28,6 +28,11 @@ function fmtNum(n, dec = 1) {
   return Number(n).toFixed(dec).replace('.', ',');
 }
 
+function fmtBRL(v) {
+  if (v == null || v === 0) return '—';
+  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // Normaliza key do nutriente base (remove sufixo __1, __2, etc.)
 function baseKey(nutrienteKey) {
   return nutrienteKey?.split('__')[0] || nutrienteKey;
@@ -98,6 +103,9 @@ function buildBlocosTalhao(talhao, planejamentos, todosProdutos) {
       return { pct, kg: kgAplic, meses: mesesStr };
     });
 
+    const preco = parseFloat(plan.preco) || 0;
+    const custoTotal = totalKg != null && preco > 0 ? Math.round(totalKg * preco * 100) / 100 : null;
+
     blocos.push({
       isCalagem,
       nutriLabel,
@@ -110,6 +118,8 @@ function buildBlocosTalhao(talhao, planejamentos, todosProdutos) {
       numAplic,
       parcelas,
       observacoes: plan.observacoes || '',
+      preco,
+      custoTotal,
     });
   }
 
@@ -201,6 +211,89 @@ function gerarPDF(produtor, safra, talhoesComBlocos) {
 
   y = 48;
   rodape();
+
+  // ── TABELA DE RESUMO PARA COMPRA ─────────────────────────────────────────────
+  {
+    // Agrupa por produto (nome), somando totalKg e custoTotal
+    const mapaResumo = new Map();
+    for (const { blocos } of talhoesComBlocos) {
+      for (const b of blocos) {
+        const key = b.produtoNome;
+        if (!mapaResumo.has(key)) {
+          mapaResumo.set(key, { nome: b.produtoNome, totalKg: 0, preco: b.preco, custoTotal: 0 });
+        }
+        const r = mapaResumo.get(key);
+        if (b.totalKg != null) r.totalKg += b.totalKg;
+        if (b.custoTotal != null) r.custoTotal += b.custoTotal;
+      }
+    }
+    const linhasResumo = Array.from(mapaResumo.values());
+    const totalGeralCusto = linhasResumo.reduce((s, r) => s + (r.custoTotal || 0), 0);
+
+    if (linhasResumo.length > 0) {
+      checkY(20 + linhasResumo.length * 8 + 12);
+
+      // Título da seção
+      sf('bold', 12, GRN_BG);
+      doc.text('Resumo para compra de produtos', ML, y + 5);
+      y += 10;
+
+      // Cabeçalho da tabela
+      const RC = { prod: 72, qtd: 30, sc: 24, vunit: 32, vtotal: 34 };
+      doc.setFillColor(...GRN_BG);
+      doc.rect(ML, y, CW, 7, 'F');
+      sf('bold', 8.5, WHITE);
+      let rh = ML + 2;
+      [
+        { l: 'Produto',          w: RC.prod  },
+        { l: 'Quantidade total', w: RC.qtd   },
+        { l: 'Sacos 50 kg',      w: RC.sc    },
+        { l: 'Valor unitário',   w: RC.vunit },
+        { l: 'Preço total',      w: RC.vtotal},
+      ].forEach(c => { doc.text(c.l, rh, y + 5); rh += c.w; });
+      y += 7;
+
+      // Linhas
+      linhasResumo.forEach((r, ri) => {
+        if (ri % 2 === 1) {
+          doc.setFillColor(...ROW_ALT);
+          doc.rect(ML, y, CW, 7, 'F');
+        }
+        let rx = ML + 2;
+        const sc50r = r.totalKg > 0 ? (r.totalKg / 50).toFixed(1) : '—';
+        const vals = [
+          r.nome.substring(0, 38),
+          fmtTotal(r.totalKg > 0 ? r.totalKg : null),
+          sc50r,
+          r.preco > 0 ? `R$ ${fmtNum(r.preco, 2)}/kg` : '—',
+          r.custoTotal > 0 ? fmtBRL(r.custoTotal) : '—',
+        ];
+        const widths = [RC.prod, RC.qtd, RC.sc, RC.vunit, RC.vtotal];
+        vals.forEach((v, vi) => {
+          if (vi === 0) sf('bold', 9, BLACK); else sf('normal', 9, DARK);
+          doc.text(String(v), rx, y + 5);
+          rx += widths[vi];
+        });
+        doc.setDrawColor(...LINE);
+        doc.setLineWidth(0.2);
+        doc.line(ML, y + 7, ML + CW, y + 7);
+        y += 7;
+      });
+
+      // Linha de total geral
+      if (totalGeralCusto > 0) {
+        doc.setFillColor(...GRN_BG);
+        doc.rect(ML, y, CW, 8, 'F');
+        sf('bold', 9, WHITE);
+        const totalLabel = RC.prod + RC.qtd + RC.sc + RC.vunit;
+        doc.text('TOTAL GERAL', ML + 2, y + 5.5);
+        doc.text(fmtBRL(totalGeralCusto), ML + totalLabel + 2, y + 5.5);
+        y += 8;
+      }
+
+      y += 10;
+    }
+  }
 
   // ── POR TALHÃO ────────────────────────────────────────────────────────────────
   for (const { talhao, blocos } of talhoesComBlocos) {
@@ -385,6 +478,45 @@ function gerarPDF(produtor, safra, talhoesComBlocos) {
     // Espaço entre talhões
     hLine(y, LINE_DARK, 0.5);
     y += 10;
+  }
+
+  // ── BLOCO DE CUSTO TOTAL FINAL ───────────────────────────────────────────────
+  {
+    const custoTotalGeral = talhoesComBlocos.reduce((s, { blocos }) =>
+      s + blocos.reduce((bs, b) => bs + (b.custoTotal || 0), 0), 0);
+    const areaTotal = talhoesComBlocos.reduce((s, { talhao, blocos }) =>
+      blocos.length > 0 ? s + (talhao.area_ha || 0) : s, 0);
+    const custoHa = areaTotal > 0 && custoTotalGeral > 0 ? custoTotalGeral / areaTotal : null;
+
+    if (custoTotalGeral > 0) {
+      checkY(36);
+
+      // Fundo verde escuro
+      doc.setFillColor(...GRN_BG);
+      doc.rect(ML, y, CW, 30, 'F');
+
+      sf('bold', 11, GRN_SOFT);
+      doc.text('Resumo de Custos — Adubação via Solo', ML + 5, y + 8);
+
+      sf('normal', 9, [160, 210, 175]);
+      doc.text('Custo total adubação via solo:', ML + 5, y + 15);
+      sf('bold', 11, WHITE);
+      doc.text(fmtBRL(custoTotalGeral), ML + 75, y + 15);
+
+      if (areaTotal > 0) {
+        sf('normal', 9, [160, 210, 175]);
+        doc.text(`Área total: ${fmtNum(areaTotal, 2)} ha`, ML + 5, y + 21);
+      }
+
+      if (custoHa != null) {
+        sf('normal', 9, [160, 210, 175]);
+        doc.text('Custo médio por hectare:', ML + 5, y + 27);
+        sf('bold', 11, WHITE);
+        doc.text(`${fmtBRL(custoHa)}/ha`, ML + 75, y + 27);
+      }
+
+      y += 34;
+    }
   }
 
   doc.save(`Adubacao_${produtor.codigo}_Safra${safra.replace('/', '-')}.pdf`);
