@@ -129,7 +129,7 @@ function normalizarMeses(mesArr, numAplic) {
 }
 
 // ── Fonte individual (seletor + dose + parcelamento) ──────────────────────────
-function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, onRemover, isFirst, infoCalagem }) {
+function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, onRemover, isFirst, infoCalagem, rec }) {
   const { produtoId, doseRecManual, numAplic, pcts, meses = [], observacoes, preco = '' } = linhaState;
   const produto = useMemo(() => todos.find(p => p.id === produtoId) || null, [todos, produtoId]);
   const area = talhao?.area_ha || 0;
@@ -265,9 +265,31 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
               {TODOS_NUTRIENTES_COMPOSICAO.map(n => {
                 const v = parseFloat(produto[n.key]) || 0;
                 if (!v) return null;
+                const isPrincipal = n.key === nutriente.key;
+
+                // Para nutrientes secundários: calcular quanto este produto fornece e o saldo
+                let saldoEl = null;
+                if (!isPrincipal && dosesCalc && dosesCalc.doseHa > 0) {
+                  const fornecidoKgHa = dosesCalc.doseHa * (v / 100);
+                  // Mapear n.key para a recKey correspondente
+                  const nutDef = NUTRIENTES_CHAVE.find(x => x.key === n.key);
+                  const recValor = nutDef && rec ? rec[nutDef.recKey] : null;
+                  if (recValor != null) {
+                    const saldo = recValor - fornecidoKgHa;
+                    if (saldo <= 0) {
+                      const excesso = Math.abs(saldo);
+                      saldoEl = excesso < 0.05
+                        ? <span className="text-green-700 font-semibold ml-1">→ suprido</span>
+                        : <span className="text-orange-600 font-semibold ml-1">→ excesso de {excesso.toFixed(1)} kg/ha</span>;
+                    } else {
+                      saldoEl = <span className="text-yellow-700 font-semibold ml-1">→ falta {saldo.toFixed(1)} kg/ha</span>;
+                    }
+                  }
+                }
+
                 return (
-                  <span key={n.key} className={`px-2 py-0.5 rounded-full font-medium ${n.key===nutriente.key?'bg-primary/10 text-primary':'bg-muted text-muted-foreground'}`}>
-                    {n.label}: {v}%
+                  <span key={n.key} className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${isPrincipal ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    {n.label}: {v}%{saldoEl}
                   </span>
                 );
               })}
@@ -400,7 +422,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
 }
 
 // ── Elemento completo por nutriente (cabeçalho + N fontes + botão adicionar) ──
-function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState }) {
+function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec }) {
   const addFonte = () => onChange([...fontes, linhaVazia()]);
   const removeFonte = (idx) => onChange(fontes.filter((_, i) => i !== idx));
   const updateFonte = (idx, nova) => { const arr = [...fontes]; arr[idx] = nova; onChange(arr); };
@@ -442,6 +464,7 @@ function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange
           onRemover={() => removeFonte(idx)}
           isFirst={idx === 0}
           infoCalagem={idx === 0 ? infoCalagem : null}
+          rec={rec}
         />
       ))}
 
@@ -829,6 +852,7 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                   onChange={novasFontes => setLinhasState(prev => ({...prev, [n.key]: novasFontes}))}
                   infoCalagem={infoCalagem}
                   linhasState={linhasState}
+                  rec={rec}
                 />
               );
             })}
