@@ -128,6 +128,42 @@ function normalizarMeses(mesArr, numAplic) {
   });
 }
 
+// Retorna texto com valor de solo para o nutriente, ou null se não houver
+function getSoloInfo(nutrienteKey, analise, analise2040) {
+  if (!analise) return null;
+  const fmt = (v, unit) => v != null ? `${v} ${unit}` : null;
+  switch (nutrienteKey) {
+    case 'k2o_pct': {
+      const v0 = analise.potassio != null ? `${analise.potassio} mg/dm³ (0-20)` : null;
+      const v1 = analise2040?.potassio != null ? `${analise2040.potassio} mg/dm³ (20-40)` : null;
+      if (!v0) return null;
+      return v1 ? `K Solo: ${v0} + ${v1}` : `K Solo: ${v0}`;
+    }
+    case 'p2o5_pct': {
+      const v0 = analise.fosforo != null ? `${analise.fosforo} mg/dm³ (0-20)` : null;
+      const v1 = analise2040?.fosforo != null ? `${analise2040.fosforo} mg/dm³ (20-40)` : null;
+      if (!v0) return null;
+      return v1 ? `P Solo: ${v0} + ${v1}` : `P Solo: ${v0}`;
+    }
+    case 'ca_pct':
+      return fmt(analise.calcio, 'cmolc/dm³ (0-20)') ? `Ca Solo: ${analise.calcio} cmolc/dm³ (0-20)` : null;
+    case 'mg_pct':
+      return fmt(analise.magnesio, 'cmolc/dm³ (0-20)') ? `Mg Solo: ${analise.magnesio} cmolc/dm³ (0-20)` : null;
+    case 'zn_pct':
+      return analise.zinco != null ? `Zn Solo: ${analise.zinco} mg/dm³ (0-20)` : null;
+    case 'b_pct':
+      return analise.boro != null ? `B Solo: ${analise.boro} mg/dm³ (0-20)` : null;
+    case 'mn_pct':
+      return analise.manganes != null ? `Mn Solo: ${analise.manganes} mg/dm³ (0-20)` : null;
+    case 'fe_pct':
+      return analise.ferro != null ? `Fe Solo: ${analise.ferro} mg/dm³ (0-20)` : null;
+    case 'cu_pct':
+      return analise.cobre != null ? `Cu Solo: ${analise.cobre} mg/dm³ (0-20)` : null;
+    default:
+      return null;
+  }
+}
+
 // ── Fonte individual (seletor + dose + parcelamento) ──────────────────────────
 function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, onRemover, isFirst, infoCalagem, rec }) {
   const { produtoId, doseRecManual, numAplic, pcts, meses = [], observacoes, preco = '' } = linhaState;
@@ -422,10 +458,12 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
 }
 
 // ── Elemento completo por nutriente (cabeçalho + N fontes + botão adicionar) ──
-function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec }) {
+function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec, analise, analise2040 }) {
   const addFonte = () => onChange([...fontes, linhaVazia()]);
   const removeFonte = (idx) => onChange(fontes.filter((_, i) => i !== idx));
   const updateFonte = (idx, nova) => { const arr = [...fontes]; arr[idx] = nova; onChange(arr); };
+
+  const soloInfo = getSoloInfo(nutriente.key, analise, analise2040);
 
   return (
     <div className="border border-border rounded-xl overflow-hidden">
@@ -438,6 +476,11 @@ function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange
         {recKgHa == null && (
           <span className="text-xs text-amber-600 flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" /> Sem recomendação calculada
+          </span>
+        )}
+        {soloInfo && (
+          <span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 ml-auto">
+            {soloInfo}
           </span>
         )}
       </div>
@@ -853,6 +896,8 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                   infoCalagem={infoCalagem}
                   linhasState={linhasState}
                   rec={rec}
+                  analise={analise}
+                  analise2040={analise2040obj}
                 />
               );
             })}
