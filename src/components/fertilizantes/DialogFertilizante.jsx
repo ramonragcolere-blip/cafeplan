@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { VoiceInput } from '@/components/ui/VoiceInput';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -60,11 +61,11 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="col-span-2">
             <Label className="text-xs mb-1 block">Nome do Produto *</Label>
-            <Input value={form.nome} onChange={e => set('nome', e.target.value)} />
+            <VoiceInput value={form.nome} onChange={e => set('nome', e.target.value)} />
           </div>
           <div>
             <Label className="text-xs mb-1 block">Fornecedor</Label>
-            <Input value={form.fornecedor} onChange={e => set('fornecedor', e.target.value)} />
+            <VoiceInput value={form.fornecedor} onChange={e => set('fornecedor', e.target.value)} />
           </div>
           <div>
             <Label className="text-xs mb-1 block">Grupo</Label>
@@ -78,7 +79,7 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
           </div>
           <div>
             <Label className="text-xs mb-1 block">Tipo de Produto</Label>
-            <Input value={form.tipo_produto} onChange={e => set('tipo_produto', e.target.value)} placeholder="Ex: Formulado NPK" />
+            <VoiceInput value={form.tipo_produto} onChange={e => set('tipo_produto', e.target.value)} placeholder="Ex: Formulado NPK" />
           </div>
           <div>
             <Label className="text-xs mb-1 block">Tipo de Formulação</Label>
@@ -92,15 +93,15 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
           </div>
           <div>
             <Label className="text-xs mb-1 block">Ingrediente Ativo</Label>
-            <Input value={form.ingrediente_ativo} onChange={e => set('ingrediente_ativo', e.target.value)} />
+            <VoiceInput value={form.ingrediente_ativo} onChange={e => set('ingrediente_ativo', e.target.value)} />
           </div>
           <div>
             <Label className="text-xs mb-1 block">Alvo / Função</Label>
-            <Input value={form.funcao_composicao} onChange={e => set('funcao_composicao', e.target.value)} placeholder="Ex: Controle de ferrugem, Fonte de boro" />
+            <VoiceInput value={form.funcao_composicao} onChange={e => set('funcao_composicao', e.target.value)} placeholder="Ex: Controle de ferrugem, Fonte de boro" />
           </div>
           <div className="col-span-2">
             <Label className="text-xs mb-1 block">Composição (texto original)</Label>
-            <Input value={form.composicao_texto} onChange={e => set('composicao_texto', e.target.value)} placeholder="Ex: 16% N; 24% K₂O; 5,5% S" />
+            <VoiceInput value={form.composicao_texto} onChange={e => set('composicao_texto', e.target.value)} placeholder="Ex: 16% N; 24% K₂O; 5,5% S" />
           </div>
 
           <CamposComposicao form={form} set={set} />
@@ -118,7 +119,7 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
           ].map(c => (
             <div key={c.key}>
               <Label className="text-xs mb-1 block">{c.label}</Label>
-              <Input value={form[c.key]} onChange={e => set(c.key, e.target.value)} className="h-8 text-sm" />
+              <VoiceInput value={form[c.key]} onChange={e => set(c.key, e.target.value)} className="h-8 text-sm" />
             </div>
           ))}
 
@@ -128,11 +129,11 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
           </div>
           <div>
             <Label className="text-xs mb-1 block">Intervalo de Segurança</Label>
-            <Input value={form.intervalo_seguranca} onChange={e => set('intervalo_seguranca', e.target.value)} className="h-8 text-sm" />
+            <VoiceInput value={form.intervalo_seguranca} onChange={e => set('intervalo_seguranca', e.target.value)} className="h-8 text-sm" />
           </div>
           <div>
             <Label className="text-xs mb-1 block">Outros Nutrientes</Label>
-            <Input value={form.outros_nutrientes} onChange={e => set('outros_nutrientes', e.target.value)} className="h-8 text-sm" />
+            <VoiceInput value={form.outros_nutrientes} onChange={e => set('outros_nutrientes', e.target.value)} className="h-8 text-sm" />
           </div>
           <div className="col-span-2 sm:col-span-4">
             <Label className="text-xs mb-1 block">Observações</Label>

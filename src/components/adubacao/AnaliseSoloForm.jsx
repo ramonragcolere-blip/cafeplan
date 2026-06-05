@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
+import { VoiceInput } from '@/components/ui/VoiceInput';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -51,7 +51,7 @@ export default function AnaliseSoloForm({ dados, onSave, saving }) {
         {CAMPOS.map(c => (
           <div key={c.key}>
             <Label className="text-xs mb-1 block">{c.label}</Label>
-            <Input
+            <VoiceInput
               type={c.type}
               step={c.step}
               value={form[c.key] ?? ''}

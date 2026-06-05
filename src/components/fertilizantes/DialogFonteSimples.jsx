@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { VoiceInput } from '@/components/ui/VoiceInput';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,7 +46,7 @@ export default function DialogFonteSimples({ open, onOpenChange, dados, onSave, 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="col-span-2">
             <Label className="text-xs mb-1 block">Nome da Fonte *</Label>
-            <Input value={form.nome} onChange={e => set('nome', e.target.value)} />
+            <VoiceInput value={form.nome} onChange={e => set('nome', e.target.value)} />
           </div>
           <div>
             <Label className="text-xs mb-1 block">Nutriente Principal</Label>
@@ -59,11 +60,11 @@ export default function DialogFonteSimples({ open, onOpenChange, dados, onSave, 
           </div>
           <div>
             <Label className="text-xs mb-1 block">Unidade Padrão</Label>
-            <Input value={form.unidade_padrao} onChange={e => set('unidade_padrao', e.target.value)} />
+            <VoiceInput value={form.unidade_padrao} onChange={e => set('unidade_padrao', e.target.value)} />
           </div>
           <div className="col-span-2">
             <Label className="text-xs mb-1 block">Nutrientes Secundários</Label>
-            <Input value={form.nutrientes_secundarios} onChange={e => set('nutrientes_secundarios', e.target.value)} placeholder="Ex: S, Ca" />
+            <VoiceInput value={form.nutrientes_secundarios} onChange={e => set('nutrientes_secundarios', e.target.value)} placeholder="Ex: S, Ca" />
           </div>
 
           <CamposComposicao form={form} set={set} />

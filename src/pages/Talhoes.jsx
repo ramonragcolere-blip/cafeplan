@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { VoiceInput } from '@/components/ui/VoiceInput';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -190,7 +191,7 @@ export default function Talhoes() {
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Nome do Talhão</Label><Input value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
+            <div><Label>Nome do Talhão</Label><VoiceInput value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
             <div>
               <Label>Fase atual do talhão</Label>
               <Select value={form.fase_atual || 'Em produção'} onValueChange={v => setForm({...form, fase_atual: v})}>
@@ -203,9 +204,9 @@ export default function Talhoes() {
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Nº Plantas</Label><Input type="number" value={form.num_plantas} onChange={e => setForm({...form, num_plantas: e.target.value})} /></div>
-            <div><Label>Cultivar</Label><Input value={form.cultivar} onChange={e => setForm({...form, cultivar: e.target.value})} /></div>
-            <div><Label>Espaçamento</Label><Input value={form.espacamento} onChange={e => setForm({...form, espacamento: e.target.value})} /></div>
+            <div><Label>Nº Plantas</Label><VoiceInput type="number" value={form.num_plantas} onChange={e => setForm({...form, num_plantas: e.target.value})} /></div>
+            <div><Label>Cultivar</Label><VoiceInput value={form.cultivar} onChange={e => setForm({...form, cultivar: e.target.value})} /></div>
+            <div><Label>Espaçamento</Label><VoiceInput value={form.espacamento} onChange={e => setForm({...form, espacamento: e.target.value})} /></div>
             <div>
               <Label>Método Colheita</Label>
               <Select value={form.metodo_colheita} onValueChange={v => setForm({...form, metodo_colheita: v})}>
@@ -215,11 +216,11 @@ export default function Talhoes() {
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Litros/Pé</Label><Input type="number" value={form.litros_por_pe} onChange={e => setForm({...form, litros_por_pe: e.target.value})} /></div>
-            <div><Label>% a Colher</Label><Input type="number" step="0.1" value={form.pct_colher} onChange={e => setForm({...form, pct_colher: e.target.value})} /></div>
-            <div><Label>Preço/Medida (R$)</Label><Input type="number" value={form.preco_por_medida} onChange={e => setForm({...form, preco_por_medida: e.target.value})} /></div>
-            <div><Label>Área (ha)</Label><Input type="number" value={form.area_ha} onChange={e => setForm({...form, area_ha: e.target.value})} /></div>
-            <div><Label>Sequência de Colheita</Label><Input type="number" min="1" value={form.seq_colheita} onChange={e => setForm({...form, seq_colheita: e.target.value})} placeholder="Ex: 1, 2, 3..." /></div>
+            <div><Label>Litros/Pé</Label><VoiceInput type="number" value={form.litros_por_pe} onChange={e => setForm({...form, litros_por_pe: e.target.value})} /></div>
+            <div><Label>% a Colher</Label><VoiceInput type="number" step="0.1" value={form.pct_colher} onChange={e => setForm({...form, pct_colher: e.target.value})} /></div>
+            <div><Label>Preço/Medida (R$)</Label><VoiceInput type="number" value={form.preco_por_medida} onChange={e => setForm({...form, preco_por_medida: e.target.value})} /></div>
+            <div><Label>Área (ha)</Label><VoiceInput type="number" value={form.area_ha} onChange={e => setForm({...form, area_ha: e.target.value})} /></div>
+            <div><Label>Sequência de Colheita</Label><VoiceInput type="number" min="1" value={form.seq_colheita} onChange={e => setForm({...form, seq_colheita: e.target.value})} placeholder="Ex: 1, 2, 3..." /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

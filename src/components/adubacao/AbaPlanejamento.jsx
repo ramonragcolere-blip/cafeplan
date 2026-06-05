@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2, Package, ChevronDown, AlertTriangle, RefreshCw, Plus, Trash2, DollarSign } from 'lucide-react';
+import { VoiceInput } from '@/components/ui/VoiceInput';
 import ResumoCustosAdubacao from './ResumoCustosAdubacao';
 import BalancoNutricional from './BalancoNutricional';
 import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas } from '@/lib/tabelasNutricionais';
@@ -337,7 +338,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <Label className="text-xs shrink-0">Dose manual (kg/ha):</Label>
-          <Input type="number" value={doseRecManual}
+          <VoiceInput type="number" value={doseRecManual}
             onChange={e => onChange({...linhaState, doseRecManual: e.target.value})}
             className="h-7 w-28 text-xs" placeholder={recKgHa != null ? `${recKgHa}` : 'kg/ha'} />
           {recKgHa != null && doseRecManual === '' && (
@@ -347,7 +348,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
         <div className="flex items-center gap-2">
           <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
           <Label className="text-xs shrink-0">Preço (R$/kg ou R$/L):</Label>
-          <Input type="number" value={preco}
+          <VoiceInput type="number" value={preco}
             onChange={e => onChange({...linhaState, preco: e.target.value})}
             className="h-7 w-24 text-xs" placeholder="0,00" min="0" step="0.01" />
         </div>
@@ -409,7 +410,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
                   <div key={i} className="bg-white rounded-lg border border-green-100 p-3 space-y-2">
                     <p className="text-xs font-semibold text-green-700">{APLIC_LABELS[i]} Aplicação</p>
                     <div className="flex items-center gap-2">
-                      <Input type="number" value={pcts[i]} onChange={e=>setPct(i,e.target.value)}
+                      <VoiceInput type="number" value={pcts[i]} onChange={e=>setPct(i,e.target.value)}
                         className="h-7 w-16 text-xs" min="0" max="100" />
                       <span className="text-xs text-muted-foreground">%</span>
                     </div>
@@ -450,7 +451,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
 
       <div>
         <Label className="text-xs mb-1 block">Observações</Label>
-        <Input value={observacoes} onChange={e=>onChange({...linhaState, observacoes: e.target.value})}
+        <VoiceInput value={observacoes} onChange={e=>onChange({...linhaState, observacoes: e.target.value})}
           className="h-8 text-sm" placeholder="Obs..." />
       </div>
     </div>

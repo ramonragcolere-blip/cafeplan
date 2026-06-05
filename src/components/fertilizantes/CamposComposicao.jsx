@@ -1,5 +1,5 @@
 import React from 'react';
-import { Input } from '@/components/ui/input';
+import { VoiceInput } from '@/components/ui/VoiceInput';
 import { Label } from '@/components/ui/label';
 
 const CAMPOS = [
@@ -27,7 +27,7 @@ export default function CamposComposicao({ form, set }) {
           {CAMPOS.map(c => (
             <div key={c.key}>
               <Label className="text-xs mb-0.5 block">{c.label}</Label>
-              <Input
+              <VoiceInput
                 type="number"
                 step="0.01"
                 min="0"
