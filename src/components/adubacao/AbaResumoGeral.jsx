@@ -66,6 +66,22 @@ function formatEpoca(plan) {
   });
 }
 
+// Retorna a prioridade de ordenação do produto no consolidado
+// Grupo 1: Calcário (calagem)
+// Grupo 2: Corretivos de Mg (Sulfato de Magnésio, Kieserit)
+// Grupo 3: Formulados NPK (contêm padrão numérico XX-XX-XX)
+// Grupo 4: Micronutrientes (Zinco, Boro, Ulexita, Manganês)
+// Grupo 5: demais
+function ordemConsolidado(nomeProd, isCalagem) {
+  if (isCalagem) return 1;
+  const n = (nomeProd || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/calcari/.test(n)) return 1;
+  if (/sulfato.de.magnesio|kieserit/.test(n)) return 2;
+  if (/\d{1,2}-\d{1,2}-\d{1,2}/.test(n)) return 3;
+  if (/sulfato.de.zinco|acido.borico|ulexita|sulfato.de.manganes|borac/.test(n)) return 4;
+  return 5;
+}
+
 function formatQtd(kg) {
   if (kg == null) return '—';
   if (kg >= 1000) return `${(kg / 1000).toFixed(2).replace('.', ',')} t`;
@@ -197,7 +213,7 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
 
       const key = normKey(nome);
       if (!map.has(key)) {
-        map.set(key, { produtoNome: nome, totalKg: 0, preco: null });
+        map.set(key, { produtoNome: nome, totalKg: 0, preco: null, isCalagem });
       }
       const entry = map.get(key);
       entry.totalKg += totalKg;
@@ -207,7 +223,12 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
       if (entry.preco == null && preco) entry.preco = preco;
     });
 
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => {
+      const oa = ordemConsolidado(a.produtoNome, a.isCalagem);
+      const ob = ordemConsolidado(b.produtoNome, b.isCalagem);
+      if (oa !== ob) return oa - ob;
+      return a.produtoNome.localeCompare(b.produtoNome, 'pt-BR');
+    });
   }, [planejamentos, talhoesProdutor, todosProdutos]);
 
   if (!produtor || !safra) return (
