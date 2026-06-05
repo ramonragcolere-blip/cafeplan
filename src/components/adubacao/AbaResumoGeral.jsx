@@ -175,7 +175,31 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
 
       {/* Botão imprimir — visível apenas na tela */}
       <div className="flex justify-end mb-3 resumo-print-btn">
-        <Button variant="outline" size="sm" className="gap-2" onClick={() => window.print()}>
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => {
+          const conteudo = document.getElementById('resumo-geral-tabela')?.innerHTML;
+          if (!conteudo) return;
+          const janela = window.open('', '_blank');
+          janela.document.write(`
+            <html><head><title>Resumo Geral — ${produtor.nome} · Safra ${safra}</title>
+            <style>
+              body { font-family: Arial, sans-serif; font-size: 13px; margin: 24px; }
+              h2 { font-size: 15px; margin-bottom: 4px; }
+              p { font-size: 12px; color: #555; margin-bottom: 16px; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #ccc; padding: 6px 8px; }
+              th { background: #f0f0f0; font-weight: 700; }
+              .row-talhao { background: #c8e6c9; font-weight: 700; }
+              .row-alt { background: #f5f5f5; }
+            </style>
+            </head><body>
+            <h2>Planejamento de Adubação — Resumo Geral</h2>
+            <p>${produtor.nome} · Fazenda ${produtor.fazenda || '—'} · Safra ${safra}</p>
+            ${conteudo}
+            </body></html>
+          `);
+          janela.document.close();
+          janela.print();
+        }}>
           <Printer className="w-4 h-4" />
           Imprimir Resumo
         </Button>
@@ -199,7 +223,7 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" id="resumo-geral-tabela">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/40 border-b border-border">
