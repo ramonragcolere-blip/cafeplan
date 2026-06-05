@@ -1,7 +1,24 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { LayoutList, Loader2 } from 'lucide-react';
+import { LayoutList, Loader2, Printer } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+const PRINT_STYLES = `
+@media print {
+  body > * { display: none !important; }
+  #resumo-geral-print-area { display: block !important; }
+  #resumo-geral-print-area * { visibility: visible; }
+  #resumo-geral-print-area { position: fixed; top: 0; left: 0; width: 100%; }
+  .resumo-print-header { margin-bottom: 16px; }
+  .resumo-print-btn { display: none !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { background-color: #e8f5e9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; padding: 6px 8px; border-bottom: 1px solid #ccc; }
+  td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+  .print-row-alt { background-color: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-row-talhao { background-color: #c8e6c9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
+}
+`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -153,98 +170,109 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
   );
 
   return (
-    <div className="space-y-5">
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border bg-muted/20">
-          <div className="flex items-center gap-2">
-            <LayoutList className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-base">Resumo Geral do Planejamento</h3>
-            <span className="text-xs text-muted-foreground ml-1">Safra {safra}</span>
+    <>
+      <style>{PRINT_STYLES}</style>
+
+      {/* Botão imprimir — visível apenas na tela */}
+      <div className="flex justify-end mb-3 resumo-print-btn">
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => window.print()}>
+          <Printer className="w-4 h-4" />
+          Imprimir Resumo
+        </Button>
+      </div>
+
+      {/* Área de impressão */}
+      <div id="resumo-geral-print-area" className="space-y-5">
+
+        {/* Cabeçalho visível apenas na impressão */}
+        <div className="resumo-print-header hidden print:block">
+          <h2 style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Planejamento de Adubação — Resumo Geral</h2>
+          <p style={{ fontSize: 12, color: '#555' }}>{produtor.nome} · Fazenda {produtor.fazenda || '—'} · Safra {safra}</p>
+        </div>
+
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border bg-muted/20 resumo-print-btn">
+            <div className="flex items-center gap-2">
+              <LayoutList className="w-4 h-4 text-primary" />
+              <h3 className="font-bold text-base">Resumo Geral do Planejamento</h3>
+              <span className="text-xs text-muted-foreground ml-1">Safra {safra}</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/40 border-b border-border">
+                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">Qtd. total (kg)</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">g / planta</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">g / metro</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Época de aplicação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grupos.map(({ talhao, linhas }) => (
+                  <>
+                    <tr key={`hdr-${talhao.id}`} className="bg-primary/10 border-b border-primary/20 print-row-talhao">
+                      <td colSpan={5} className="px-4 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-primary text-sm">{talhao.nome}</span>
+                          {talhao.area_ha && <span className="text-xs text-primary/70 font-medium">{talhao.area_ha} ha</span>}
+                          {talhao.num_plantas && <span className="text-xs text-primary/70">{talhao.num_plantas.toLocaleString()} plantas</span>}
+                          {talhao.espacamento && <span className="text-xs text-primary/70">{talhao.espacamento}</span>}
+                        </div>
+                      </td>
+                    </tr>
+
+                    {linhas.map((linha, li) => {
+                      const epocaArr = Array.isArray(linha.epoca) ? linha.epoca : null;
+                      const epocaStr = typeof linha.epoca === 'string' ? linha.epoca : null;
+                      return (
+                        <tr
+                          key={`${talhao.id}-${li}`}
+                          className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}
+                        >
+                          <td className="px-4 py-2.5">
+                            <span className="font-medium text-foreground">{linha.produtoNome}</span>
+                            {linha.isCalagem && (
+                              <span className="ml-2 text-xs bg-lime-100 text-lime-700 border border-lime-200 px-1.5 py-0.5 rounded-full">Calagem</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                            {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                            {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            {epocaArr ? (
+                              <div className="space-y-0.5">
+                                {epocaArr.map((e, ei) => (
+                                  <div key={ei} className="text-xs text-foreground">
+                                    <span className="font-semibold text-primary">{e.split(':')[0]}:</span>
+                                    <span className="ml-1">{e.split(':').slice(1).join(':')}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className={`text-sm ${epocaStr === 'A definir' ? 'text-muted-foreground italic' : 'text-foreground'}`}>
+                                {epocaStr || '—'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto</th>
-                <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">Qtd. total (kg)</th>
-                <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">g / planta</th>
-                <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">g / metro</th>
-                <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Época de aplicação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {grupos.map(({ talhao, linhas }) => (
-                <>
-                  {/* Linha de cabeçalho do talhão */}
-                  <tr key={`hdr-${talhao.id}`} className="bg-primary/10 border-b border-primary/20">
-                    <td colSpan={5} className="px-4 py-2.5">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-primary text-sm">{talhao.nome}</span>
-                        {talhao.area_ha && (
-                          <span className="text-xs text-primary/70 font-medium">{talhao.area_ha} ha</span>
-                        )}
-                        {talhao.num_plantas && (
-                          <span className="text-xs text-primary/70">{talhao.num_plantas.toLocaleString()} plantas</span>
-                        )}
-                        {talhao.espacamento && (
-                          <span className="text-xs text-primary/70">{talhao.espacamento}</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Linhas de produtos */}
-                  {linhas.map((linha, li) => {
-                    const epocaArr = Array.isArray(linha.epoca) ? linha.epoca : null;
-                    const epocaStr = typeof linha.epoca === 'string' ? linha.epoca : null;
-
-                    return (
-                      <tr
-                        key={`${talhao.id}-${li}`}
-                        className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20'}`}
-                      >
-                        <td className="px-4 py-2.5">
-                          <span className="font-medium text-foreground">{linha.produtoNome}</span>
-                          {linha.isCalagem && (
-                            <span className="ml-2 text-xs bg-lime-100 text-lime-700 border border-lime-200 px-1.5 py-0.5 rounded-full">Calagem</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                          {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                          {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                          {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          {epocaArr ? (
-                            <div className="space-y-0.5">
-                              {epocaArr.map((e, ei) => (
-                                <div key={ei} className="text-xs text-foreground">
-                                  <span className="font-semibold text-primary">{e.split(':')[0]}:</span>
-                                  <span className="ml-1">{e.split(':').slice(1).join(':')}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className={`text-sm ${epocaStr === 'A definir' ? 'text-muted-foreground italic' : 'text-foreground'}`}>
-                              {epocaStr || '—'}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
-    </div>
+    </>
   );
 }

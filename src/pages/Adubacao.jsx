@@ -7,6 +7,15 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Sprout, ChevronDown, ChevronUp, Search, FlaskConical, Calculator, Package, ShoppingCart, ClipboardCheck, FileDown, LayoutList } from 'lucide-react';
+import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
+import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
+import AnaliseSolo2040Form from '@/components/adubacao/AnaliseSolo2040Form';
+import RecomendacaoNPK from '@/components/adubacao/RecomendacaoNPK';
+import ImportarAnalisePDF from '@/components/adubacao/ImportarAnalisePDF';
+import PlanoAplicacoes from '@/components/adubacao/PlanoAplicacoes';
+import AbaPlanejamento from '@/components/adubacao/AbaPlanejamento';
+import AbaCompra from '@/components/adubacao/AbaCompra';
+import AbaExecucao from '@/components/adubacao/AbaExecucao';
 import AbaExportarPDF from '@/components/adubacao/AbaExportarPDF';
 import AbaResumoGeral from '@/components/adubacao/AbaResumoGeral';
 
