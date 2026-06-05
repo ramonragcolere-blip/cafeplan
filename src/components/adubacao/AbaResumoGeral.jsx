@@ -66,6 +66,12 @@ function formatEpoca(plan) {
   });
 }
 
+function formatQtd(kg) {
+  if (kg == null) return '—';
+  if (kg >= 1000) return `${(kg / 1000).toFixed(2).replace('.', ',')} t`;
+  return `${kg.toLocaleString('pt-BR')} kg`;
+}
+
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function AbaResumoGeral({ produtor, safra, talhoes }) {
@@ -147,6 +153,32 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
     }).filter(g => g.linhas.length > 0);
   }, [talhoesProdutor, planejamentos, todosProdutos]);
 
+  // Consolidado por produto (soma de todos os talhões)
+  const consolidado = useMemo(() => {
+    const map = new Map();
+    grupos.forEach(({ talhao, linhas }) => {
+      linhas.forEach(linha => {
+        const key = linha.produtoNome;
+        const existing = map.get(key) || { produtoNome: key, totalKg: 0, preco: null };
+        existing.totalKg = (existing.totalKg || 0) + (linha.totalKg || 0);
+        if (existing.preco == null && linha.preco != null) existing.preco = linha.preco;
+        map.set(key, existing);
+      });
+    });
+    // Buscar preço dos registros de planejamento
+    planejamentos.forEach(plan => {
+      const nome = plan.produto_nome;
+      if (nome && map.has(nome)) {
+        const entry = map.get(nome);
+        if (entry.preco == null) {
+          const preco = parseFloat(String(plan.preco || '').replace(',', '.')) || null;
+          if (preco) entry.preco = preco;
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [grupos, planejamentos]);
+
   if (!produtor || !safra) return (
     <div className="text-center py-16 text-muted-foreground">
       <LayoutList className="w-10 h-10 mx-auto mb-3 opacity-30" />
@@ -176,25 +208,32 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
       {/* Botão imprimir — visível apenas na tela */}
       <div className="flex justify-end mb-3 resumo-print-btn">
         <Button variant="outline" size="sm" className="gap-2" onClick={() => {
-          const conteudo = document.getElementById('resumo-geral-tabela')?.innerHTML;
-          if (!conteudo) return;
+          const consolidadoHtml = document.getElementById('resumo-consolidado-tabela')?.innerHTML || '';
+          const detalheHtml = document.getElementById('resumo-geral-tabela')?.innerHTML || '';
+          if (!consolidadoHtml && !detalheHtml) return;
           const janela = window.open('', '_blank');
           janela.document.write(`
             <html><head><title>Resumo Geral — ${produtor.nome} · Safra ${safra}</title>
             <style>
               body { font-family: Arial, sans-serif; font-size: 13px; margin: 24px; }
               h2 { font-size: 15px; margin-bottom: 4px; }
-              p { font-size: 12px; color: #555; margin-bottom: 16px; }
-              table { width: 100%; border-collapse: collapse; }
+              h3 { font-size: 13px; margin: 18px 0 6px; color: #333; }
+              p.sub { font-size: 12px; color: #555; margin-bottom: 16px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
               th, td { border: 1px solid #ccc; padding: 6px 8px; }
               th { background: #f0f0f0; font-weight: 700; }
-              .row-talhao { background: #c8e6c9; font-weight: 700; }
-              .row-alt { background: #f5f5f5; }
+              .row-talhao td { background: #c8e6c9; font-weight: 700; }
+              .row-alt td { background: #f5f5f5; }
+              .row-total td { background: #fff3cd; font-weight: 700; }
+              .badge-calagem { display: none; }
             </style>
             </head><body>
             <h2>Planejamento de Adubação — Resumo Geral</h2>
-            <p>${produtor.nome} · Fazenda ${produtor.fazenda || '—'} · Safra ${safra}</p>
-            ${conteudo}
+            <p class="sub">${produtor.nome} · Fazenda ${produtor.fazenda || '—'} · Safra ${safra}</p>
+            <h3>Consolidado de Produtos</h3>
+            ${consolidadoHtml}
+            <h3>Detalhamento por Talhão</h3>
+            ${detalheHtml}
             </body></html>
           `);
           janela.document.close();
@@ -214,15 +253,66 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
           <p style={{ fontSize: 12, color: '#555' }}>{produtor.nome} · Fazenda {produtor.fazenda || '—'} · Safra {safra}</p>
         </div>
 
+        {/* Tabela Consolidado de Produtos */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-border bg-muted/20 resumo-print-btn">
-            <div className="flex items-center gap-2">
-              <LayoutList className="w-4 h-4 text-primary" />
-              <h3 className="font-bold text-base">Resumo Geral do Planejamento</h3>
-              <span className="text-xs text-muted-foreground ml-1">Safra {safra}</span>
-            </div>
+          <div className="px-5 py-3 border-b border-border bg-muted/20">
+            <h3 className="font-bold text-sm">Consolidado de Produtos</h3>
           </div>
+          <div className="overflow-x-auto" id="resumo-consolidado-tabela">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/40 border-b border-border">
+                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Quantidade total</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">Preço unit. (R$/kg)</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo total (R$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {consolidado.map((item, i) => {
+                  const custo = item.preco && item.totalKg ? item.totalKg * item.preco : null;
+                  return (
+                    <tr key={i} className={`border-b border-border/50 ${i % 2 === 0 ? 'bg-white' : 'bg-muted/20'}`}>
+                      <td className="px-4 py-2.5 font-medium">{item.produtoNome}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{formatQtd(item.totalKg)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                        {item.preco ? item.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {custo != null ? custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {/* Linha de total geral */}
+                {(() => {
+                  const totalGeral = consolidado.reduce((acc, item) => {
+                    const custo = item.preco && item.totalKg ? item.totalKg * item.preco : 0;
+                    return acc + custo;
+                  }, 0);
+                  return totalGeral > 0 ? (
+                    <tr className="bg-amber-50 border-t-2 border-amber-200">
+                      <td colSpan={3} className="px-4 py-2.5 font-bold text-amber-800 uppercase tracking-wide text-xs">Total Geral</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-amber-800 tabular-nums">
+                        {totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                    </tr>
+                  ) : null;
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
+        {/* Título separador */}
+        <div className="flex items-center gap-2 pt-2">
+          <LayoutList className="w-4 h-4 text-primary" />
+          <h3 className="font-bold text-base">Detalhamento por Talhão</h3>
+          <span className="text-xs text-muted-foreground">Safra {safra}</span>
+        </div>
+
+        {/* Tabela detalhamento por talhão */}
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="overflow-x-auto" id="resumo-geral-tabela">
             <table className="w-full text-sm">
               <thead>
@@ -235,63 +325,66 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
                 </tr>
               </thead>
               <tbody>
-                {grupos.map(({ talhao, linhas }) => (
-                  <>
-                    <tr key={`hdr-${talhao.id}`} className="bg-primary/10 border-b border-primary/20 print-row-talhao">
-                      <td colSpan={5} className="px-4 py-2.5">
-                        <div className="flex items-center gap-3">
-                          <span className="font-bold text-primary text-sm">{talhao.nome}</span>
-                          {talhao.area_ha && <span className="text-xs text-primary/70 font-medium">{talhao.area_ha} ha</span>}
-                          {talhao.num_plantas && <span className="text-xs text-primary/70">{talhao.num_plantas.toLocaleString()} plantas</span>}
-                          {talhao.espacamento && <span className="text-xs text-primary/70">{talhao.espacamento}</span>}
-                        </div>
-                      </td>
-                    </tr>
+                {grupos.map(({ talhao, linhas }) => {
+                  const partesTalhao = [talhao.nome];
+                  if (talhao.area_ha) partesTalhao.push(`${talhao.area_ha} ha`);
+                  if (talhao.num_plantas) partesTalhao.push(`${talhao.num_plantas.toLocaleString()} plantas`);
+                  if (talhao.espacamento) partesTalhao.push(talhao.espacamento);
+                  const cabecalhoTalhao = partesTalhao.join(' · ');
 
-                    {linhas.map((linha, li) => {
-                      const epocaArr = Array.isArray(linha.epoca) ? linha.epoca : null;
-                      const epocaStr = typeof linha.epoca === 'string' ? linha.epoca : null;
-                      return (
-                        <tr
-                          key={`${talhao.id}-${li}`}
-                          className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}
-                        >
-                          <td className="px-4 py-2.5">
-                            <span className="font-medium text-foreground">{linha.produtoNome}</span>
-                            {linha.isCalagem && (
-                              <span className="ml-2 text-xs bg-lime-100 text-lime-700 border border-lime-200 px-1.5 py-0.5 rounded-full">Calagem</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                            {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                            {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            {epocaArr ? (
-                              <div className="space-y-0.5">
-                                {epocaArr.map((e, ei) => (
-                                  <div key={ei} className="text-xs text-foreground">
-                                    <span className="font-semibold text-primary">{e.split(':')[0]}:</span>
-                                    <span className="ml-1">{e.split(':').slice(1).join(':')}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className={`text-sm ${epocaStr === 'A definir' ? 'text-muted-foreground italic' : 'text-foreground'}`}>
-                                {epocaStr || '—'}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </>
-                ))}
+                  return (
+                    <>
+                      <tr key={`hdr-${talhao.id}`} className="bg-primary/10 border-b border-primary/20 row-talhao">
+                        <td colSpan={5} className="px-4 py-2.5 font-bold text-primary text-sm">
+                          {cabecalhoTalhao}
+                        </td>
+                      </tr>
+
+                      {linhas.map((linha, li) => {
+                        const epocaArr = Array.isArray(linha.epoca) ? linha.epoca : null;
+                        const epocaStr = typeof linha.epoca === 'string' ? linha.epoca : null;
+                        return (
+                          <tr
+                            key={`${talhao.id}-${li}`}
+                            className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 row-alt'}`}
+                          >
+                            <td className="px-4 py-2.5">
+                              <span className="font-medium text-foreground">{linha.produtoNome}</span>
+                              {linha.isCalagem && (
+                                <span className="badge-calagem ml-2 text-xs bg-lime-100 text-lime-700 border border-lime-200 px-1.5 py-0.5 rounded-full">Calagem</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                              {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                              {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                              {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {epocaArr ? (
+                                <div className="space-y-0.5">
+                                  {epocaArr.map((e, ei) => (
+                                    <div key={ei} className="text-xs text-foreground">
+                                      <span className="font-semibold text-primary">{e.split(':')[0]}:</span>
+                                      <span className="ml-1">{e.split(':').slice(1).join(':')}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className={`text-sm ${epocaStr === 'A definir' ? 'text-muted-foreground italic' : 'text-foreground'}`}>
+                                  {epocaStr || '—'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
