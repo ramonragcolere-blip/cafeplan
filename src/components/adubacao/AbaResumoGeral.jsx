@@ -155,29 +155,60 @@ export default function AbaResumoGeral({ produtor, safra, talhoes }) {
 
   // Consolidado por produto (soma de todos os talhões)
   const consolidado = useMemo(() => {
+    // Normaliza para agrupamento: sem acentos, minúsculas, espaços simples
+    function normKey(nome) {
+      return (nome || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    // map: chave normalizada → { produtoNome (melhor grafia), totalKg, preco }
     const map = new Map();
-    grupos.forEach(({ talhao, linhas }) => {
-      linhas.forEach(linha => {
-        const key = linha.produtoNome;
-        const existing = map.get(key) || { produtoNome: key, totalKg: 0, preco: null };
-        existing.totalKg = (existing.totalKg || 0) + (linha.totalKg || 0);
-        if (existing.preco == null && linha.preco != null) existing.preco = linha.preco;
-        map.set(key, existing);
-      });
-    });
-    // Buscar preço dos registros de planejamento
+
+    // Iterar diretamente nos planejamentos para garantir totalKg correto por talhão
     planejamentos.forEach(plan => {
-      const nome = plan.produto_nome;
-      if (nome && map.has(nome)) {
-        const entry = map.get(nome);
-        if (entry.preco == null) {
-          const preco = parseFloat(String(plan.preco || '').replace(',', '.')) || null;
-          if (preco) entry.preco = preco;
-        }
+      if (!plan.produto_id) return;
+      const nome = (plan.produto_nome || '').trim();
+      if (!nome || nome.toLowerCase() === 'nenhum produto') return;
+
+      // Buscar talhão para obter a área
+      const talhao = talhoesProdutor.find(t => t.id === plan.talhao_id);
+      const area = talhao?.area_ha || 0;
+
+      const isCalagem = baseKey(plan.nutriente_key) === 'calagem';
+      const dose = parseFloat(plan.dose_rec_manual) || 0;
+      if (dose <= 0) return;
+
+      let doseProdHa = 0;
+      if (isCalagem) {
+        doseProdHa = dose;
+      } else {
+        const produto = todosProdutos.find(p => p.id === plan.produto_id);
+        const pctNutri = produto ? (parseFloat(produto[baseKey(plan.nutriente_key)]) || 0) : 0;
+        doseProdHa = pctNutri > 0
+          ? Math.round((dose / (pctNutri / 100)) * 10) / 10
+          : dose;
       }
+
+      const totalKg = area > 0 && doseProdHa > 0 ? Math.round(doseProdHa * area) : 0;
+      const preco = parseFloat(String(plan.preco || '').replace(',', '.')) || null;
+
+      const key = normKey(nome);
+      if (!map.has(key)) {
+        map.set(key, { produtoNome: nome, totalKg: 0, preco: null });
+      }
+      const entry = map.get(key);
+      entry.totalKg += totalKg;
+      // Preferir nome com mais caracteres (mais provável ter acentuação completa)
+      if (nome.length > entry.produtoNome.length) entry.produtoNome = nome;
+      // Usar primeiro preço encontrado
+      if (entry.preco == null && preco) entry.preco = preco;
     });
+
     return Array.from(map.values());
-  }, [grupos, planejamentos]);
+  }, [planejamentos, talhoesProdutor, todosProdutos]);
 
   if (!produtor || !safra) return (
     <div className="text-center py-16 text-muted-foreground">
