@@ -409,10 +409,10 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
                 return (
                   <div key={i} className="bg-white rounded-lg border border-green-100 p-3 space-y-2">
                     <p className="text-xs font-semibold text-green-700">{APLIC_LABELS[i]} Aplicação</p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       <VoiceInput type="number" value={pcts[i]} onChange={e=>setPct(i,e.target.value)}
-                        className="h-7 w-16 text-xs" min="0" max="100" />
-                      <span className="text-xs text-muted-foreground">%</span>
+                        className="h-7 w-20 text-xs pr-6" min="0" max="100" />
+                      <span className="text-xs text-muted-foreground shrink-0">%</span>
                     </div>
                     <div className="text-xs space-y-0.5 text-muted-foreground">
                       <div><span className="font-semibold text-foreground">{Math.round(kgAplic)} kg</span> · {(area>0?(kgAplic/area):0).toFixed(1)} kg/ha</div>

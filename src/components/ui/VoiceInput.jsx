@@ -13,6 +13,15 @@ import { useVoiceRecognition } from '@/hooks/useVoiceRecognition';
  *   <VoiceInput type="text" value={v} onChange={e => setV(e.target.value)} />
  *   <VoiceInput type="number" value={v} onChange={e => setV(e.target.value)} />
  */
+// Extracts width/max-width/min-width classes to apply on the wrapper div
+// so that w-16, w-28, w-full, etc. passed via className control the outer size
+function extractWidthClasses(className = '') {
+  const widthRe = /\b(w-\S+|max-w-\S+|min-w-\S+)\b/g;
+  const widthClasses = (className.match(widthRe) || []).join(' ');
+  const rest = className.replace(widthRe, '').replace(/\s+/g, ' ').trim();
+  return { widthClasses, rest };
+}
+
 const VoiceInput = React.forwardRef(function VoiceInput(
   { className, type, onChange, onVoiceResult, ...props },
   ref
@@ -25,7 +34,6 @@ const VoiceInput = React.forwardRef(function VoiceInput(
       return;
     }
     if (onChange) {
-      // Simula evento sintético para compatibilidade com react-hook-form e state handlers
       const nativeInput = typeof ref === 'object' && ref?.current;
       if (nativeInput) {
         Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
@@ -42,8 +50,10 @@ const VoiceInput = React.forwardRef(function VoiceInput(
     onResult: handleResult,
   });
 
+  const { widthClasses, rest: inputClassName } = extractWidthClasses(className);
+
   return (
-    <div className="relative flex items-center w-full">
+    <div className={cn('relative flex items-center', widthClasses || 'w-full')}>
       <input
         type={type}
         ref={ref}
@@ -53,8 +63,8 @@ const VoiceInput = React.forwardRef(function VoiceInput(
           'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground',
           'placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
           'disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-          isSupported ? 'pr-8' : '',
-          className
+          isSupported ? 'pr-7' : '',
+          inputClassName
         )}
         {...props}
       />
@@ -65,13 +75,13 @@ const VoiceInput = React.forwardRef(function VoiceInput(
           onClick={toggle}
           title={listening ? 'Parar gravação' : 'Falar para preencher'}
           className={cn(
-            'absolute right-2 flex items-center justify-center rounded-full transition-colors focus:outline-none',
+            'absolute right-1.5 flex items-center justify-center rounded-full transition-colors focus:outline-none',
             listening
               ? 'text-red-500 animate-pulse'
               : 'text-muted-foreground hover:text-primary'
           )}
         >
-          {listening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+          {listening ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
         </button>
       )}
     </div>
