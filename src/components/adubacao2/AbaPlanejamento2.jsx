@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, CheckCircle2, Clock } from 'lucide-react';
+import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, CheckCircle2, Clock, Filter, X } from 'lucide-react';
 import { classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 
@@ -392,6 +392,125 @@ function PainelTalhao({ resultado, todos, precosProd, onPrecoChange, parcelament
   );
 }
 
+// ── Filtro global de Fornecedor / Produto ─────────────────────────────────────
+
+function FiltroProdutosGlobal({ todos, filtro, onChange }) {
+  const [dropFornAberto, setDropFornAberto] = useState(false);
+  const dropRef = useRef(null);
+
+  // Fornecedores que têm produto com N, P ou K
+  const fornecedores = useMemo(() => {
+    const set = new Set();
+    todos.forEach(p => {
+      const temNPK = (parseFloat(p.n_pct) || 0) > 0 ||
+                     (parseFloat(p.p2o5_pct) || 0) > 0 ||
+                     (parseFloat(p.k2o_pct) || 0) > 0;
+      if (temNPK && p.fornecedor) set.add(p.fornecedor);
+    });
+    return Array.from(set).sort();
+  }, [todos]);
+
+  // Produtos filtrados pelos fornecedores selecionados (com N, P ou K)
+  const produtosFiltrados = useMemo(() => {
+    return todos
+      .filter(p => {
+        const temNPK = (parseFloat(p.n_pct) || 0) > 0 ||
+                       (parseFloat(p.p2o5_pct) || 0) > 0 ||
+                       (parseFloat(p.k2o_pct) || 0) > 0;
+        if (!temNPK) return false;
+        if (filtro.fornecedores.length > 0 && !filtro.fornecedores.includes(p.fornecedor)) return false;
+        return true;
+      })
+      .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  }, [todos, filtro.fornecedores]);
+
+  useEffect(() => {
+    if (!dropFornAberto) return;
+    const handler = (e) => {
+      if (dropRef.current && !dropRef.current.contains(e.target)) setDropFornAberto(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropFornAberto]);
+
+  const toggleFornecedor = (f) => {
+    const novosForn = filtro.fornecedores.includes(f)
+      ? filtro.fornecedores.filter(x => x !== f)
+      : [...filtro.fornecedores, f];
+    onChange({ fornecedores: novosForn, produtoId: '' });
+  };
+
+  const handleProduto = (v) => {
+    onChange({ ...filtro, produtoId: v === '__todos__' ? '' : v });
+  };
+
+  const limpar = () => onChange({ fornecedores: [], produtoId: '' });
+  const temFiltro = filtro.fornecedores.length > 0 || filtro.produtoId;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-1 py-2">
+      <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+        <Filter className="w-3.5 h-3.5" /> Filtrar produtos (N/P/K):
+      </span>
+
+      {/* Multi-select fornecedores */}
+      <div ref={dropRef} className="relative">
+        <button type="button" onClick={() => setDropFornAberto(a => !a)}
+          className="h-7 text-xs border border-input rounded px-2 bg-background flex items-center gap-1 min-w-[140px] max-w-[280px] hover:bg-muted/30">
+          {filtro.fornecedores.length === 0 ? (
+            <span className="text-muted-foreground truncate">Todos fornecedores</span>
+          ) : (
+            <span className="flex flex-wrap gap-1 overflow-hidden max-h-5">
+              {filtro.fornecedores.map(f => (
+                <span key={f} className="inline-flex items-center gap-0.5 bg-primary/10 text-primary rounded px-1 text-[10px] font-medium shrink-0">
+                  {f}
+                  <span role="button"
+                    onMouseDown={e => { e.stopPropagation(); e.preventDefault(); toggleFornecedor(f); }}
+                    className="hover:text-destructive cursor-pointer leading-none">✕</span>
+                </span>
+              ))}
+            </span>
+          )}
+          <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto shrink-0" />
+        </button>
+        {dropFornAberto && (
+          <div className="absolute z-50 top-full left-0 mt-1 min-w-[200px] bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+            {fornecedores.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum fornecedor cadastrado</p>
+            ) : fornecedores.map(f => (
+              <button key={f} type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => toggleFornecedor(f)}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 flex items-center gap-2">
+                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${filtro.fornecedores.includes(f) ? 'bg-primary border-primary text-white' : 'border-input'}`}>
+                  {filtro.fornecedores.includes(f) && <span className="text-[8px] leading-none font-bold">✓</span>}
+                </span>
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Select produto */}
+      <select value={filtro.produtoId || '__todos__'} onChange={e => handleProduto(e.target.value)}
+        className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[220px]">
+        <option value="__todos__">Todos produtos</option>
+        {produtosFiltrados.map(p => (
+          <option key={p.id} value={p.id}>{p.nome}</option>
+        ))}
+      </select>
+
+      {temFiltro && (
+        <button type="button" onClick={limpar}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive underline">
+          <X className="w-3 h-3" /> Limpar filtro
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Cards de métricas ─────────────────────────────────────────────────────────
 
 function MetricCard({ label, value, sub, subColor }) {
@@ -435,6 +554,8 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const [precos, setPrecos] = useState({});
   // parcelamentos: { [talhaoId]: { [produtoId]: { parcelas: [{pct, meses[]}] } } }
   const [parcelamentos, setParcelamentos] = useState({});
+  // filtro global de fornecedor/produto para sugestões N/P/K
+  const [filtro, setFiltro] = useState({ fornecedores: [], produtoId: '' });
 
   const toggleExpand = (id) => setExpandidos(prev => {
     const next = new Set(prev);
@@ -444,6 +565,16 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
 
   const expandirTodos = () => setExpandidos(new Set((resultados || []).map(r => r.talhao.id)));
   const recolherTodos = () => setExpandidos(new Set());
+
+  // Produtos filtrados pelo filtro global (N/P/K — fornecedor + produto fixado)
+  const todosFiltered = useMemo(() => {
+    if (filtro.fornecedores.length === 0 && !filtro.produtoId) return todos;
+    return todos.filter(p => {
+      if (filtro.produtoId) return p.id === filtro.produtoId;
+      if (filtro.fornecedores.length > 0) return filtro.fornecedores.includes(p.fornecedor);
+      return true;
+    });
+  }, [todos, filtro]);
 
   // Inicializa preços com dados da base de insumos ao montar/atualizar resultados
   // já preenchendo automaticamente quando o produto tiver preço cadastrado
@@ -483,7 +614,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
 
     comRec.forEach(r => {
       const area = r.talhao.area_ha || 0;
-      const linhas = montarLinhasProdutos(todos, r.rec);
+      const linhas = montarLinhasProdutos(todosFiltered, r.rec);
       linhas.forEach(l => {
         const preco = precos[l.produto.id];
         const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
@@ -582,7 +713,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         </div>
       )}
 
-      {/* 3. Tabela */}
+      {/* 3. Filtro de fornecedor/produto */}
+      <div className="bg-card border border-border rounded-xl px-4 py-2">
+        <FiltroProdutosGlobal todos={todos} filtro={filtro} onChange={setFiltro} />
+      </div>
+
+      {/* 4. Tabela */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -646,7 +782,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                         <td colSpan={14} className="p-0 border-b border-border">
                           <PainelTalhao
                             resultado={r}
-                            todos={todos}
+                            todos={todosFiltered}
                             precosProd={precos}
                             onPrecoChange={(prodId, val) => handlePrecoChange(r.talhao.id, prodId, val)}
                             parcelamentosProd={parcelamentos[r.talhao.id] || {}}
