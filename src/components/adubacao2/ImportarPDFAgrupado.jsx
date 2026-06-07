@@ -38,46 +38,49 @@ function converterUnidades(dados, laboratorio) {
   return d;
 }
 
-const buildPrompt = (textoPDF) => `
+const buildPromptMultiplo = (textoPDF, numTalhoes) => `
 Você é um especialista em análise de solos agrícolas brasileiro.
-Extraia TODOS os dados do laudo abaixo com máxima precisão.
+O PDF contém ${numTalhoes} análise(s) de solo. Extraia TODOS os dados de cada análise.
 NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
 
-=== TEXTO DO PDF ===
-${textoPDF}
-=== FIM ===
-
-PASSO 1 — IDENTIFIQUE O LABORATÓRIO:
+Primeiro identifique o laboratório:
 - COOXUPE: contém "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé"
 - LAB_VICOSA: contém "labsolosvicosa" ou "Laboratório de Análise de Solo Viçosa"
 - OUTRO: qualquer outro
 
-PASSO 2 — Extraia os valores da camada 0-20 cm.
-Retorne SOMENTE JSON válido:
-{
-  "laboratorio": "OUTRO",
-  "dados": {
+Retorne APENAS um array JSON válido, sem texto adicional, sem markdown, sem blocos de código. Cada objeto representa uma análise de solo encontrada no PDF, na ordem em que aparecem no documento, com os campos: pH, MO, P, K, Ca, Mg, S, B, Cu, Fe, Mn, Zn, V, CTC, H_Al
+
+O formato exato deve ser:
+[
+  {
+    "laboratorio": "OUTRO",
     "ph": null, "materia_organica": null, "fosforo": null, "potassio": null,
     "calcio": null, "magnesio": null, "aluminio": null, "h_al": null,
     "sb": null, "ctc": null, "saturacao_bases": null, "enxofre": null,
     "boro": null, "zinco": null, "cobre": null, "manganes": null,
     "ferro": null, "data_analise": null
   }
-}`;
+]
+
+=== TEXTO DO PDF ===
+${textoPDF}
+=== FIM ===`;
 
 export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImportarAnalise, onClose }) {
   const fileRef = useRef();
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(null);
-  const [dados, setDados] = useState(null);
-  const [laboratorio, setLaboratorio] = useState('OUTRO');
+  const [aviso, setAviso] = useState(null);
+  // analisesPorTalhao: array de objetos { talhao, dados, laboratorio }
+  const [analisesPorTalhao, setAnalisesPorTalhao] = useState(null);
   const [salvo, setSalvo] = useState(false);
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setErro(null);
-    setDados(null);
+    setAviso(null);
+    setAnalisesPorTalhao(null);
     setSalvo(false);
     setLoading(true);
     try {
@@ -94,27 +97,65 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
       } catch (_) {}
 
       const resposta = await base44.integrations.Core.InvokeLLM({
-        prompt: buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.'),
+        prompt: buildPromptMultiplo(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.', talhoes.length),
         file_urls: [file_url],
         model: 'claude_sonnet_4_6',
       });
 
-      let parsed = resposta;
-      if (typeof resposta === 'string') {
-        const m = resposta.match(/\{[\s\S]*\}/);
-        parsed = m ? JSON.parse(m[0]) : null;
+      // Limpeza do JSON antes de parsear
+      let raw = typeof resposta === 'string' ? resposta : JSON.stringify(resposta);
+      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(clean);
+      } catch (_) {
+        // Tenta extrair array JSON da string
+        const m = clean.match(/\[[\s\S]*\]/);
+        if (m) parsed = JSON.parse(m[0]);
+        else parsed = null;
       }
 
-      if (parsed?.dados) {
-        setDados(converterUnidades(parsed.dados, parsed.laboratorio || 'OUTRO'));
-        setLaboratorio(parsed.laboratorio || 'OUTRO');
-      } else {
-        setDados({});
-        setErro('Não foi possível extrair dados automaticamente. Preencha manualmente.');
+      // Normaliza: aceita array ou objeto único
+      let listaAnalises = [];
+      if (Array.isArray(parsed)) {
+        listaAnalises = parsed;
+      } else if (parsed?.dados) {
+        // formato antigo { laboratorio, dados }
+        listaAnalises = [{ ...parsed.dados, laboratorio: parsed.laboratorio || 'OUTRO' }];
+      } else if (parsed && typeof parsed === 'object') {
+        listaAnalises = [parsed];
       }
+
+      if (listaAnalises.length === 0) {
+        setErro('Não foi possível extrair dados automaticamente. Preencha manualmente.');
+        setAnalisesPorTalhao(talhoes.map(t => ({ talhao: t, dados: {}, laboratorio: 'OUTRO' })));
+        setLoading(false);
+        e.target.value = '';
+        return;
+      }
+
+      // Aviso se contagens divergem
+      if (listaAnalises.length !== talhoes.length) {
+        setAviso(`PDF contém ${listaAnalises.length} análise(s) mas ${talhoes.length} talhão(ões) foram selecionados. Associando pela ordem.`);
+      }
+
+      // Associa pela ordem: 1ª análise → 1º talhão, etc.
+      const associadas = talhoes.map((talhao, idx) => {
+        const analise = listaAnalises[idx] || {};
+        const lab = analise.laboratorio || listaAnalises[0]?.laboratorio || 'OUTRO';
+        const { laboratorio: _l, ...dadosBrutos } = analise;
+        return {
+          talhao,
+          dados: converterUnidades(dadosBrutos, lab),
+          laboratorio: lab,
+        };
+      });
+
+      setAnalisesPorTalhao(associadas);
     } catch (err) {
-      setDados({});
       setErro(`Erro ao processar PDF: ${err?.message || String(err)}`);
+      setAnalisesPorTalhao(talhoes.map(t => ({ talhao: t, dados: {}, laboratorio: 'OUTRO' })));
     } finally {
       setLoading(false);
       e.target.value = '';
@@ -122,8 +163,18 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
   };
 
   const handleSalvar = async () => {
-    await onImportarAnalise({ ...dados, laboratorio_origem: laboratorio });
+    for (const item of analisesPorTalhao) {
+      await onImportarAnalise({ ...item.dados, laboratorio_origem: item.laboratorio }, item.talhao);
+    }
     setSalvo(true);
+  };
+
+  const updateDado = (talhaoIdx, key, value) => {
+    setAnalisesPorTalhao(prev =>
+      prev.map((item, i) =>
+        i === talhaoIdx ? { ...item, dados: { ...item.dados, [key]: value } } : item
+      )
+    );
   };
 
   const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
@@ -139,18 +190,18 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
         </DialogHeader>
 
         <div className="flex flex-wrap gap-1 mb-2">
-          {talhoes.map(t => (
+          {talhoes.map((t, i) => (
             <span key={t.id} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
-              {t.nome}
+              {i + 1}. {t.nome}
             </span>
           ))}
         </div>
 
         <p className="text-xs text-muted-foreground mb-3">
-          A mesma análise será aplicada a todos os talhões selecionados.
+          Cada análise do PDF será associada ao talhão correspondente pela ordem acima.
         </p>
 
-        {!dados && !loading && (
+        {!analisesPorTalhao && !loading && (
           <>
             <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={handleFile} />
             <Button
@@ -159,7 +210,7 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
               onClick={() => fileRef.current?.click()}
             >
               <Upload className="w-4 h-4" />
-              Selecionar PDF para todos os talhões
+              Selecionar PDF com análises
             </Button>
           </>
         )}
@@ -171,36 +222,51 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
           </div>
         )}
 
-        {erro && (
+        {aviso && (
           <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p>{aviso}</p>
+          </div>
+        )}
+
+        {erro && (
+          <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <p>{erro}</p>
           </div>
         )}
 
-        {dados && !loading && !salvo && (
-          <div className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Laborátório detectado: <strong>{laboratorio}</strong>. Confira os valores e aplique a todos os talhões.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {CAMPOS_0_20.map(c => (
-                <div key={c.key}>
-                  <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
-                  <Input
-                    type={c.date ? 'date' : 'number'}
-                    step={c.date ? undefined : '0.001'}
-                    value={dados[c.key] ?? ''}
-                    onChange={e => setDados(prev => ({ ...prev, [c.key]: c.date ? e.target.value : toNum(e.target.value) }))}
-                    className="h-7 text-xs"
-                  />
+        {analisesPorTalhao && !loading && !salvo && (
+          <div className="space-y-6">
+            {analisesPorTalhao.map((item, idx) => (
+              <div key={item.talhao.id} className="border border-border rounded-xl p-4">
+                <p className="text-xs font-semibold text-primary mb-3">
+                  {idx + 1}. {item.talhao.nome}
+                  <span className="ml-2 font-normal text-muted-foreground">— Lab: {item.laboratorio}</span>
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {CAMPOS_0_20.map(c => (
+                    <div key={c.key}>
+                      <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
+                      <Input
+                        type={c.date ? 'date' : 'number'}
+                        step={c.date ? undefined : '0.001'}
+                        value={item.dados[c.key] ?? ''}
+                        onChange={e =>
+                          updateDado(idx, c.key, c.date ? e.target.value : toNum(e.target.value))
+                        }
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+
             <div className="flex justify-end pt-1">
               <Button size="sm" onClick={handleSalvar} className="gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                Aplicar a todos os {talhoes.length} talhões
+                Salvar {analisesPorTalhao.length} análise(s)
               </Button>
             </div>
           </div>
@@ -209,7 +275,7 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
         {salvo && (
           <div className="flex items-center gap-2 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm">
             <CheckCircle2 className="w-5 h-5" />
-            Análise aplicada com sucesso a {talhoes.length} talhão(ões)!
+            Análise(s) aplicada(s) com sucesso a {talhoes.length} talhão(ões)!
           </div>
         )}
 

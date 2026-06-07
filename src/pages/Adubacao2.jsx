@@ -104,13 +104,14 @@ export default function Adubacao2() {
     }
   };
 
-  // Importação agrupada: aplica o mesmo PDF a todos os talhões selecionados
-  const handleImportarAgrupado = async (dados) => {
-    await Promise.all(selecionados.map(id => {
-      const talhao = talhoes.find(t => t.id === id);
-      if (!talhao) return Promise.resolve();
-      return handleImportarAnalise(talhao, dados);
-    }));
+  // Importação agrupada: cada análise é associada ao talhão pela ordem (dados, talhao)
+  const handleImportarAgrupado = async (dados, talhao) => {
+    await handleImportarAnalise(talhao, dados);
+    // Após salvar todas (o componente chama onImportarAnalise para cada par), registra agrupamento
+    // O fechamento e reset são feitos pelo botão Fechar no modal
+  };
+
+  const handleFecharModalAgrupado = () => {
     // registra agrupamento para exibir badge
     setAgrupamentos(prev => {
       const filtered = prev.filter(g => !g.talhaoIds.some(id => selecionados.includes(id)));
@@ -420,7 +421,7 @@ export default function Adubacao2() {
           analises={analises}
           analises2040={[]}
           onImportarAnalise={handleImportarAgrupado}
-          onClose={() => setModalAgrupado(false)}
+          onClose={handleFecharModalAgrupado}
         />
       )}
     </div>
