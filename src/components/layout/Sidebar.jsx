@@ -91,7 +91,7 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto py-4 px-3">
+        <nav className="flex-1 space-y-1 overflow-y-auto pr-4 pb-4 pl-4 pt-5">
           {/* Itens do topo */}
           {topItems.map((item) =>
           <NavLink key={item.path} {...item} isActive={location.pathname === item.path} onClick={close} />
