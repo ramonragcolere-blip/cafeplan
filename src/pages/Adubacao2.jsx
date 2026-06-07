@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -59,6 +59,9 @@ export default function Adubacao2() {
   // agrupamentos locais: [{ talhaoIds: string[] }]
   const [agrupamentos, setAgrupamentos] = useState([]);
   const [modalAgrupado, setModalAgrupado] = useState(false);
+  const [abaAtiva, setAbaAtiva] = useState('analises');
+  // produtividade local: { [talhaoId]: { safra1: string, safra2: string } }
+  const [produtividade, setProdutividade] = useState({});
 
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
   const { data: todosTalhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
@@ -125,8 +128,20 @@ export default function Adubacao2() {
     setSelecionados(prev => prev.length === talhoes.length ? [] : talhoes.map(t => t.id));
   };
 
-  const temAnaliseSelecionados = selecionados.some(id => analises.some(a => a.talhao_id === id));
   const podeCacularTodos = analises.length > 0;
+
+  const setProd = useCallback((talhaoId, campo, valor) => {
+    setProdutividade(prev => ({
+      ...prev,
+      [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor },
+    }));
+  }, []);
+
+  const ABAS = [
+    { id: 'analises', label: 'Análises e Importação' },
+    { id: 'planejamento', label: 'Planejamento' },
+    { id: 'compras', label: 'Consolidação de Compras' },
+  ];
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -174,8 +189,25 @@ export default function Adubacao2() {
         )}
       </div>
 
-      {/* Lista de talhões */}
-      {produtor && (
+      {/* Abas */}
+      <div className="flex gap-0 border-b border-border">
+        {ABAS.map(aba => (
+          <button
+            key={aba.id}
+            onClick={() => setAbaAtiva(aba.id)}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              abaAtiva === aba.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {aba.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Aba: Análises e Importação */}
+      {abaAtiva === 'analises' && produtor && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           {/* Barra de ações */}
           <div className="flex flex-wrap items-center gap-2 px-5 py-4 border-b border-border bg-muted/20">
@@ -193,8 +225,7 @@ export default function Adubacao2() {
               variant="outline"
               size="sm"
               className="gap-1.5 text-xs"
-              disabled
-              title="Em breve"
+              onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado(true); }}
             >
               <FileUp className="w-3.5 h-3.5" />
               Importar todas de uma vez
@@ -229,6 +260,9 @@ export default function Adubacao2() {
                     <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhão</th>
                     <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Área (ha)</th>
                     <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Nº plantas</th>
+                    <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Safra 1 (sc/ha)</th>
+                    <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Safra 2 (sc/ha)</th>
+                    <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Média biênio</th>
                     <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Análise de solo</th>
                     <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Status</th>
                   </tr>
@@ -248,6 +282,38 @@ export default function Adubacao2() {
                         <td className="px-4 py-3 font-medium">{talhao.nome}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{talhao.area_ha ?? '—'}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{talhao.num_plantas?.toLocaleString() ?? '—'}</td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={produtividade[talhao.id]?.safra1 ?? ''}
+                            onChange={e => setProd(talhao.id, 'safra1', e.target.value)}
+                            className="w-20 h-7 text-xs text-right border border-input rounded px-2 bg-background tabular-nums"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={produtividade[talhao.id]?.safra2 ?? ''}
+                            onChange={e => setProd(talhao.id, 'safra2', e.target.value)}
+                            className="w-20 h-7 text-xs text-right border border-input rounded px-2 bg-background tabular-nums"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums font-bold text-sm">
+                          {(() => {
+                            const s1 = parseFloat(produtividade[talhao.id]?.safra1);
+                            const s2 = parseFloat(produtividade[talhao.id]?.safra2);
+                            if (!isNaN(s1) && !isNaN(s2)) return ((s1 + s2) / 2).toFixed(1);
+                            if (!isNaN(s1)) return s1.toFixed(1);
+                            if (!isNaN(s2)) return s2.toFixed(1);
+                            return '—';
+                          })()}
+                        </td>
                         <td className="px-4 py-3">
                           <ImportarPDFTalhao
                             talhao={talhao}
@@ -272,10 +338,77 @@ export default function Adubacao2() {
         </div>
       )}
 
-      {!produtor && (
+      {abaAtiva === 'analises' && !produtor && (
         <div className="text-center py-16 text-muted-foreground">
           <Sprout className="w-10 h-10 mx-auto mb-3 opacity-20" />
           <p>Selecione um produtor para visualizar os talhões.</p>
+        </div>
+      )}
+
+      {/* Aba: Planejamento */}
+      {abaAtiva === 'planejamento' && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border bg-muted/20 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground italic">
+              Importe as análises e clique em Calcular recomendação para todos
+            </p>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled>
+              <Calculator className="w-3.5 h-3.5" />
+              Calcular recomendação para todos
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/10">
+                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhão</th>
+                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Formulação Principal</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Dose (kg/ha)</th>
+                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Complementos</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo (R$/ha)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={5} className="text-center py-12 text-muted-foreground text-sm">
+                    Nenhum planejamento calculado ainda.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Aba: Consolidação de Compras */}
+      {abaAtiva === 'compras' && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border bg-muted/20">
+            <p className="text-xs text-muted-foreground italic">
+              Importe as análises e clique em Calcular recomendação para todos
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/10">
+                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto</th>
+                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhões que usam</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Quantidade total</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo total (R$)</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo/ha</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo/saca</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+                    Nenhuma consolidação disponível ainda.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
