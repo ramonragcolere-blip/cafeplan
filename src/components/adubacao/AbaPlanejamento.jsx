@@ -159,18 +159,37 @@ function sugerirProdutosInteligente(todos, rec) {
       continue;
     }
 
-    // Encontra o produto com maior % deste nutriente
+    const saldoAtual = saldo[simbolo];
+
+    // Encontra o produto por pontuação de cobertura múltipla:
+    // pontua 1 para cada nutriente (com saldo > 0) que o produto cobre.
+    // Desempate: menor dose necessária para cobrir o saldo do nutriente principal
+    // (produto mais eficiente/concentrado para este nutriente).
     let melhor = null;
-    let melhorPct = 0;
+    let melhorScore = -1;
+    let melhorDose = Infinity;
     for (const prod of todos) {
-      const pct = parseFloat(prod[nutKey]) || 0;
-      if (pct > melhorPct) {
-        melhorPct = pct;
+      const pctPrincipal = parseFloat(prod[nutKey]) || 0;
+      if (pctPrincipal === 0) continue; // produto não cobre o nutriente principal — descarta
+
+      // Conta quantos nutrientes com saldo > 0 este produto cobre
+      let score = 0;
+      for (const [outroSimbolo, outroKey] of Object.entries(SALDO_PARA_KEY)) {
+        if (saldo[outroSimbolo] > 0 && (parseFloat(prod[outroKey]) || 0) > 0) {
+          score++;
+        }
+      }
+
+      const doseNecessaria = saldoAtual / (pctPrincipal / 100);
+
+      if (score > melhorScore || (score === melhorScore && doseNecessaria < melhorDose)) {
+        melhorScore = score;
+        melhorDose = doseNecessaria;
         melhor = prod;
       }
     }
 
-    if (!melhor || melhorPct === 0) {
+    if (!melhor) {
       sugestoes[nutKey] = null;
       continue;
     }
@@ -178,7 +197,8 @@ function sugerirProdutosInteligente(todos, rec) {
     sugestoes[nutKey] = melhor.id;
 
     // Dose do produto (kg/ha) necessária para cobrir o saldo deste nutriente
-    const doseProdutoHa = saldo[simbolo] / (melhorPct / 100);
+    const pctPrincipalEscolhido = parseFloat(melhor[nutKey]) || 0;
+    const doseProdutoHa = pctPrincipalEscolhido > 0 ? saldo[simbolo] / (pctPrincipalEscolhido / 100) : 0;
 
     // Desconta o que este produto repõe nos saldos dos demais nutrientes
     for (const [outroSimbolo, outroKey] of Object.entries(SALDO_PARA_KEY)) {
