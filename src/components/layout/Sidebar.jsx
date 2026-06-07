@@ -2,29 +2,29 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, TreePine, UserCheck, ClipboardList,
-  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind, CalendarDays
-} from 'lucide-react';
+  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind, CalendarDays } from
+'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const topItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/calendario', label: 'Calendário', icon: CalendarDays },
-  { path: '/produtores', label: 'Produtores', icon: Users },
-  { path: '/talhoes', label: 'Talhões', icon: TreePine },
-];
+{ path: '/', label: 'Dashboard', icon: LayoutDashboard },
+{ path: '/calendario', label: 'Calendário', icon: CalendarDays },
+{ path: '/produtores', label: 'Produtores', icon: Users },
+{ path: '/talhoes', label: 'Talhões', icon: TreePine }];
+
 
 const colheitaItems = [
-  { path: '/parametros', label: 'Parâmetros e Talhões', icon: Settings2 },
-  { path: '/safristas', label: 'Safristas', icon: UserCheck },
-  { path: '/lancamentos', label: 'Lançamentos', icon: ClipboardList },
-];
+{ path: '/parametros', label: 'Parâmetros e Talhões', icon: Settings2 },
+{ path: '/safristas', label: 'Safristas', icon: UserCheck },
+{ path: '/lancamentos', label: 'Lançamentos', icon: ClipboardList }];
+
 
 const bottomItems = [
-  { path: '/adubacao', label: 'Adubação do Cafeeiro', icon: Sprout },
-  { path: '/adubacao2', label: 'Adubação 2.0', icon: Sprout },
-  { path: '/foliar', label: 'Aplicações Foliares', icon: Wind },
-  { path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical },
-];
+{ path: '/adubacao', label: 'Adubação do Cafeeiro', icon: Sprout },
+{ path: '/adubacao2', label: 'Adubação 2.0', icon: Sprout },
+{ path: '/foliar', label: 'Aplicações Foliares', icon: Wind },
+{ path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical }];
+
 
 function NavLink({ path, label, icon: Icon, indent, onClick, isActive }) {
   return (
@@ -34,22 +34,22 @@ function NavLink({ path, label, icon: Icon, indent, onClick, isActive }) {
       className={`
         flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
         ${indent ? 'ml-3' : ''}
-        ${isActive
-          ? 'bg-sidebar-accent text-sidebar-primary'
-          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}
-      `}
-    >
+        ${isActive ?
+      'bg-sidebar-accent text-sidebar-primary' :
+      'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}
+      `}>
+      
       <Icon className="w-5 h-5 shrink-0" />
       {label}
-    </Link>
-  );
+    </Link>);
+
 }
 
 export default function Sidebar() {
   const location = useLocation();
   const [open, setOpen] = React.useState(false);
 
-  const colheitaActive = colheitaItems.some(i => i.path === location.pathname);
+  const colheitaActive = colheitaItems.some((i) => i.path === location.pathname);
   const [colheitaOpen, setColheitaOpen] = React.useState(colheitaActive);
 
   // Auto-open group if a child is active
@@ -91,44 +91,44 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 space-y-1 overflow-y-auto py-4 px-3">
           {/* Itens do topo */}
-          {topItems.map(item => (
-            <NavLink key={item.path} {...item} isActive={location.pathname === item.path} onClick={close} />
-          ))}
+          {topItems.map((item) =>
+          <NavLink key={item.path} {...item} isActive={location.pathname === item.path} onClick={close} />
+          )}
 
           {/* Seção Colheita — expansível */}
           <div className="pt-1">
             <button
               type="button"
-              onClick={() => setColheitaOpen(v => !v)}
+              onClick={() => setColheitaOpen((v) => !v)}
               className={`
                 w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all
-                ${colheitaActive
-                  ? 'text-sidebar-primary bg-sidebar-accent/60'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}
-              `}
-            >
+                ${colheitaActive ?
+              'text-sidebar-primary bg-sidebar-accent/60' :
+              'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'}
+              `}>
+              
               <span>Colheita</span>
-              {colheitaOpen
-                ? <ChevronDown className="w-4 h-4" />
-                : <ChevronRight className="w-4 h-4" />}
+              {colheitaOpen ?
+              <ChevronDown className="w-4 h-4" /> :
+              <ChevronRight className="w-4 h-4" />}
             </button>
 
-            {colheitaOpen && (
-              <div className="mt-1 space-y-0.5">
-                {colheitaItems.map(item => (
-                  <NavLink key={item.path} {...item} indent isActive={location.pathname === item.path} onClick={close} />
-                ))}
+            {colheitaOpen &&
+            <div className="mt-1 space-y-0.5">
+                {colheitaItems.map((item) =>
+              <NavLink key={item.path} {...item} indent isActive={location.pathname === item.path} onClick={close} />
+              )}
               </div>
-            )}
+            }
           </div>
 
           {/* Adubação */}
           <div className="pt-1 border-t border-sidebar-border mt-2">
-            {bottomItems.map(item => (
-              <NavLink key={item.path} {...item} isActive={location.pathname === item.path} onClick={close} />
-            ))}
+            {bottomItems.map((item) =>
+            <NavLink key={item.path} {...item} isActive={location.pathname === item.path} onClick={close} />
+            )}
           </div>
         </nav>
 
@@ -136,6 +136,6 @@ export default function Sidebar() {
           <p className="text-xs text-sidebar-foreground/40 text-center">Safra 2025/2026</p>
         </div>
       </aside>
-    </>
-  );
+    </>);
+
 }
