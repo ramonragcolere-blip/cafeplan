@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle } from 'lucide-react';
+import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle, Save } from 'lucide-react';
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 import ImportarPDFAgrupado from '@/components/adubacao2/ImportarPDFAgrupado';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
@@ -176,6 +176,8 @@ export default function Adubacao2() {
   const [dosesEditadas, setDosesEditadas] = useState({});
   // PROBLEMA 3: modal detalhe
   const [modalDetalhe, setModalDetalhe] = useState(null); // resultado do talhão
+  // mensagem de sucesso do cálculo
+  const [msgCalculo, setMsgCalculo] = useState('');
 
   // Queries
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
@@ -329,8 +331,9 @@ export default function Adubacao2() {
     else await createPlan.mutateAsync(payload);
   }, [produtor, safra, produtividadeLocal, analises2040Local, registrosSalvos]);
 
-  // Cálculo central
-  const handleCalcularTodos = useCallback(() => {
+  // Cálculo central — aceita lista filtrada opcional (C3)
+  const handleCalcularTodos = useCallback((todosParaCalculo) => {
+    const listaCalculo = todosParaCalculo || todos;
     setCalculando(true);
     setTimeout(() => {
       const resultados = talhoes.map(talhao => {
@@ -348,11 +351,11 @@ export default function Adubacao2() {
 
         let produtoSugerido = null;
         let doseProdutoHa = null;
-        if (rec && todos.length > 0) {
-          const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+        if (rec && listaCalculo.length > 0) {
+          const sugestoes = sugerirProdutosInteligente(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
           const sugN = sugestoes['n_pct'];
           if (sugN?.produtoId) {
-            const prod = todos.find(p => p.id === sugN.produtoId);
+            const prod = listaCalculo.find(p => p.id === sugN.produtoId);
             if (prod) {
               produtoSugerido = prod;
               const pctN = parseFloat(prod.n_pct) || 0;
@@ -365,9 +368,45 @@ export default function Adubacao2() {
 
       setResultadosCalculo(resultados);
       setCalculando(false);
-      setAbaAtiva('planejamento');
+      // C1: não muda aba, mostra mensagem
+      setMsgCalculo('Recomendação calculada com sucesso!');
+      setTimeout(() => setMsgCalculo(''), 4000);
     }, 100);
   }, [talhoes, produtividadeLocal, analises, analises2040Local, todos]);
+
+  // C2: estado de preços e parcelamentos sincronizado do filho
+  const [precosExterno, setPrecosExterno] = useState({});
+  const [parcelamentosExterno, setParcelamentosExterno] = useState({});
+
+  // C2: Salvar tudo (planejamento completo)
+  const handleSalvarTudo = useCallback(async () => {
+    if (!produtor || !resultadosCalculo) return;
+    for (const r of resultadosCalculo) {
+      const talhao = r.talhao;
+      const existente = registrosSalvos.find(x => x.talhao_id === talhao.id);
+      const locProd = produtividadeLocal[talhao.id] || {};
+      const loc2040 = analises2040Local[talhao.id] || null;
+      const payload = {
+        codigo_produtor: produtor.codigo,
+        safra,
+        talhao_id: talhao.id,
+        talhao_nome: talhao.nome,
+        safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
+        safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
+        analise2040: loc2040 || null,
+        doses_editadas: dosesEditadas[talhao.id] || {},
+        detalhamento: {
+          rec: r.rec,
+          precos: precosExterno,
+          parcelamentos: parcelamentosExterno[talhao.id] || {},
+        },
+      };
+      if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
+      else await createPlan.mutateAsync(payload);
+    }
+    setMsgCalculo('Planejamento salvo com sucesso!');
+    setTimeout(() => setMsgCalculo(''), 4000);
+  }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, precosExterno, parcelamentosExterno, registrosSalvos]);
 
   // PROBLEMA 2: editar dose na tabela
   const handleEditDose = useCallback((talhaoId, nutKey, valor) => {
@@ -500,12 +539,23 @@ export default function Adubacao2() {
               onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado(true); }}>
               <FileUp className="w-3.5 h-3.5" /> Importar todas de uma vez
             </Button>
-            <Button variant="outline" size="sm"
-              className={`gap-1.5 text-xs ml-auto ${protocolo !== 'Protocolo Ramon' ? 'opacity-50' : ''}`}
-              disabled={!podeCacularTodos || calculando} onClick={handleCalcularTodos}>
-              {calculando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
-              Calcular recomendação para todos
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              {msgCalculo && (
+                <span className="flex items-center gap-1 text-xs text-green-700 font-medium bg-green-50 border border-green-200 rounded px-2 py-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {msgCalculo}
+                </span>
+              )}
+              <Button variant="outline" size="sm"
+                className={`gap-1.5 text-xs ${protocolo !== 'Protocolo Ramon' ? 'opacity-50' : ''}`}
+                disabled={!podeCacularTodos || calculando} onClick={() => handleCalcularTodos()}>
+                {calculando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
+                Calcular recomendação para todos
+              </Button>
+              <Button size="sm" className="gap-1.5 text-xs bg-green-700 hover:bg-green-800 text-white"
+                disabled={!resultadosCalculo || !produtor} onClick={handleSalvarTudo}>
+                <Save className="w-3.5 h-3.5" /> Salvar
+              </Button>
+            </div>
           </div>
           {protocolo !== 'Protocolo Ramon' && (
             <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs">
@@ -600,7 +650,9 @@ export default function Adubacao2() {
           calculando={calculando}
           podeCacularTodos={podeCacularTodos}
           onRecalcular={handleCalcularTodos}
-          onSalvar={() => {}}
+          onSalvar={handleSalvarTudo}
+          onPrecosChange={setPrecosExterno}
+          onParcelamentosChange={setParcelamentosExterno}
         />
       )}
 

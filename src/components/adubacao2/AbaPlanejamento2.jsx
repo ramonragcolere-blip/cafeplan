@@ -250,15 +250,20 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
 
 // ── Painel expandido de um talhão ─────────────────────────────────────────────
 
-const NUTRIENTES_GRID = [
+const NUTRIENTES_GRID_FIXOS = [
   { key: 'N',  label: 'N',    tipo: 'dose',  unit: 'kg/ha' },
   { key: 'P',  label: 'P₂O₅', tipo: 'dose',  unit: 'kg/ha' },
   { key: 'K',  label: 'K₂O',  tipo: 'dose',  unit: 'kg/ha' },
   { key: 'B',  label: 'B',    tipo: 'dose',  unit: 'kg/ha' },
-  { key: 'Zn', label: 'Zn',   tipo: 'class' },
-  { key: 'Mn', label: 'Mn',   tipo: 'class' },
-  { key: 'Cu', label: 'Cu',   tipo: 'class' },
-  { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha' },
+];
+
+// Elementos opcionais (supridos/não-deficientes): o técnico pode adicionar manualmente
+const ELEMENTOS_EXTRAS_OPCOES = [
+  { key: 'Zn', label: 'Zn', tipo: 'class' },
+  { key: 'Mn', label: 'Mn', tipo: 'class' },
+  { key: 'Cu', label: 'Cu', tipo: 'class' },
+  { key: 'Mg', label: 'Mg', tipo: 'dose', unit: 'kg/ha' },
+  { key: 'Fe', label: 'Fe', tipo: 'class' },
 ];
 
 function StatusBadgePlan({ rec }) {
@@ -279,6 +284,23 @@ function PainelTalhao({ resultado, todos, precosProd, onPrecoChange, parcelament
   const micros = calcMicros(analise);
   const area = talhao.area_ha || 0;
 
+  // C4: elementos adicionais marcados pelo técnico
+  const [elementosExtras, setElementosExtras] = useState([]);
+  const [painelExtrasAberto, setPainelExtrasAberto] = useState(false);
+
+  const toggleExtra = (key) => {
+    setElementosExtras(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  // Grid: nutrientes fixos (N,P,K,B) + extras marcados
+  const gridNutrientes = useMemo(() => {
+    const extras = ELEMENTOS_EXTRAS_OPCOES.filter(e => elementosExtras.includes(e.key));
+    return [...NUTRIENTES_GRID_FIXOS, ...extras];
+  }, [elementosExtras]);
+
+  // Linhas de produtos: inclui produto manual para extras com dose/classificação
   const linhasProdutos = useMemo(
     () => montarLinhasProdutos(todos, rec),
     [todos, rec]
@@ -322,33 +344,70 @@ function PainelTalhao({ resultado, todos, precosProd, onPrecoChange, parcelament
         </div>
       </div>
 
-      {/* Grid de 8 nutrientes */}
+      {/* Grid de nutrientes (fixos + extras) */}
       {rec ? (
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-          {NUTRIENTES_GRID.map(n => {
-            if (n.tipo === 'dose') {
-              const val = rec[n.key];
+        <div className="space-y-2">
+          <div className={`grid gap-2 ${gridNutrientes.length <= 4 ? 'grid-cols-4' : 'grid-cols-4 sm:grid-cols-' + Math.min(gridNutrientes.length, 8)}`}
+            style={{ gridTemplateColumns: `repeat(${Math.min(gridNutrientes.length, 8)}, minmax(0, 1fr))` }}>
+            {gridNutrientes.map(n => {
+              if (n.tipo === 'dose') {
+                const val = rec[n.key];
+                return (
+                  <div key={n.key} className="bg-card border border-border rounded-lg p-2.5 text-center">
+                    <p className="text-[10px] text-muted-foreground font-medium mb-1">{n.label}</p>
+                    <p className="text-base font-bold text-foreground tabular-nums">{val != null ? val : '—'}</p>
+                    {val != null && <p className="text-[9px] text-muted-foreground">{n.unit}</p>}
+                  </div>
+                );
+              }
+              const cls = micros[n.key];
               return (
                 <div key={n.key} className="bg-card border border-border rounded-lg p-2.5 text-center">
                   <p className="text-[10px] text-muted-foreground font-medium mb-1">{n.label}</p>
-                  <p className="text-base font-bold text-foreground tabular-nums">{val != null ? val : '—'}</p>
-                  {val != null && <p className="text-[9px] text-muted-foreground">{n.unit}</p>}
+                  <p className="text-base font-bold text-muted-foreground">—</p>
+                  {cls?.classe && (
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${classBadgeColor(cls.classe)}`}>
+                      {cls.classe}
+                    </span>
+                  )}
                 </div>
               );
-            }
-            const cls = micros[n.key];
-            return (
-              <div key={n.key} className="bg-card border border-border rounded-lg p-2.5 text-center">
-                <p className="text-[10px] text-muted-foreground font-medium mb-1">{n.label}</p>
-                <p className="text-base font-bold text-muted-foreground">—</p>
-                {cls?.classe && (
-                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${classBadgeColor(cls.classe)}`}>
-                    {cls.classe}
-                  </span>
-                )}
+            })}
+          </div>
+
+          {/* C4: botão + painel de extras */}
+          <div>
+            <button type="button"
+              onClick={() => setPainelExtrasAberto(a => !a)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded px-2.5 py-1 hover:border-primary hover:text-primary transition-colors">
+              <span className="text-base leading-none font-bold">+</span> Adicionar elemento
+              {elementosExtras.length > 0 && (
+                <span className="bg-primary/10 text-primary rounded-full px-1.5 py-0.5 text-[10px] font-semibold">{elementosExtras.length}</span>
+              )}
+            </button>
+            {painelExtrasAberto && (
+              <div className="mt-2 p-3 bg-card border border-border rounded-lg">
+                <p className="text-[10px] text-muted-foreground mb-2 font-medium uppercase tracking-wide">Elementos supridos / monitoramento</p>
+                <div className="flex flex-wrap gap-3">
+                  {ELEMENTOS_EXTRAS_OPCOES.map(el => {
+                    const marcado = elementosExtras.includes(el.key);
+                    return (
+                      <label key={el.key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input type="checkbox" checked={marcado} onChange={() => toggleExtra(el.key)}
+                          className="w-3.5 h-3.5 rounded accent-primary" />
+                        <span className="text-xs font-medium">{el.label}</span>
+                        {micros[el.key]?.classe && (
+                          <span className={`text-[9px] font-semibold px-1 py-0.5 rounded-full border ${classBadgeColor(micros[el.key].classe)}`}>
+                            {micros[el.key].classe}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       ) : (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
@@ -548,7 +607,7 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar }) {
+export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange }) {
   const [expandidos, setExpandidos] = useState(new Set());
   // precos: { [produtoId]: string }
   const [precos, setPrecos] = useState({});
@@ -579,6 +638,10 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   // Inicializa preços com dados da base de insumos ao montar/atualizar resultados
   // já preenchendo automaticamente quando o produto tiver preço cadastrado
   // (aqui não há campo de preço na entidade — campo editável sempre livre)
+
+  // Notifica pai quando preços ou parcelamentos mudam (C2 persistência)
+  useEffect(() => { onPrecosChange?.(precos); }, [precos]);
+  useEffect(() => { onParcelamentosChange?.(parcelamentos); }, [parcelamentos]);
 
   const handlePrecoChange = useCallback((talhaoId, prodId, val) => {
     setPrecos(prev => ({ ...prev, [prodId]: val }));
@@ -647,7 +710,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     return (
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={onRecalcular}>
+          <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={() => onRecalcular(todosFiltered)}>
             {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Recalcular todos
           </Button>
@@ -669,7 +732,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     <div className="p-5 space-y-5">
       {/* 1. Barra de botões */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={onRecalcular}>
+        <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={() => onRecalcular(todosFiltered)}>
           {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
           Recalcular todos
         </Button>
