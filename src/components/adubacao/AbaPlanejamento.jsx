@@ -91,56 +91,79 @@ function calcRecomendacao(analise, plano, analise2040) {
   };
 }
 
-// Ordem de prioridade para sugestão em cascata
-const ORDEM_SUGESTAO = [
-  { key: 'n_pct',    recKey: 'N'  },
-  { key: 'k2o_pct',  recKey: 'K'  },
-  { key: 'p2o5_pct', recKey: 'P'  },
-  { key: 'mg_pct',   recKey: 'Mg' },
-  { key: 'b_pct',    recKey: 'B'  },
-  { key: 'zn_pct',   recKey: 'Zn' },
-  { key: 'mn_pct',   recKey: 'Mn' },
-  { key: 'cu_pct',   recKey: 'Cu' },
-  { key: 'ca_pct',   recKey: 'Ca' },
-  { key: 's_pct',    recKey: 'S'  },
-];
+// Mapeamento: símbolo interno -> chave do produto na base de insumos
+const SALDO_PARA_KEY = {
+  N:  'n_pct',
+  K:  'k2o_pct',
+  P:  'p2o5_pct',
+  Mg: 'mg_pct',
+  B:  'b_pct',
+  Zn: 'zn_pct',
+  Mn: 'mn_pct',
+  Cu: 'cu_pct',
+  Ca: 'ca_pct',
+  S:  's_pct',
+};
+
+// Mapeamento: símbolo interno -> recKey do objeto rec
+const SALDO_PARA_RECKEY = {
+  N:  'N',
+  K:  'K',
+  P:  'P',
+  Mg: 'Mg',
+  B:  'B',
+  Zn: 'Zn',
+  Mn: 'Mn',
+  Cu: 'Cu',
+  Ca: 'Ca',
+  S:  'S',
+};
+
+// Mapeamento: chave do produto -> símbolo interno (inverso)
+const KEY_PARA_SALDO = Object.fromEntries(
+  Object.entries(SALDO_PARA_KEY).map(([s, k]) => [k, s])
+);
+
+// Ordem de prioridade
+const ORDEM_SUGESTAO_SIMBOLOS = ['N', 'K', 'P', 'Mg', 'B', 'Zn', 'Mn', 'Cu'];
 
 /**
- * Sugestão inteligente com saldo em cascata:
- * Percorre os nutrientes na ordem de prioridade. Para cada nutriente com saldo
- * positivo, escolhe o produto que melhor atende esse saldo. Após a escolha,
- * desconta o que esse produto repõe (com a dose necessária para o nutriente
- * principal) do saldo dos demais nutrientes. Nutrientes cujo saldo já foi
- * zerado pelos produtos anteriores ficam sem sugestão.
+ * Sugestão inteligente com saldo em cascata.
+ * Para cada nutriente na ordem de prioridade:
+ *   - Se saldo <= 0: campo fica vazio (já coberto por produto anterior)
+ *   - Se saldo > 0: escolhe o produto com maior % desse nutriente,
+ *     calcula a dose necessária e desconta o que esse produto repõe
+ *     nos saldos de todos os outros nutrientes.
  *
  * Retorna: { [nutrienteKey]: produtoId | null }
  */
 function sugerirProdutosInteligente(todos, rec) {
   if (!todos.length || !rec) return {};
 
-  // Saldo inicial de cada nutriente (kg/ha recomendado)
+  // 1. Saldo inicial vindo da recomendação (apenas valores numéricos > 0)
   const saldo = {};
-  for (const n of ORDEM_SUGESTAO) {
-    const v = rec[n.recKey];
-    saldo[n.key] = typeof v === 'number' && v > 0 ? v : 0;
+  for (const [simbolo, recKey] of Object.entries(SALDO_PARA_RECKEY)) {
+    const v = rec[recKey];
+    saldo[simbolo] = typeof v === 'number' && v > 0 ? v : 0;
   }
 
-  const sugestoes = {}; // nutrienteKey -> produtoId
+  const sugestoes = {}; // nutrienteKey (ex: 'n_pct') -> produtoId | null
 
-  for (const nutPrincipal of ORDEM_SUGESTAO) {
-    const saldoAtual = saldo[nutPrincipal.key];
+  // 2. Percorre na ordem de prioridade
+  for (const simbolo of ORDEM_SUGESTAO_SIMBOLOS) {
+    const nutKey = SALDO_PARA_KEY[simbolo];
 
-    // Já coberto por produto anterior — sem sugestão
-    if (saldoAtual <= 0) {
-      sugestoes[nutPrincipal.key] = null;
+    // Saldo zerado — já coberto por produto anterior
+    if (saldo[simbolo] <= 0) {
+      sugestoes[nutKey] = null;
       continue;
     }
 
-    // Escolhe o produto com maior % do nutriente principal (melhor para cobrir o saldo)
+    // Encontra o produto com maior % deste nutriente
     let melhor = null;
     let melhorPct = 0;
     for (const prod of todos) {
-      const pct = parseFloat(prod[nutPrincipal.key]) || 0;
+      const pct = parseFloat(prod[nutKey]) || 0;
       if (pct > melhorPct) {
         melhorPct = pct;
         melhor = prod;
@@ -148,28 +171,27 @@ function sugerirProdutosInteligente(todos, rec) {
     }
 
     if (!melhor || melhorPct === 0) {
-      sugestoes[nutPrincipal.key] = null;
+      sugestoes[nutKey] = null;
       continue;
     }
 
-    sugestoes[nutPrincipal.key] = melhor.id;
+    sugestoes[nutKey] = melhor.id;
 
-    // Calcula a dose do produto necessária para cobrir o saldo do nutriente principal
-    // dose_produto (kg/ha) = saldo_nutriente / (pct_nutriente / 100)
-    const doseProdutoHa = saldoAtual / (melhorPct / 100);
+    // Dose do produto (kg/ha) necessária para cobrir o saldo deste nutriente
+    const doseProdutoHa = saldo[simbolo] / (melhorPct / 100);
 
-    // Desconta o que este produto repõe nos demais nutrientes ainda com saldo
-    for (const outro of ORDEM_SUGESTAO) {
-      if (outro.key === nutPrincipal.key) continue;
-      const pctOutro = parseFloat(melhor[outro.key]) || 0;
-      if (pctOutro > 0 && saldo[outro.key] > 0) {
+    // Desconta o que este produto repõe nos saldos dos demais nutrientes
+    for (const [outroSimbolo, outroKey] of Object.entries(SALDO_PARA_KEY)) {
+      if (outroSimbolo === simbolo) continue;
+      const pctOutro = parseFloat(melhor[outroKey]) || 0;
+      if (pctOutro > 0) {
         const repoe = doseProdutoHa * (pctOutro / 100);
-        saldo[outro.key] = Math.max(0, saldo[outro.key] - repoe);
+        saldo[outroSimbolo] = Math.max(0, (saldo[outroSimbolo] || 0) - repoe);
       }
     }
 
-    // Zera o saldo do nutriente principal (foi coberto)
-    saldo[nutPrincipal.key] = 0;
+    // Zera o saldo do nutriente principal
+    saldo[simbolo] = 0;
   }
 
   return sugestoes;
