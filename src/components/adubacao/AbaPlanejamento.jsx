@@ -192,6 +192,18 @@ function sugerirProdutosInteligente(todos, rec) {
 
       const doseNecessaria = saldoAtual / (pctPrincipal / 100);
 
+      // Penalização severa se a dose necessária para o nutriente principal
+      // causar fornecimento excessivo de micronutrientes tóxicos (B, Zn, Mn)
+      for (const toxico of NUTRIENTES_TOXICOS) {
+        const pctToxico = parseFloat(prod[SALDO_PARA_KEY[toxico]]) || 0;
+        if (pctToxico === 0) continue;
+        const fornecimento = doseNecessaria * (pctToxico / 100);
+        const recToxico = rec[SALDO_PARA_RECKEY[toxico]] || 0;
+        if (recToxico > 0 && fornecimento > recToxico) {
+          score -= 10; // penalização severa: causaria toxicidade
+        }
+      }
+
       if (score > melhorScore || (score === melhorScore && doseNecessaria < melhorDose)) {
         melhorScore = score;
         melhorDose = doseNecessaria;
