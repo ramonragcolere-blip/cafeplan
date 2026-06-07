@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, CheckCircle2, Clock } from 'lucide-react';
 import { classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
+import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── helpers ────────────────────────────────────────────────────────────────────
+
+const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 
 function calcMicros(analise) {
   if (!analise) return {};
@@ -22,6 +25,242 @@ function classBadgeColor(classe) {
   return 'text-muted-foreground bg-muted border-border';
 }
 
+function fmt(v, dec = 0) {
+  if (v == null || isNaN(v)) return '—';
+  return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+function fmtR(v) {
+  if (v == null || isNaN(v)) return '—';
+  return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const SALDO_PARA_KEY = { N: 'n_pct', K: 'k2o_pct', P: 'p2o5_pct', B: 'b_pct' };
+const KEY_PARA_LABEL = { n_pct: 'N', k2o_pct: 'K₂O', p2o5_pct: 'P₂O₅', b_pct: 'B' };
+
+/** Monta lista de linhas de produto a partir das sugestões do inteligente */
+function montarLinhasProdutos(todos, rec) {
+  if (!rec || !todos.length) return [];
+  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+
+  // encontra produto principal (N)
+  const principalId = sugestoes['n_pct']?.produtoId || null;
+
+  // agrupa por produto
+  const mapa = {};
+  for (const [nutKey, sug] of Object.entries(sugestoes)) {
+    if (!sug?.produtoId) continue;
+    const prod = todos.find(p => p.id === sug.produtoId);
+    if (!prod) continue;
+    if (!mapa[sug.produtoId]) {
+      mapa[sug.produtoId] = { produto: prod, nutrientes: [], ehPrincipal: sug.produtoId === principalId };
+    }
+    // dose do produto em kg/ha para este nutriente
+    const pct = parseFloat(prod[nutKey]) || 0;
+    const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
+    const nutRec = rec[nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo] || 0;
+    if (pct > 0 && nutRec > 0) {
+      const doseKgHa = Math.round((nutRec / (pct / 100)) * 10) / 10;
+      const fornecido = doseKgHa * (pct / 100);
+      mapa[sug.produtoId].nutrientes.push({ label: nutSimbolo, fornecido });
+      // dose principal: a do nutriente N (ou o primeiro)
+      if (!mapa[sug.produtoId].doseKgHa || nutKey === 'n_pct') {
+        mapa[sug.produtoId].doseKgHa = doseKgHa;
+      }
+    }
+  }
+
+  return Object.values(mapa);
+}
+
+// ── Editor de Parcelamento ─────────────────────────────────────────────────────
+
+function ResumoParcelamento({ parc }) {
+  if (!parc || parc.parcelas.length === 0) return <span className="text-muted-foreground text-xs">Nenhum</span>;
+  const partes = parc.parcelas.map((p, i) => {
+    const mesesStr = (p.meses || []).join('/');
+    return `${p.pct}% ${mesesStr}`;
+  });
+  return <span className="text-xs font-mono">{parc.parcelas.length}x · {partes.join(' · ')}</span>;
+}
+
+function EditorParcelamento({ parc, onChange, onAplicarTodos }) {
+  const [local, setLocal] = useState(() => parc || { parcelas: [{ pct: 100, meses: [] }] });
+
+  const setNumParcelas = (n) => {
+    setLocal(prev => {
+      const novas = Array.from({ length: n }, (_, i) => prev.parcelas[i] || { pct: Math.round(100 / n), meses: [] });
+      return { parcelas: novas };
+    });
+  };
+
+  const setPct = (i, val) => {
+    setLocal(prev => {
+      const p = [...prev.parcelas];
+      p[i] = { ...p[i], pct: val };
+      return { parcelas: p };
+    });
+  };
+
+  const toggleMes = (i, mes) => {
+    setLocal(prev => {
+      const p = [...prev.parcelas];
+      const ms = p[i].meses || [];
+      p[i] = { ...p[i], meses: ms.includes(mes) ? ms.filter(m => m !== mes) : [...ms, mes] };
+      return { parcelas: p };
+    });
+  };
+
+  const salvar = () => onChange(local);
+
+  return (
+    <div className="mt-2 p-3 bg-muted/20 border border-border rounded-lg space-y-3">
+      {/* Nº parcelas */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Parcelas:</span>
+        {[1,2,3,4,5].map(n => (
+          <button key={n} type="button"
+            onClick={() => setNumParcelas(n)}
+            className={`w-7 h-7 text-xs rounded border transition-colors ${local.parcelas.length === n ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/60'}`}>
+            {n}x
+          </button>
+        ))}
+      </div>
+      {/* Por parcela */}
+      {local.parcelas.map((p, i) => (
+        <div key={i} className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground w-16">Parcela {i+1}:</span>
+            <input type="number" min="0" max="100" value={p.pct}
+              onChange={e => setPct(i, Number(e.target.value))}
+              className="w-16 h-6 text-xs border border-input rounded px-2 text-right bg-background tabular-nums" />
+            <span className="text-xs text-muted-foreground">%</span>
+          </div>
+          <div className="flex flex-wrap gap-1 ml-16">
+            {MESES.map(m => (
+              <button key={m} type="button"
+                onClick={() => toggleMes(i, m)}
+                className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${(p.meses||[]).includes(m) ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/60'}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="flex gap-2 pt-1">
+        <Button size="sm" className="text-xs h-7" onClick={salvar}>Aplicar</Button>
+        {onAplicarTodos && (
+          <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => { salvar(); onAplicarTodos(local); }}>
+            Aplicar para todos os talhões com este produto
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tabela de Produtos do Talhão ───────────────────────────────────────────────
+
+function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos }) {
+  const [expandidoProd, setExpandidoProd] = useState(null);
+
+  if (!linhas || linhas.length === 0) {
+    return (
+      <div className="bg-muted/30 border border-dashed border-border rounded-lg px-4 py-3 text-xs text-muted-foreground text-center">
+        Sem produtos sugeridos (verifique se há produtos cadastrados na Base de Insumos).
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-border bg-muted/20">
+            {['Produto','','Nutrientes fornecidos','Dose (kg/ha)','Total (kg)','Preço (R$/kg)','Custo/ha','Custo total','Parcelamento'].map(h => (
+              <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map(linha => {
+            const { produto, nutrientes, ehPrincipal, doseKgHa } = linha;
+            const preco = precos?.[produto.id];
+            const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
+            const custoHa = precoNum != null && doseKgHa != null ? precoNum * doseKgHa : null;
+            const totalKg = doseKgHa != null && area ? Math.round(doseKgHa * area * 10) / 10 : null;
+            const custoTotal = custoHa != null && area ? custoHa * area : null;
+            const parc = parcelamentos?.[produto.id] || null;
+            const expandido = expandidoProd === produto.id;
+
+            const nutStr = nutrientes.map(n => `${n.label} ${fmt(n.fornecido, 1)}`).join(' · ');
+
+            return (
+              <React.Fragment key={produto.id}>
+                <tr className="border-b border-border/50 last:border-0 hover:bg-muted/10">
+                  <td className="px-3 py-2 font-medium whitespace-nowrap max-w-[180px] truncate">{produto.nome}</td>
+                  <td className="px-3 py-2">
+                    {ehPrincipal
+                      ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">Principal</span>
+                      : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">Complemento</span>
+                    }
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground font-mono">{nutStr || '—'}</td>
+                  <td className="px-3 py-2 tabular-nums text-right">{fmt(doseKgHa, 1)}</td>
+                  <td className="px-3 py-2 tabular-nums text-right">{fmt(totalKg, 1)}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={preco ?? ''}
+                      onChange={e => onPrecoChange(produto.id, e.target.value)}
+                      placeholder="—"
+                      className="w-20 h-6 text-xs text-right border border-input rounded px-2 bg-background tabular-nums"
+                    />
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-right">{custoHa != null ? fmtR(custoHa) : '—'}</td>
+                  <td className="px-3 py-2 tabular-nums text-right">{custoTotal != null ? fmtR(custoTotal) : '—'}</td>
+                  <td className="px-3 py-2">
+                    <button type="button"
+                      onClick={() => setExpandidoProd(expandido ? null : produto.id)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                      <ResumoParcelamento parc={parc} />
+                      <ChevronDown className={`w-3 h-3 transition-transform ${expandido ? 'rotate-180' : ''}`} />
+                    </button>
+                  </td>
+                </tr>
+                {expandido && (
+                  <tr>
+                    <td colSpan={9} className="px-3 pb-3">
+                      <EditorParcelamento
+                        parc={parc}
+                        onChange={p => onParcelamentoChange(produto.id, p)}
+                        onAplicarTodos={p => onAplicarParcTodos(produto.id, p)}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Painel expandido de um talhão ─────────────────────────────────────────────
+
+const NUTRIENTES_GRID = [
+  { key: 'N',  label: 'N',    tipo: 'dose',  unit: 'kg/ha' },
+  { key: 'P',  label: 'P₂O₅', tipo: 'dose',  unit: 'kg/ha' },
+  { key: 'K',  label: 'K₂O',  tipo: 'dose',  unit: 'kg/ha' },
+  { key: 'B',  label: 'B',    tipo: 'dose',  unit: 'kg/ha' },
+  { key: 'Zn', label: 'Zn',   tipo: 'class' },
+  { key: 'Mn', label: 'Mn',   tipo: 'class' },
+  { key: 'Cu', label: 'Cu',   tipo: 'class' },
+  { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha' },
+];
+
 function StatusBadgePlan({ rec }) {
   if (!rec) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
@@ -35,37 +274,35 @@ function StatusBadgePlan({ rec }) {
   );
 }
 
-// ── Cards de métricas ─────────────────────────────────────────────────────────
-
-function MetricCard({ label, value, sub, subColor }) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-4 flex-1 min-w-0">
-      <p className="text-xs text-muted-foreground mb-1 truncate">{label}</p>
-      <p className="text-xl font-bold text-foreground tabular-nums truncate">{value}</p>
-      <p className={`text-xs mt-0.5 truncate ${subColor || 'text-muted-foreground'}`}>{sub}</p>
-    </div>
-  );
-}
-
-// ── Painel expandido de um talhão ──────────────────────────────────────────────
-
-const NUTRIENTES_GRID = [
-  { key: 'N',  label: 'N',    tipo: 'dose',  unit: 'kg/ha' },
-  { key: 'P',  label: 'P₂O₅', tipo: 'dose',  unit: 'kg/ha' },
-  { key: 'K',  label: 'K₂O',  tipo: 'dose',  unit: 'kg/ha' },
-  { key: 'B',  label: 'B',    tipo: 'dose',  unit: 'kg/ha' },
-  { key: 'Zn', label: 'Zn',   tipo: 'class' },
-  { key: 'Mn', label: 'Mn',   tipo: 'class' },
-  { key: 'Cu', label: 'Cu',   tipo: 'class' },
-  { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha' },
-];
-
-function PainelTalhao({ resultado, onFechar }) {
+function PainelTalhao({ resultado, todos, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar }) {
   const { talhao, rec, mediaBienal, analise } = resultado;
   const micros = calcMicros(analise);
+  const area = talhao.area_ha || 0;
+
+  const linhasProdutos = useMemo(
+    () => montarLinhasProdutos(todos, rec),
+    [todos, rec]
+  );
+
+  // Rodapé: totais
+  const totais = useMemo(() => {
+    let doseTotalHa = 0, totalKgAll = 0, custoTotalHa = 0, custoTotalTalhao = 0;
+    linhasProdutos.forEach(l => {
+      const dose = l.doseKgHa || 0;
+      doseTotalHa += dose;
+      totalKgAll += area ? dose * area : 0;
+      const preco = precosProd?.[l.produto.id];
+      const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
+      if (precoNum != null) {
+        custoTotalHa += dose * precoNum;
+        custoTotalTalhao += dose * precoNum * (area || 0);
+      }
+    });
+    return { doseTotalHa, totalKgAll, custoTotalHa, custoTotalTalhao };
+  }, [linhasProdutos, precosProd, area]);
 
   return (
-    <div className="bg-muted/20 border-l-4 border-primary mx-0 px-5 py-4 space-y-4">
+    <div className="bg-muted/20 border-l-4 border-primary px-5 py-4 space-y-4">
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -78,11 +315,8 @@ function PainelTalhao({ resultado, onFechar }) {
         </div>
         <div className="flex items-center gap-2">
           <StatusBadgePlan rec={rec} />
-          <button
-            type="button"
-            onClick={onFechar}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1 hover:bg-muted/40 transition-colors"
-          >
+          <button type="button" onClick={onFechar}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1 hover:bg-muted/40 transition-colors">
             Fechar detalhes <ChevronDown className="w-3.5 h-3.5 rotate-180" />
           </button>
         </div>
@@ -102,7 +336,6 @@ function PainelTalhao({ resultado, onFechar }) {
                 </div>
               );
             }
-            // class
             const cls = micros[n.key];
             return (
               <div key={n.key} className="bg-card border border-border rounded-lg p-2.5 text-center">
@@ -123,10 +356,50 @@ function PainelTalhao({ resultado, onFechar }) {
         </div>
       )}
 
-      {/* Placeholder produtos */}
-      <div className="bg-muted/40 border border-dashed border-border rounded-lg px-4 py-3 text-xs text-muted-foreground text-center">
-        Produtos recomendados — em breve
-      </div>
+      {/* Tabela de Produtos */}
+      {rec && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Produtos Recomendados</p>
+          <TabelaProdutos
+            linhas={linhasProdutos}
+            area={area}
+            precos={precosProd}
+            onPrecoChange={onPrecoChange}
+            parcelamentos={parcelamentosProd}
+            onParcelamentoChange={onParcelamentoChange}
+            onAplicarParcTodos={onAplicarParcTodos}
+          />
+        </div>
+      )}
+
+      {/* Rodapé: 4 cards de totais */}
+      {rec && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+          {[
+            { label: 'Dose total (kg/ha)', value: fmt(totais.doseTotalHa, 1) },
+            { label: 'Total aplicado (kg)', value: fmt(totais.totalKgAll, 0) },
+            { label: 'Custo total/ha', value: totais.custoTotalHa > 0 ? fmtR(totais.custoTotalHa) : '—' },
+            { label: 'Custo total do talhão', value: totais.custoTotalTalhao > 0 ? fmtR(totais.custoTotalTalhao) : '—', destaque: true },
+          ].map(c => (
+            <div key={c.label} className={`rounded-lg border px-3 py-2.5 ${c.destaque ? 'bg-primary/5 border-primary/20' : 'bg-card border-border'}`}>
+              <p className="text-[10px] text-muted-foreground mb-0.5">{c.label}</p>
+              <p className={`text-sm font-bold tabular-nums ${c.destaque ? 'text-primary' : 'text-foreground'}`}>{c.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Cards de métricas ─────────────────────────────────────────────────────────
+
+function MetricCard({ label, value, sub, subColor }) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 flex-1 min-w-0">
+      <p className="text-xs text-muted-foreground mb-1 truncate">{label}</p>
+      <p className="text-xl font-bold text-foreground tabular-nums truncate">{value}</p>
+      <p className={`text-xs mt-0.5 truncate ${subColor || 'text-muted-foreground'}`}>{sub}</p>
     </div>
   );
 }
@@ -158,6 +431,10 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
 
 export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar }) {
   const [expandidos, setExpandidos] = useState(new Set());
+  // precos: { [produtoId]: string }
+  const [precos, setPrecos] = useState({});
+  // parcelamentos: { [talhaoId]: { [produtoId]: { parcelas: [{pct, meses[]}] } } }
+  const [parcelamentos, setParcelamentos] = useState({});
 
   const toggleExpand = (id) => setExpandidos(prev => {
     const next = new Set(prev);
@@ -168,28 +445,76 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const expandirTodos = () => setExpandidos(new Set((resultados || []).map(r => r.talhao.id)));
   const recolherTodos = () => setExpandidos(new Set());
 
-  // Métricas agregadas
+  // Inicializa preços com dados da base de insumos ao montar/atualizar resultados
+  // já preenchendo automaticamente quando o produto tiver preço cadastrado
+  // (aqui não há campo de preço na entidade — campo editável sempre livre)
+
+  const handlePrecoChange = useCallback((talhaoId, prodId, val) => {
+    setPrecos(prev => ({ ...prev, [prodId]: val }));
+  }, []);
+
+  const handleParcelamentoChange = useCallback((talhaoId, prodId, parc) => {
+    setParcelamentos(prev => ({
+      ...prev,
+      [talhaoId]: { ...(prev[talhaoId] || {}), [prodId]: parc },
+    }));
+  }, []);
+
+  const handleAplicarParcTodos = useCallback((prodId, parc) => {
+    setParcelamentos(prev => {
+      const next = { ...prev };
+      (resultados || []).forEach(r => {
+        next[r.talhao.id] = { ...(next[r.talhao.id] || {}), [prodId]: parc };
+      });
+      return next;
+    });
+  }, [resultados]);
+
+  // Métricas agregadas com custos
   const metricas = useMemo(() => {
     if (!resultados || resultados.length === 0) return null;
     const comRec = resultados.filter(r => r.rec);
     const areaTotal = resultados.reduce((s, r) => s + (r.talhao.area_ha || 0), 0);
-    // sem preço cadastrado → custo null por enquanto
+
+    let custoFazendaTotal = 0;
+    let custoFazendaHaSum = 0;
+    let custoFazendaHaCount = 0;
+    let somaSacasArea = 0;
+
+    comRec.forEach(r => {
+      const area = r.talhao.area_ha || 0;
+      const linhas = montarLinhasProdutos(todos, r.rec);
+      linhas.forEach(l => {
+        const preco = precos[l.produto.id];
+        const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
+        if (precoNum != null && l.doseKgHa != null) {
+          const custo = l.doseKgHa * precoNum;
+          custoFazendaHaSum += custo;
+          custoFazendaHaCount++;
+          custoFazendaTotal += custo * area;
+        }
+      });
+      if (r.mediaBienal != null) somaSacasArea += r.mediaBienal * area;
+    });
+
+    const custoSaca = custoFazendaTotal > 0 && somaSacasArea > 0 ? custoFazendaTotal / somaSacasArea : null;
+
     return {
       calculados: comRec.length,
       total: resultados.length,
       pct: resultados.length > 0 ? Math.round((comRec.length / resultados.length) * 100) : 0,
       areaTotal,
-      mediaSc: comRec.length > 0
-        ? comRec.reduce((s, r) => s + (r.mediaBienal || 0), 0) / comRec.length
-        : null,
+      mediaSc: comRec.length > 0 ? comRec.reduce((s, r) => s + (r.mediaBienal || 0), 0) / comRec.length : null,
+      custoFazendaTotal: custoFazendaTotal > 0 ? custoFazendaTotal : null,
+      custoHaMedio: custoFazendaHaCount > 0 ? custoFazendaHaSum / custoFazendaHaCount : null,
+      custoSaca,
     };
-  }, [resultados]);
+  }, [resultados, todos, precos]);
 
   // Estado vazio
   if (!resultados || resultados.length === 0) {
     return (
       <div className="p-6 space-y-4">
-        {/* Barra de botões mesmo sem dados */}
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={onRecalcular}>
             {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -240,18 +565,18 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
             sub="Área planejada"
           />
           <MetricCard
-            label="Custo total"
-            value="—"
-            sub="Custo do planejamento"
+            label="Custo total fazenda"
+            value={metricas.custoFazendaTotal != null ? fmtR(metricas.custoFazendaTotal) : '—'}
+            sub="Preencha os preços para calcular"
           />
           <MetricCard
-            label="Custo/ha"
-            value="—"
-            sub="Custo médio por hectare"
+            label="Custo/ha médio"
+            value={metricas.custoHaMedio != null ? fmtR(metricas.custoHaMedio) : '—'}
+            sub="Média ponderada"
           />
           <MetricCard
             label="Custo/saca"
-            value="—"
+            value={metricas.custoSaca != null ? fmtR(metricas.custoSaca) : '—'}
             sub={metricas.mediaSc != null ? `Base: ${metricas.mediaSc.toFixed(1)} sc/ha` : 'Base: —'}
           />
         </div>
@@ -282,23 +607,25 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
             <tbody>
               {resultados.map((r, i) => {
                 const expandido = expandidos.has(r.talhao.id);
+                const area = r.talhao.area_ha || 0;
+                // custo da linha da tabela: produto principal
+                const precoPrinc = r.produtoSugerido ? precos[r.produtoSugerido.id] : null;
+                const precoNum = precoPrinc != null && precoPrinc !== '' ? parseFloat(precoPrinc) : null;
+                const custoHa = precoNum != null && r.doseProdutoHa != null ? precoNum * r.doseProdutoHa : null;
+                const custoTotal = custoHa != null ? custoHa * area : null;
+
                 return (
                   <React.Fragment key={r.talhao.id}>
                     <tr className={`border-b border-border/50 transition-colors ${expandido ? 'bg-primary/5 border-l-4 border-l-primary' : i%2===0?'':'bg-muted/5'} hover:bg-muted/10`}>
-                      {/* ▶ seta */}
                       <td className="px-3 py-2.5 text-center">
                         <button type="button" onClick={() => toggleExpand(r.talhao.id)}
                           className="text-muted-foreground hover:text-primary transition-colors">
-                          {expandido
-                            ? <ChevronDown className="w-4 h-4" />
-                            : <ChevronRight className="w-4 h-4" />}
+                          {expandido ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                       </td>
                       <td className="px-3 py-2.5 font-medium whitespace-nowrap">{r.talhao.nome}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.talhao.area_ha ?? '—'}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">
-                        {r.mediaBienal != null ? r.mediaBienal.toFixed(1) : '—'}
-                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.mediaBienal != null ? r.mediaBienal.toFixed(1) : '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.N ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.P ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.K ?? '—'}</td>
@@ -306,23 +633,27 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                       <td className="px-3 py-2.5 text-xs max-w-[160px] truncate">
                         {r.produtoSugerido ? <span className="font-medium">{r.produtoSugerido.nome}</span> : <span className="text-muted-foreground">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">
-                        {r.doseProdutoHa != null ? r.doseProdutoHa : '—'}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-xs text-muted-foreground">—</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-xs text-muted-foreground">—</td>
-                      <td className="px-3 py-2.5 text-center">
-                        <StatusBadgePlan rec={r.rec} />
-                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.doseProdutoHa != null ? r.doseProdutoHa : '—'}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">{custoHa != null ? fmtR(custoHa) : '—'}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">{custoTotal != null ? fmtR(custoTotal) : '—'}</td>
+                      <td className="px-3 py-2.5 text-center"><StatusBadgePlan rec={r.rec} /></td>
                       <td className="px-2 py-2.5">
                         <MenuAcoes onRecalcular={() => {}} onLimpar={() => {}} />
                       </td>
                     </tr>
-                    {/* Painel expandido */}
                     {expandido && (
                       <tr>
                         <td colSpan={14} className="p-0 border-b border-border">
-                          <PainelTalhao resultado={r} onFechar={() => toggleExpand(r.talhao.id)} />
+                          <PainelTalhao
+                            resultado={r}
+                            todos={todos}
+                            precosProd={precos}
+                            onPrecoChange={(prodId, val) => handlePrecoChange(r.talhao.id, prodId, val)}
+                            parcelamentosProd={parcelamentos[r.talhao.id] || {}}
+                            onParcelamentoChange={(prodId, parc) => handleParcelamentoChange(r.talhao.id, prodId, parc)}
+                            onAplicarParcTodos={(prodId, parc) => handleAplicarParcTodos(prodId, parc)}
+                            onFechar={() => toggleExpand(r.talhao.id)}
+                          />
                         </td>
                       </tr>
                     )}
@@ -336,26 +667,13 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         {/* Legenda + controles */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-border bg-muted/10">
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Calculado
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Pendente
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Erro
-            </span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Calculado</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Pendente</span>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={expandirTodos}
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">
-              Expandir todos
-            </button>
+            <button type="button" onClick={expandirTodos} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">Expandir todos</button>
             <span className="text-muted-foreground">·</span>
-            <button type="button" onClick={recolherTodos}
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">
-              Recolher todos
-            </button>
+            <button type="button" onClick={recolherTodos} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">Recolher todos</button>
           </div>
         </div>
       </div>
