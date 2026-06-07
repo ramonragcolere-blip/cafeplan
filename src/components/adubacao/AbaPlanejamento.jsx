@@ -614,12 +614,14 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
   );
 }
 
-// ── Filtro de fornecedor/produto (apenas N, P, K) ─────────────────────────────
+// ── Filtro de fornecedor (multi-select) + produto fixo — N, P, K ──────────────
 function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
-  const [fornecedor, setFornecedor] = useState('');
+  const [fornecedoresSel, setFornecedoresSel] = useState([]); // array de strings
   const [produtoFixoId, setProdutoFixoId] = useState('');
+  const [dropFornAberto, setDropFornAberto] = useState(false);
+  const dropFornRef = useRef(null);
 
-  // Fornecedores que têm pelo menos 1 produto com esse nutriente
+  // Fornecedores que têm ao menos 1 produto com esse nutriente
   const fornecedores = useMemo(() => {
     const set = new Set();
     todos.forEach(p => {
@@ -628,18 +630,34 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
     return Array.from(set).sort();
   }, [todos, nutriente.key]);
 
-  // Produtos do fornecedor selecionado com o nutriente
+  // Produtos filtrados pelos fornecedores selecionados
   const produtosFornecedor = useMemo(() => {
     return todos
-      .filter(p => (parseFloat(p[nutriente.key]) || 0) > 0 && (!fornecedor || p.fornecedor === fornecedor))
+      .filter(p =>
+        (parseFloat(p[nutriente.key]) || 0) > 0 &&
+        (fornecedoresSel.length === 0 || fornecedoresSel.includes(p.fornecedor))
+      )
       .sort((a, b) => (parseFloat(b[nutriente.key]) || 0) - (parseFloat(a[nutriente.key]) || 0));
-  }, [todos, nutriente.key, fornecedor]);
+  }, [todos, nutriente.key, fornecedoresSel]);
 
-  const handleFornecedor = (v) => {
-    const novo = v === '__todos__' ? '' : v;
-    setFornecedor(novo);
-    setProdutoFixoId('');
-    onFiltroProdutoId('');
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    if (!dropFornAberto) return;
+    const handler = (e) => {
+      if (dropFornRef.current && !dropFornRef.current.contains(e.target)) setDropFornAberto(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropFornAberto]);
+
+  const toggleFornecedor = (f) => {
+    setFornecedoresSel(prev => {
+      const novo = prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f];
+      // Se mudou a seleção de fornecedor, limpa produto fixado
+      setProdutoFixoId('');
+      onFiltroProdutoId('');
+      return novo;
+    });
   };
 
   const handleProduto = (v) => {
@@ -648,17 +666,64 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
     onFiltroProdutoId(novo);
   };
 
+  const limparTudo = () => {
+    setFornecedoresSel([]);
+    setProdutoFixoId('');
+    onFiltroProdutoId('');
+  };
+
+  const temFiltro = fornecedoresSel.length > 0 || produtoFixoId;
+
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-1">
       <span className="text-xs text-muted-foreground shrink-0">Filtrar:</span>
-      <select
-        value={fornecedor || '__todos__'}
-        onChange={e => handleFornecedor(e.target.value)}
-        className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[160px]"
-      >
-        <option value="__todos__">Todos fornecedores</option>
-        {fornecedores.map(f => <option key={f} value={f}>{f}</option>)}
-      </select>
+
+      {/* Multi-select de fornecedores */}
+      <div ref={dropFornRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setDropFornAberto(a => !a)}
+          className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground flex items-center gap-1 min-w-[130px] max-w-[260px] hover:bg-muted/30"
+        >
+          {fornecedoresSel.length === 0 ? (
+            <span className="text-muted-foreground truncate">Todos fornecedores</span>
+          ) : (
+            <span className="flex flex-wrap gap-1 overflow-hidden max-h-5">
+              {fornecedoresSel.map(f => (
+                <span key={f} className="inline-flex items-center gap-0.5 bg-primary/10 text-primary rounded px-1 text-[10px] font-medium shrink-0">
+                  {f}
+                  <span
+                    role="button"
+                    onMouseDown={e => { e.stopPropagation(); e.preventDefault(); toggleFornecedor(f); }}
+                    className="hover:text-destructive cursor-pointer leading-none"
+                  >✕</span>
+                </span>
+              ))}
+            </span>
+          )}
+          <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto shrink-0" />
+        </button>
+        {dropFornAberto && (
+          <div className="absolute z-50 top-full left-0 mt-1 min-w-[180px] bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+            {fornecedores.map(f => (
+              <button
+                key={f}
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => toggleFornecedor(f)}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 flex items-center gap-2"
+              >
+                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${fornecedoresSel.includes(f) ? 'bg-primary border-primary text-white' : 'border-input'}`}>
+                  {fornecedoresSel.includes(f) && <span className="text-[8px] leading-none font-bold">✓</span>}
+                </span>
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Produto fixado */}
       <select
         value={produtoFixoId || '__todos__'}
         onChange={e => handleProduto(e.target.value)}
@@ -671,10 +736,11 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
           </option>
         ))}
       </select>
-      {produtoFixoId && (
+
+      {temFiltro && (
         <button
           type="button"
-          onClick={() => { setProdutoFixoId(''); setFornecedor(''); onFiltroProdutoId(''); }}
+          onClick={limparTudo}
           className="text-xs text-muted-foreground hover:text-destructive underline"
         >
           Limpar
