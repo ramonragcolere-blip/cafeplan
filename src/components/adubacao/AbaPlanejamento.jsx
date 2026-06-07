@@ -172,13 +172,17 @@ function sugerirProdutosInteligente(todos, rec) {
       const pctPrincipal = parseFloat(prod[nutKey]) || 0;
       if (pctPrincipal === 0) continue; // produto não cobre o nutriente principal — descarta
 
-      // Conta quantos nutrientes com saldo estritamente positivo este produto cobre.
-      // Só considera nutrientes da ordem de sugestão (exclui Ca, S que não são priorizados).
-      // Nutrientes já cobertos por produtos anteriores têm saldo = 0 e NÃO são pontuados.
+      // Pontuação: +1 por cobrir déficit real, -2 por adicionar nutriente já suprido.
+      // A penalidade maior que o bônus garante que fontes simples (ex: KCl) vençam
+      // formulados que trazem nutrientes cujo saldo já é zero ou negativo.
       let score = 0;
       for (const s of ORDEM_SUGESTAO_SIMBOLOS) {
-        if (saldo[s] > 0 && (parseFloat(prod[SALDO_PARA_KEY[s]]) || 0) > 0) {
-          score++;
+        const temNutriente = (parseFloat(prod[SALDO_PARA_KEY[s]]) || 0) > 0;
+        if (!temNutriente) continue;
+        if (saldo[s] > 0) {
+          score += 1;  // bônus: cobre um déficit real
+        } else {
+          score -= 2;  // penalidade: nutriente já suprido, geraria excesso
         }
       }
 
