@@ -91,83 +91,85 @@ function calcRecomendacao(analise, plano, analise2040) {
   };
 }
 
-// Nutrientes considerados na sugestão inteligente (mapeados para recKey)
-const NUTRIENTES_SUGESTAO = [
+// Ordem de prioridade para sugestão em cascata
+const ORDEM_SUGESTAO = [
   { key: 'n_pct',    recKey: 'N'  },
-  { key: 'p2o5_pct', recKey: 'P'  },
   { key: 'k2o_pct',  recKey: 'K'  },
-  { key: 'b_pct',    recKey: 'B'  },
-  { key: 'ca_pct',   recKey: 'Ca' },
+  { key: 'p2o5_pct', recKey: 'P'  },
   { key: 'mg_pct',   recKey: 'Mg' },
-  { key: 's_pct',    recKey: 'S'  },
+  { key: 'b_pct',    recKey: 'B'  },
   { key: 'zn_pct',   recKey: 'Zn' },
   { key: 'mn_pct',   recKey: 'Mn' },
   { key: 'cu_pct',   recKey: 'Cu' },
+  { key: 'ca_pct',   recKey: 'Ca' },
+  { key: 's_pct',    recKey: 'S'  },
 ];
 
 /**
- * Sugestão inteligente: para cada nutriente, seleciona o melhor produto
- * considerando aproveitamento múltiplo de nutrientes deficientes.
+ * Sugestão inteligente com saldo em cascata:
+ * Percorre os nutrientes na ordem de prioridade. Para cada nutriente com saldo
+ * positivo, escolhe o produto que melhor atende esse saldo. Após a escolha,
+ * desconta o que esse produto repõe (com a dose necessária para o nutriente
+ * principal) do saldo dos demais nutrientes. Nutrientes cujo saldo já foi
+ * zerado pelos produtos anteriores ficam sem sugestão.
  *
- * Retorna um Map: nutrienteKey -> produtoId (ou null se não há sugestão)
+ * Retorna: { [nutrienteKey]: produtoId | null }
  */
 function sugerirProdutosInteligente(todos, rec) {
-  if (!todos.length) return {};
+  if (!todos.length || !rec) return {};
 
-  // Monta lista de nutrientes com déficit real (valor numérico > 0)
-  const deficientes = NUTRIENTES_SUGESTAO.filter(n => {
-    const v = rec?.[n.recKey];
-    return typeof v === 'number' && v > 0;
-  });
+  // Saldo inicial de cada nutriente (kg/ha recomendado)
+  const saldo = {};
+  for (const n of ORDEM_SUGESTAO) {
+    const v = rec[n.recKey];
+    saldo[n.key] = typeof v === 'number' && v > 0 ? v : 0;
+  }
 
   const sugestoes = {}; // nutrienteKey -> produtoId
-  const cobertos = new Set(); // nutrienteKeys já cobertos por um produto escolhido
 
-  // Enquanto houver nutrientes deficientes não cobertos, escolhe o melhor produto
-  const pendentes = new Set(deficientes.map(n => n.key));
+  for (const nutPrincipal of ORDEM_SUGESTAO) {
+    const saldoAtual = saldo[nutPrincipal.key];
 
-  while (pendentes.size > 0) {
-    let melhorProd = null;
-    let melhorScore = -1;
-    let melhorNutriPrincipal = null; // nutriente com maior déficit que este produto cobre
+    // Já coberto por produto anterior — sem sugestão
+    if (saldoAtual <= 0) {
+      sugestoes[nutPrincipal.key] = null;
+      continue;
+    }
 
+    // Escolhe o produto com maior % do nutriente principal (melhor para cobrir o saldo)
+    let melhor = null;
+    let melhorPct = 0;
     for (const prod of todos) {
-      // Conta quantos nutrientes pendentes este produto atende
-      let score = 0;
-      let maiorDeficit = -1;
-      let nutriPrincipal = null;
-
-      for (const nutKey of pendentes) {
-        const pct = parseFloat(prod[nutKey]) || 0;
-        if (pct > 0) {
-          score++;
-          const n = NUTRIENTES_SUGESTAO.find(x => x.key === nutKey);
-          const deficit = n ? (rec?.[n.recKey] || 0) : 0;
-          if (typeof deficit === 'number' && deficit > maiorDeficit) {
-            maiorDeficit = deficit;
-            nutriPrincipal = nutKey;
-          }
-        }
-      }
-
-      if (score > melhorScore || (score === melhorScore && maiorDeficit > (melhorScore >= 0 ? -1 : -Infinity))) {
-        melhorScore = score;
-        melhorProd = prod;
-        melhorNutriPrincipal = nutriPrincipal;
+      const pct = parseFloat(prod[nutPrincipal.key]) || 0;
+      if (pct > melhorPct) {
+        melhorPct = pct;
+        melhor = prod;
       }
     }
 
-    if (!melhorProd || melhorScore <= 0) break;
+    if (!melhor || melhorPct === 0) {
+      sugestoes[nutPrincipal.key] = null;
+      continue;
+    }
 
-    // Registra este produto para todos os nutrientes pendentes que ele cobre
-    for (const nutKey of [...pendentes]) {
-      const pct = parseFloat(melhorProd[nutKey]) || 0;
-      if (pct > 0) {
-        sugestoes[nutKey] = melhorProd.id;
-        cobertos.add(nutKey);
-        pendentes.delete(nutKey);
+    sugestoes[nutPrincipal.key] = melhor.id;
+
+    // Calcula a dose do produto necessária para cobrir o saldo do nutriente principal
+    // dose_produto (kg/ha) = saldo_nutriente / (pct_nutriente / 100)
+    const doseProdutoHa = saldoAtual / (melhorPct / 100);
+
+    // Desconta o que este produto repõe nos demais nutrientes ainda com saldo
+    for (const outro of ORDEM_SUGESTAO) {
+      if (outro.key === nutPrincipal.key) continue;
+      const pctOutro = parseFloat(melhor[outro.key]) || 0;
+      if (pctOutro > 0 && saldo[outro.key] > 0) {
+        const repoe = doseProdutoHa * (pctOutro / 100);
+        saldo[outro.key] = Math.max(0, saldo[outro.key] - repoe);
       }
     }
+
+    // Zera o saldo do nutriente principal (foi coberto)
+    saldo[nutPrincipal.key] = 0;
   }
 
   return sugestoes;
