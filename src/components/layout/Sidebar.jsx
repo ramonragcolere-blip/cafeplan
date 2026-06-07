@@ -21,6 +21,7 @@ const colheitaItems = [
 
 const bottomItems = [
   { path: '/adubacao', label: 'Adubação do Cafeeiro', icon: Sprout },
+  { path: '/adubacao2', label: 'Adubação 2.0', icon: Sprout },
   { path: '/foliar', label: 'Aplicações Foliares', icon: Wind },
   { path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical },
 ];
