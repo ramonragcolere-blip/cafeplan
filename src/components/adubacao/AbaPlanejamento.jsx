@@ -91,6 +91,88 @@ function calcRecomendacao(analise, plano, analise2040) {
   };
 }
 
+// Nutrientes considerados na sugestão inteligente (mapeados para recKey)
+const NUTRIENTES_SUGESTAO = [
+  { key: 'n_pct',    recKey: 'N'  },
+  { key: 'p2o5_pct', recKey: 'P'  },
+  { key: 'k2o_pct',  recKey: 'K'  },
+  { key: 'b_pct',    recKey: 'B'  },
+  { key: 'ca_pct',   recKey: 'Ca' },
+  { key: 'mg_pct',   recKey: 'Mg' },
+  { key: 's_pct',    recKey: 'S'  },
+  { key: 'zn_pct',   recKey: 'Zn' },
+  { key: 'mn_pct',   recKey: 'Mn' },
+  { key: 'cu_pct',   recKey: 'Cu' },
+];
+
+/**
+ * Sugestão inteligente: para cada nutriente, seleciona o melhor produto
+ * considerando aproveitamento múltiplo de nutrientes deficientes.
+ *
+ * Retorna um Map: nutrienteKey -> produtoId (ou null se não há sugestão)
+ */
+function sugerirProdutosInteligente(todos, rec) {
+  if (!todos.length) return {};
+
+  // Monta lista de nutrientes com déficit real (valor numérico > 0)
+  const deficientes = NUTRIENTES_SUGESTAO.filter(n => {
+    const v = rec?.[n.recKey];
+    return typeof v === 'number' && v > 0;
+  });
+
+  const sugestoes = {}; // nutrienteKey -> produtoId
+  const cobertos = new Set(); // nutrienteKeys já cobertos por um produto escolhido
+
+  // Enquanto houver nutrientes deficientes não cobertos, escolhe o melhor produto
+  const pendentes = new Set(deficientes.map(n => n.key));
+
+  while (pendentes.size > 0) {
+    let melhorProd = null;
+    let melhorScore = -1;
+    let melhorNutriPrincipal = null; // nutriente com maior déficit que este produto cobre
+
+    for (const prod of todos) {
+      // Conta quantos nutrientes pendentes este produto atende
+      let score = 0;
+      let maiorDeficit = -1;
+      let nutriPrincipal = null;
+
+      for (const nutKey of pendentes) {
+        const pct = parseFloat(prod[nutKey]) || 0;
+        if (pct > 0) {
+          score++;
+          const n = NUTRIENTES_SUGESTAO.find(x => x.key === nutKey);
+          const deficit = n ? (rec?.[n.recKey] || 0) : 0;
+          if (typeof deficit === 'number' && deficit > maiorDeficit) {
+            maiorDeficit = deficit;
+            nutriPrincipal = nutKey;
+          }
+        }
+      }
+
+      if (score > melhorScore || (score === melhorScore && maiorDeficit > (melhorScore >= 0 ? -1 : -Infinity))) {
+        melhorScore = score;
+        melhorProd = prod;
+        melhorNutriPrincipal = nutriPrincipal;
+      }
+    }
+
+    if (!melhorProd || melhorScore <= 0) break;
+
+    // Registra este produto para todos os nutrientes pendentes que ele cobre
+    for (const nutKey of [...pendentes]) {
+      const pct = parseFloat(melhorProd[nutKey]) || 0;
+      if (pct > 0) {
+        sugestoes[nutKey] = melhorProd.id;
+        cobertos.add(nutKey);
+        pendentes.delete(nutKey);
+      }
+    }
+  }
+
+  return sugestoes;
+}
+
 function melhorProduto(todos, nutrienteKey) {
   if (!nutrienteKey || todos.length === 0) return null;
   return todos.reduce((best, prod) => {
@@ -608,6 +690,11 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
     ctxKeyCarregado.current = ctxKey;
 
     const novoState = {};
+    // Verifica se há algum registro salvo para este contexto
+    const temRegistrosSalvos = registrosSalvos.length > 0;
+    // Sugestão inteligente usada apenas quando não há dados salvos
+    const sugestoes = !temRegistrosSalvos ? sugerirProdutosInteligente(todos, rec) : {};
+
     NUTRIENTES_CHAVE.forEach(n => {
       // Registros salvos para este nutriente (pode ter múltiplos — fontes adicionais numeradas)
       // Convenção: nutriente_key = "n_pct", "n_pct__1", "n_pct__2" etc.
@@ -631,9 +718,12 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
           };
         });
       } else {
-        const melhor = melhorProduto(todos, n.key);
+        // Usa sugestão inteligente se disponível, senão fallback para melhor produto simples
+        const produtoId = sugestoes[n.key] !== undefined
+          ? sugestoes[n.key]
+          : (melhorProduto(todos, n.key)?.id || null);
         novoState[n.key] = [{
-          produtoId: melhor?.id || null,
+          produtoId,
           doseRecManual: '',
           numAplic: 1,
           pcts: [100],
@@ -716,12 +806,15 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
   };
 
   const handleSugerirProdutos = () => {
+    const sugestoes = sugerirProdutosInteligente(todos, rec);
     setLinhasState(prev => {
       const novo = { ...prev };
       NUTRIENTES_CHAVE.forEach(n => {
-        const melhor = melhorProduto(todos, n.key);
-        if (melhor && novo[n.key]?.length > 0) {
-          novo[n.key] = [{ ...novo[n.key][0], produtoId: melhor.id }, ...novo[n.key].slice(1)];
+        const produtoId = sugestoes[n.key] !== undefined
+          ? sugestoes[n.key]           // produto sugerido (cobre este nutriente)
+          : (rec?.[n.recKey] != null ? null : undefined); // sem recomendação: undefined; com rec mas sem produto cobrindo: null
+        if (novo[n.key]?.length > 0) {
+          novo[n.key] = [{ ...novo[n.key][0], produtoId }, ...novo[n.key].slice(1)];
         }
       });
       return novo;
