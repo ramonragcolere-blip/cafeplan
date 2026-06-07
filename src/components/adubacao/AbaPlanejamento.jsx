@@ -127,6 +127,9 @@ const KEY_PARA_SALDO = Object.fromEntries(
 // Ordem de prioridade
 const ORDEM_SUGESTAO_SIMBOLOS = ['N', 'K', 'P', 'Mg', 'B', 'Zn', 'Mn', 'Cu'];
 
+// Micronutrientes com toxicidade: dose sugerida nunca ultrapassa a recomendação original
+const NUTRIENTES_TOXICOS = new Set(['B', 'Zn', 'Mn']);
+
 /**
  * Sugestão inteligente com saldo em cascata.
  * Para cada nutriente na ordem de prioridade:
@@ -201,7 +204,12 @@ function sugerirProdutosInteligente(todos, rec) {
       continue;
     }
 
-    sugestoes[nutKey] = { produtoId: melhor.id, doseManual: String(Math.round(saldoAtual * 10) / 10) };
+    // Para micronutrientes tóxicos, limita a dose ao valor original da recomendação
+    const recOriginal = rec[SALDO_PARA_RECKEY[simbolo]] || 0;
+    const doseSugerida = NUTRIENTES_TOXICOS.has(simbolo)
+      ? Math.min(saldoAtual, recOriginal)
+      : saldoAtual;
+    sugestoes[nutKey] = { produtoId: melhor.id, doseManual: String(Math.round(doseSugerida * 10) / 10) };
 
     // Dose do produto (kg/ha) necessária para cobrir o saldo deste nutriente
     const pctPrincipalEscolhido = parseFloat(melhor[nutKey]) || 0;
