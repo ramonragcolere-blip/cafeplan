@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -239,12 +239,28 @@ export default function Adubacao2() {
     if (registrosSalvos.length > 0) {
       const prodMap = {};
       const a2040Map = {};
+      // Agrega preços e parcelamentos de todos os registros salvos
+      let precosAgg = {};
+      let parcelamentosAgg = {};
       registrosSalvos.forEach(r => {
         prodMap[r.talhao_id] = { safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '', safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '' };
         if (r.analise2040) a2040Map[r.talhao_id] = r.analise2040;
+        if (r.detalhamento?.precos) precosAgg = { ...precosAgg, ...r.detalhamento.precos };
+        if (r.detalhamento?.parcelamentos && Object.keys(r.detalhamento.parcelamentos).length > 0) {
+          parcelamentosAgg[r.talhao_id] = r.detalhamento.parcelamentos;
+        }
       });
       setProdutividadeLocal(prev => ({ ...prodMap, ...prev }));
       setAnalises2040Local(prev => ({ ...a2040Map, ...prev }));
+      // Restaura preços e parcelamentos salvos (só se ainda não foram editados)
+      if (Object.keys(precosAgg).length > 0) {
+        setPrecosExterno(prev => Object.keys(prev).length === 0 ? precosAgg : prev);
+        if (Object.keys(precosRef.current).length === 0) precosRef.current = precosAgg;
+      }
+      if (Object.keys(parcelamentosAgg).length > 0) {
+        setParcelamentosExterno(prev => Object.keys(prev).length === 0 ? parcelamentosAgg : prev);
+        if (Object.keys(parcelamentosRef.current).length === 0) parcelamentosRef.current = parcelamentosAgg;
+      }
     }
   }, [registrosSalvos.length]);
 
@@ -375,12 +391,27 @@ export default function Adubacao2() {
   }, [talhoes, produtividadeLocal, analises, analises2040Local, todos]);
 
   // C2: estado de preços e parcelamentos sincronizado do filho
+  // Usamos refs para evitar stale closure no handleSalvarTudo
   const [precosExterno, setPrecosExterno] = useState({});
   const [parcelamentosExterno, setParcelamentosExterno] = useState({});
+  const precosRef = useRef({});
+  const parcelamentosRef = useRef({});
 
-  // C2: Salvar tudo (planejamento completo)
+  const handlePrecosChange = useCallback((p) => {
+    setPrecosExterno(p);
+    precosRef.current = p;
+  }, []);
+
+  const handleParcelamentosChange = useCallback((p) => {
+    setParcelamentosExterno(p);
+    parcelamentosRef.current = p;
+  }, []);
+
+  // C2: Salvar tudo (planejamento completo) — usa refs para pegar valores mais recentes
   const handleSalvarTudo = useCallback(async () => {
     if (!produtor || !resultadosCalculo) return;
+    const precos = precosRef.current;
+    const parcelamentos = parcelamentosRef.current;
     for (const r of resultadosCalculo) {
       const talhao = r.talhao;
       const existente = registrosSalvos.find(x => x.talhao_id === talhao.id);
@@ -397,8 +428,11 @@ export default function Adubacao2() {
         doses_editadas: dosesEditadas[talhao.id] || {},
         detalhamento: {
           rec: r.rec,
-          precos: precosExterno,
-          parcelamentos: parcelamentosExterno[talhao.id] || {},
+          mediaBienal: r.mediaBienal,
+          produtoSugerido: r.produtoSugerido ? { id: r.produtoSugerido.id, nome: r.produtoSugerido.nome } : null,
+          doseProdutoHa: r.doseProdutoHa,
+          precos,
+          parcelamentos: parcelamentos[talhao.id] || {},
         },
       };
       if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
@@ -406,7 +440,7 @@ export default function Adubacao2() {
     }
     setMsgCalculo('Planejamento salvo com sucesso!');
     setTimeout(() => setMsgCalculo(''), 4000);
-  }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, precosExterno, parcelamentosExterno, registrosSalvos]);
+  }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, registrosSalvos]);
 
   // PROBLEMA 2: editar dose na tabela
   const handleEditDose = useCallback((talhaoId, nutKey, valor) => {
@@ -443,6 +477,8 @@ export default function Adubacao2() {
 
   // Ao trocar produtor/safra, limpa resultados
   const handleChangeProdutorSafra = useCallback((field, value) => {
+    precosRef.current = {};
+    parcelamentosRef.current = {};
     if (field === 'produtor') {
       setProdutorId(value === 'none' ? '' : value);
       setSelecionados([]);
@@ -451,12 +487,16 @@ export default function Adubacao2() {
       setDosesEditadas({});
       setProdutividadeLocal({});
       setAnalises2040Local({});
+      setPrecosExterno({});
+      setParcelamentosExterno({});
     } else {
       setSafra(value);
       setResultadosCalculo(null);
       setDosesEditadas({});
       setProdutividadeLocal({});
       setAnalises2040Local({});
+      setPrecosExterno({});
+      setParcelamentosExterno({});
     }
   }, []);
 
@@ -651,8 +691,10 @@ export default function Adubacao2() {
           podeCacularTodos={podeCacularTodos}
           onRecalcular={handleCalcularTodos}
           onSalvar={handleSalvarTudo}
-          onPrecosChange={setPrecosExterno}
-          onParcelamentosChange={setParcelamentosExterno}
+          onPrecosChange={handlePrecosChange}
+          onParcelamentosChange={handleParcelamentosChange}
+          precosIniciais={precosExterno}
+          parcelamentosIniciais={parcelamentosExterno}
         />
       )}
 

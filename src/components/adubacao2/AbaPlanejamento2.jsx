@@ -607,12 +607,12 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange }) {
+export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, precosIniciais, parcelamentosIniciais }) {
   const [expandidos, setExpandidos] = useState(new Set());
   // precos: { [produtoId]: string }
-  const [precos, setPrecos] = useState({});
+  const [precos, setPrecos] = useState(() => precosIniciais || {});
   // parcelamentos: { [talhaoId]: { [produtoId]: { parcelas: [{pct, meses[]}] } } }
-  const [parcelamentos, setParcelamentos] = useState({});
+  const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
   // filtro global de fornecedor/produto para sugestões N/P/K
   const [filtro, setFiltro] = useState({ fornecedores: [], produtoId: '' });
 
@@ -626,11 +626,16 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const recolherTodos = () => setExpandidos(new Set());
 
   // Produtos filtrados pelo filtro global (N/P/K — fornecedor + produto fixado)
+  // REGRA: produtos SEM fornecedor cadastrado são sempre incluídos (fontes simples)
   const todosFiltered = useMemo(() => {
     if (filtro.fornecedores.length === 0 && !filtro.produtoId) return todos;
     return todos.filter(p => {
       if (filtro.produtoId) return p.id === filtro.produtoId;
-      if (filtro.fornecedores.length > 0) return filtro.fornecedores.includes(p.fornecedor);
+      if (filtro.fornecedores.length > 0) {
+        // sem fornecedor = sempre incluir
+        if (!p.fornecedor) return true;
+        return filtro.fornecedores.includes(p.fornecedor);
+      }
       return true;
     });
   }, [todos, filtro]);
@@ -638,6 +643,18 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   // Inicializa preços com dados da base de insumos ao montar/atualizar resultados
   // já preenchendo automaticamente quando o produto tiver preço cadastrado
   // (aqui não há campo de preço na entidade — campo editável sempre livre)
+
+  // Sincroniza quando o pai restaura preços/parcelamentos do banco (apenas se estado local estiver vazio)
+  useEffect(() => {
+    if (precosIniciais && Object.keys(precosIniciais).length > 0) {
+      setPrecos(prev => Object.keys(prev).length === 0 ? precosIniciais : prev);
+    }
+  }, [precosIniciais]);
+  useEffect(() => {
+    if (parcelamentosIniciais && Object.keys(parcelamentosIniciais).length > 0) {
+      setParcelamentos(prev => Object.keys(prev).length === 0 ? parcelamentosIniciais : prev);
+    }
+  }, [parcelamentosIniciais]);
 
   // Notifica pai quando preços ou parcelamentos mudam (C2 persistência)
   useEffect(() => { onPrecosChange?.(precos); }, [precos]);
