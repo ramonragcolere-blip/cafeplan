@@ -615,7 +615,7 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
 }
 
 // ── Filtro de fornecedor (multi-select) + produto fixo — N, P, K ──────────────
-function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
+function FiltroProduto({ nutriente, todos, onFiltroChange }) {
   const [fornecedoresSel, setFornecedoresSel] = useState([]); // array de strings
   const [produtoFixoId, setProdutoFixoId] = useState('');
   const [dropFornAberto, setDropFornAberto] = useState(false);
@@ -631,7 +631,7 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
   }, [todos, nutriente.key]);
 
   // Produtos filtrados pelos fornecedores selecionados
-  const produtosFornecedor = useMemo(() => {
+  const produtosFiltrados = useMemo(() => {
     return todos
       .filter(p =>
         (parseFloat(p[nutriente.key]) || 0) > 0 &&
@@ -652,24 +652,24 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
 
   const toggleFornecedor = (f) => {
     setFornecedoresSel(prev => {
-      const novo = prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f];
-      // Se mudou a seleção de fornecedor, limpa produto fixado
+      const novosForn = prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f];
+      // Limpa produto fixado ao mudar fornecedores
       setProdutoFixoId('');
-      onFiltroProdutoId('');
-      return novo;
+      onFiltroChange({ fornecedores: novosForn, produtoId: '' });
+      return novosForn;
     });
   };
 
   const handleProduto = (v) => {
     const novo = v === '__todos__' ? '' : v;
     setProdutoFixoId(novo);
-    onFiltroProdutoId(novo);
+    onFiltroChange({ fornecedores: fornecedoresSel, produtoId: novo });
   };
 
   const limparTudo = () => {
     setFornecedoresSel([]);
     setProdutoFixoId('');
-    onFiltroProdutoId('');
+    onFiltroChange({ fornecedores: [], produtoId: '' });
   };
 
   const temFiltro = fornecedoresSel.length > 0 || produtoFixoId;
@@ -723,14 +723,14 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
         )}
       </div>
 
-      {/* Produto fixado */}
+      {/* Produto fixado — mostra apenas produtos dos fornecedores selecionados */}
       <select
         value={produtoFixoId || '__todos__'}
         onChange={e => handleProduto(e.target.value)}
         className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[200px]"
       >
         <option value="__todos__">Todos produtos</option>
-        {produtosFornecedor.map(p => (
+        {produtosFiltrados.map(p => (
           <option key={p.id} value={p.id}>
             {p.nome} ({parseFloat(p[nutriente.key])}%)
           </option>
@@ -751,12 +751,42 @@ function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
 }
 
 // ── Elemento completo por nutriente (cabeçalho + N fontes + botão adicionar) ──
-function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec, analise, analise2040, onFiltroProdutoId }) {
+function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec, analise, analise2040, onFiltroChange }) {
+  // filtroAtivo: { fornecedores: string[], produtoId: string }
+  const [filtroAtivo, setFiltroAtivo] = useState({ fornecedores: [], produtoId: '' });
+
   const addFonte = () => onChange([...fontes, linhaVazia()]);
   const removeFonte = (idx) => onChange(fontes.filter((_, i) => i !== idx));
+
   const updateFonte = (idx, nova) => { const arr = [...fontes]; arr[idx] = nova; onChange(arr); };
 
   const soloInfo = getSoloInfo(nutriente.key, analise, analise2040);
+
+  // Lista de produtos restrita ao filtro de fornecedor (usada no FonteBloco)
+  const todosRestrito = useMemo(() => {
+    if (filtroAtivo.fornecedores.length === 0) return todos;
+    return todos.filter(p => filtroAtivo.fornecedores.includes(p.fornecedor));
+  }, [todos, filtroAtivo.fornecedores]);
+
+  const handleFiltroChange = ({ fornecedores, produtoId }) => {
+    setFiltroAtivo({ fornecedores, produtoId });
+    // Se produto fixado, passa para cima
+    onFiltroChange?.({ fornecedores, produtoId });
+
+    // Se mudou o filtro, verificar se os produtos das fontes ainda pertencem ao filtro
+    if (fornecedores.length > 0) {
+      const novasFontes = fontes.map((fonte, idx) => {
+        if (idx !== 0) return fonte; // só corrige a primeira fonte
+        const produtoAtual = todos.find(p => p.id === fonte.produtoId);
+        const pertence = produtoAtual && fornecedores.includes(produtoAtual.fornecedor);
+        if (!pertence && fonte.produtoId) {
+          return { ...fonte, produtoId: produtoId || undefined };
+        }
+        return fonte;
+      });
+      onChange(novasFontes);
+    }
+  };
 
   return (
     <div className="border border-border rounded-xl overflow-hidden">
@@ -792,7 +822,7 @@ function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange
         <FiltroProduto
           nutriente={nutriente}
           todos={todos}
-          onFiltroProdutoId={onFiltroProdutoId || (() => {})}
+          onFiltroChange={handleFiltroChange}
         />
       )}
 
@@ -802,7 +832,7 @@ function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange
           nutriente={nutriente}
           recKgHa={recKgHa}
           talhao={talhao}
-          todos={todos}
+          todos={filtroAtivo.fornecedores.length > 0 ? todosRestrito : todos}
           linhaState={fonte}
           onChange={nova => updateFonte(idx, nova)}
           onRemover={() => removeFonte(idx)}
@@ -826,8 +856,8 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
   const [talhaoId, setTalhaoId] = useState(null);
   // linhasState: { [nutriente_key]: [fonte1, fonte2, ...] }
   const [linhasState, setLinhasState] = useState({});
-  // filtrosProduto: { [nutriente_key]: produtoId fixado pelo usuário }
-  const [filtrosProduto, setFiltrosProduto] = useState({});
+  // filtros: { [nutriente_key]: { fornecedores: string[], produtoId: string } }
+  const [filtros, setFiltros] = useState({});
   const ctxKeyCarregado = useRef(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1026,13 +1056,21 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
   };
 
   const handleSugerirProdutos = () => {
-    const sugestoes = sugerirProdutosInteligente(todos, rec);
+    // Para cada nutriente com filtro de fornecedor ativo, restringir os produtos
+    const todosParaSugestao = (nutKey) => {
+      const f = filtros[nutKey];
+      if (f?.fornecedores?.length > 0) return todos.filter(p => f.fornecedores.includes(p.fornecedor));
+      return todos;
+    };
+
     setLinhasState(prev => {
       const novo = { ...prev };
       NUTRIENTES_CHAVE.forEach(n => {
+        const produtosDisponiveis = todosParaSugestao(n.key);
+        const sugestoes = sugerirProdutosInteligente(produtosDisponiveis, rec);
         const sug = sugestoes[n.key];
-        // Se o usuário fixou um produto para este nutriente, usa ele
-        const produtoFixo = filtrosProduto[n.key] || null;
+        // Se o usuário fixou um produto específico, usa ele
+        const produtoFixo = filtros[n.key]?.produtoId || null;
         const produtoId = produtoFixo
           ? produtoFixo
           : sug !== undefined
@@ -1218,8 +1256,8 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                   rec={rec}
                   analise={analise}
                   analise2040={analise2040obj}
-                  onFiltroProdutoId={NUTRIENTES_COM_FILTRO.has(n.key)
-                    ? (pid) => setFiltrosProduto(prev => ({ ...prev, [n.key]: pid }))
+                  onFiltroChange={NUTRIENTES_COM_FILTRO.has(n.key)
+                    ? (f) => setFiltros(prev => ({ ...prev, [n.key]: f }))
                     : undefined}
                 />
               );
