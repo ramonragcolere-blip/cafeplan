@@ -130,6 +130,9 @@ const ORDEM_SUGESTAO_SIMBOLOS = ['N', 'K', 'P', 'Mg', 'B', 'Zn', 'Mn', 'Cu'];
 // Micronutrientes com toxicidade: dose sugerida nunca ultrapassa a recomendação original
 const NUTRIENTES_TOXICOS = new Set(['B', 'Zn', 'Mn']);
 
+// Nutrientes que exibem filtro de fornecedor/produto fixado
+const NUTRIENTES_COM_FILTRO = new Set(['n_pct', 'p2o5_pct', 'k2o_pct']);
+
 /**
  * Sugestão inteligente com saldo em cascata.
  * Para cada nutriente na ordem de prioridade:
@@ -611,8 +614,78 @@ function FonteBloco({ nutriente, recKgHa, talhao, todos, linhaState, onChange, o
   );
 }
 
+// ── Filtro de fornecedor/produto (apenas N, P, K) ─────────────────────────────
+function FiltroProduto({ nutriente, todos, onFiltroProdutoId }) {
+  const [fornecedor, setFornecedor] = useState('');
+  const [produtoFixoId, setProdutoFixoId] = useState('');
+
+  // Fornecedores que têm pelo menos 1 produto com esse nutriente
+  const fornecedores = useMemo(() => {
+    const set = new Set();
+    todos.forEach(p => {
+      if ((parseFloat(p[nutriente.key]) || 0) > 0 && p.fornecedor) set.add(p.fornecedor);
+    });
+    return Array.from(set).sort();
+  }, [todos, nutriente.key]);
+
+  // Produtos do fornecedor selecionado com o nutriente
+  const produtosFornecedor = useMemo(() => {
+    return todos
+      .filter(p => (parseFloat(p[nutriente.key]) || 0) > 0 && (!fornecedor || p.fornecedor === fornecedor))
+      .sort((a, b) => (parseFloat(b[nutriente.key]) || 0) - (parseFloat(a[nutriente.key]) || 0));
+  }, [todos, nutriente.key, fornecedor]);
+
+  const handleFornecedor = (v) => {
+    const novo = v === '__todos__' ? '' : v;
+    setFornecedor(novo);
+    setProdutoFixoId('');
+    onFiltroProdutoId('');
+  };
+
+  const handleProduto = (v) => {
+    const novo = v === '__todos__' ? '' : v;
+    setProdutoFixoId(novo);
+    onFiltroProdutoId(novo);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-1">
+      <span className="text-xs text-muted-foreground shrink-0">Filtrar:</span>
+      <select
+        value={fornecedor || '__todos__'}
+        onChange={e => handleFornecedor(e.target.value)}
+        className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[160px]"
+      >
+        <option value="__todos__">Todos fornecedores</option>
+        {fornecedores.map(f => <option key={f} value={f}>{f}</option>)}
+      </select>
+      <select
+        value={produtoFixoId || '__todos__'}
+        onChange={e => handleProduto(e.target.value)}
+        className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[200px]"
+      >
+        <option value="__todos__">Todos produtos</option>
+        {produtosFornecedor.map(p => (
+          <option key={p.id} value={p.id}>
+            {p.nome} ({parseFloat(p[nutriente.key])}%)
+          </option>
+        ))}
+      </select>
+      {produtoFixoId && (
+        <button
+          type="button"
+          onClick={() => { setProdutoFixoId(''); setFornecedor(''); onFiltroProdutoId(''); }}
+          className="text-xs text-muted-foreground hover:text-destructive underline"
+        >
+          Limpar
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Elemento completo por nutriente (cabeçalho + N fontes + botão adicionar) ──
-function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec, analise, analise2040 }) {
+function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange, infoCalagem, linhasState, rec, analise, analise2040, onFiltroProdutoId }) {
   const addFonte = () => onChange([...fontes, linhaVazia()]);
   const removeFonte = (idx) => onChange(fontes.filter((_, i) => i !== idx));
   const updateFonte = (idx, nova) => { const arr = [...fontes]; arr[idx] = nova; onChange(arr); };
@@ -649,6 +722,14 @@ function ElementoNutriente({ nutriente, recKgHa, talhao, todos, fontes, onChange
         </div>
       )}
 
+      {NUTRIENTES_COM_FILTRO.has(nutriente.key) && (
+        <FiltroProduto
+          nutriente={nutriente}
+          todos={todos}
+          onFiltroProdutoId={onFiltroProdutoId || (() => {})}
+        />
+      )}
+
       {fontes.map((fonte, idx) => (
         <FonteBloco
           key={idx}
@@ -679,6 +760,8 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
   const [talhaoId, setTalhaoId] = useState(null);
   // linhasState: { [nutriente_key]: [fonte1, fonte2, ...] }
   const [linhasState, setLinhasState] = useState({});
+  // filtrosProduto: { [nutriente_key]: produtoId fixado pelo usuário }
+  const [filtrosProduto, setFiltrosProduto] = useState({});
   const ctxKeyCarregado = useRef(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -882,9 +965,13 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
       const novo = { ...prev };
       NUTRIENTES_CHAVE.forEach(n => {
         const sug = sugestoes[n.key];
-        const produtoId = sug !== undefined
-          ? sug.produtoId
-          : (rec?.[n.recKey] != null ? null : undefined);
+        // Se o usuário fixou um produto para este nutriente, usa ele
+        const produtoFixo = filtrosProduto[n.key] || null;
+        const produtoId = produtoFixo
+          ? produtoFixo
+          : sug !== undefined
+            ? sug.produtoId
+            : (rec?.[n.recKey] != null ? null : undefined);
         const doseRecManual = sug !== undefined ? (sug.doseManual || '') : (novo[n.key]?.[0]?.doseRecManual || '');
         if (novo[n.key]?.length > 0) {
           novo[n.key] = [{ ...novo[n.key][0], produtoId, doseRecManual }, ...novo[n.key].slice(1)];
@@ -1065,6 +1152,9 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
                   rec={rec}
                   analise={analise}
                   analise2040={analise2040obj}
+                  onFiltroProdutoId={NUTRIENTES_COM_FILTRO.has(n.key)
+                    ? (pid) => setFiltrosProduto(prev => ({ ...prev, [n.key]: pid }))
+                    : undefined}
                 />
               );
             })}
