@@ -135,7 +135,8 @@ const ORDEM_SUGESTAO_SIMBOLOS = ['N', 'K', 'P', 'Mg', 'B', 'Zn', 'Mn', 'Cu'];
  *     calcula a dose necessária e desconta o que esse produto repõe
  *     nos saldos de todos os outros nutrientes.
  *
- * Retorna: { [nutrienteKey]: produtoId | null }
+ * Retorna: { [nutrienteKey]: { produtoId, doseManual } }
+ * doseManual = saldo restante no momento da seleção (kg/ha de nutriente)
  */
 function sugerirProdutosInteligente(todos, rec) {
   if (!todos.length || !rec) return {};
@@ -147,7 +148,7 @@ function sugerirProdutosInteligente(todos, rec) {
     saldo[simbolo] = typeof v === 'number' && v > 0 ? v : 0;
   }
 
-  const sugestoes = {}; // nutrienteKey (ex: 'n_pct') -> produtoId | null
+  const sugestoes = {}; // nutrienteKey -> { produtoId, doseManual }
 
   // 2. Percorre na ordem de prioridade
   for (const simbolo of ORDEM_SUGESTAO_SIMBOLOS) {
@@ -155,7 +156,7 @@ function sugerirProdutosInteligente(todos, rec) {
 
     // Saldo zerado — já coberto por produto anterior
     if (saldo[simbolo] <= 0) {
-      sugestoes[nutKey] = null;
+      sugestoes[nutKey] = { produtoId: null, doseManual: '' };
       continue;
     }
 
@@ -196,11 +197,11 @@ function sugerirProdutosInteligente(todos, rec) {
     }
 
     if (!melhor) {
-      sugestoes[nutKey] = null;
+      sugestoes[nutKey] = { produtoId: null, doseManual: '' };
       continue;
     }
 
-    sugestoes[nutKey] = melhor.id;
+    sugestoes[nutKey] = { produtoId: melhor.id, doseManual: String(Math.round(saldoAtual * 10) / 10) };
 
     // Dose do produto (kg/ha) necessária para cobrir o saldo deste nutriente
     const pctPrincipalEscolhido = parseFloat(melhor[nutKey]) || 0;
@@ -769,12 +770,12 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
         });
       } else {
         // Usa sugestão inteligente se disponível, senão fallback para melhor produto simples
-        const produtoId = sugestoes[n.key] !== undefined
-          ? sugestoes[n.key]
-          : (melhorProduto(todos, n.key)?.id || null);
+        const sug = sugestoes[n.key];
+        const produtoId = sug !== undefined ? sug.produtoId : (melhorProduto(todos, n.key)?.id || null);
+        const doseRecManual = sug !== undefined ? (sug.doseManual || '') : '';
         novoState[n.key] = [{
           produtoId,
-          doseRecManual: '',
+          doseRecManual,
           numAplic: 1,
           pcts: [100],
           meses: [[]],
@@ -860,11 +861,13 @@ export default function AbaPlanejamento({ produtor, safra, talhoes, analises, an
     setLinhasState(prev => {
       const novo = { ...prev };
       NUTRIENTES_CHAVE.forEach(n => {
-        const produtoId = sugestoes[n.key] !== undefined
-          ? sugestoes[n.key]           // produto sugerido (cobre este nutriente)
-          : (rec?.[n.recKey] != null ? null : undefined); // sem recomendação: undefined; com rec mas sem produto cobrindo: null
+        const sug = sugestoes[n.key];
+        const produtoId = sug !== undefined
+          ? sug.produtoId
+          : (rec?.[n.recKey] != null ? null : undefined);
+        const doseRecManual = sug !== undefined ? (sug.doseManual || '') : (novo[n.key]?.[0]?.doseRecManual || '');
         if (novo[n.key]?.length > 0) {
-          novo[n.key] = [{ ...novo[n.key][0], produtoId }, ...novo[n.key].slice(1)];
+          novo[n.key] = [{ ...novo[n.key][0], produtoId, doseRecManual }, ...novo[n.key].slice(1)];
         }
       });
       return novo;
