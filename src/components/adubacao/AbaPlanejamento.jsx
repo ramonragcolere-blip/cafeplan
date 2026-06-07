@@ -172,10 +172,12 @@ function sugerirProdutosInteligente(todos, rec) {
       const pctPrincipal = parseFloat(prod[nutKey]) || 0;
       if (pctPrincipal === 0) continue; // produto não cobre o nutriente principal — descarta
 
-      // Conta quantos nutrientes com saldo > 0 este produto cobre
+      // Conta quantos nutrientes com saldo estritamente positivo este produto cobre.
+      // Só considera nutrientes da ordem de sugestão (exclui Ca, S que não são priorizados).
+      // Nutrientes já cobertos por produtos anteriores têm saldo = 0 e NÃO são pontuados.
       let score = 0;
-      for (const [outroSimbolo, outroKey] of Object.entries(SALDO_PARA_KEY)) {
-        if (saldo[outroSimbolo] > 0 && (parseFloat(prod[outroKey]) || 0) > 0) {
+      for (const s of ORDEM_SUGESTAO_SIMBOLOS) {
+        if (saldo[s] > 0 && (parseFloat(prod[SALDO_PARA_KEY[s]]) || 0) > 0) {
           score++;
         }
       }
