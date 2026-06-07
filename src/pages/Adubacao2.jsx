@@ -11,9 +11,10 @@ import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 import ImportarPDFAgrupado from '@/components/adubacao2/ImportarPDFAgrupado';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
+import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
-import { classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
+
 
 const PROTOCOLOS = ['Protocolo Ramon', '5ª Aproximação MG', 'Boletim 100 IAC', 'Personalizado'];
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
@@ -22,38 +23,6 @@ const ABAS = [
   { id: 'planejamento', label: 'Planejamento' },
   { id: 'compras',      label: 'Consolidação de Compras' },
 ];
-
-// Nutrientes da tabela de planejamento
-const COLS_PLAN = [
-  { key: 'N',  label: 'N',     tipo: 'dose' },
-  { key: 'P',  label: 'P₂O₅', tipo: 'dose' },
-  { key: 'K',  label: 'K₂O',  tipo: 'dose' },
-  { key: 'B',  label: 'B',    tipo: 'dose' },
-  { key: 'Mg', label: 'Mg',   tipo: 'dose' },
-  { key: 'Zn', label: 'Zn',   tipo: 'class' },
-  { key: 'Cu', label: 'Cu',   tipo: 'class' },
-  { key: 'Mn', label: 'Mn',   tipo: 'class' },
-  { key: 'Fe', label: 'Fe',   tipo: 'dose' },
-];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function calcMicros(analise) {
-  if (!analise) return {};
-  return {
-    Zn: analise.zinco != null ? classificarZn(analise.zinco) : null,
-    Cu: analise.cobre != null ? classificarCu(analise.cobre) : null,
-    Mn: analise.manganes != null ? classificarMn(analise.manganes) : null,
-  };
-}
-
-function corClassificacao(classe) {
-  if (!classe) return 'text-muted-foreground';
-  if (classe === 'Baixo') return 'text-red-600 font-semibold';
-  if (classe === 'Médio') return 'text-amber-600 font-semibold';
-  if (classe === 'Bom')   return 'text-blue-600 font-semibold';
-  return 'text-green-600 font-semibold';
-}
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 // PROBLEMA 4: "agrupada" só quando o usuário agrupou explicitamente.
@@ -128,107 +97,6 @@ function ImportarManual2040({ talhao, analise2040Existente, onSalvar, onClose })
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ── Aba Planejamento ──────────────────────────────────────────────────────────
-// PROBLEMA 2: colunas editáveis para todos os nutrientes + classificação micros
-function AbaPlanejamento2({ resultados, todos, dosesEditadas, onEditDose, onOpenDetalhe }) {
-  if (!resultados || resultados.length === 0) {
-    return (
-      <div className="text-center py-12 text-muted-foreground text-sm">
-        Clique em "Calcular recomendação para todos" na aba Análises para gerar o planejamento.
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/10">
-            <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide sticky left-0 bg-card z-10">Talhão</th>
-            <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Média sc/ha</th>
-            {COLS_PLAN.map(c => (
-              <th key={c.key} className="px-3 py-3 text-center font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">
-                {c.label}{c.tipo === 'dose' ? ' kg/ha' : ''}
-              </th>
-            ))}
-            <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto Sugerido</th>
-          </tr>
-        </thead>
-        <tbody>
-          {resultados.map((r, i) => {
-            const micros = calcMicros(r.analise);
-            const edits = dosesEditadas[r.talhao.id] || {};
-            return (
-              <tr key={r.talhao.id} className={`border-b border-border/50 last:border-0 hover:bg-muted/10 ${i%2===0?'':'bg-muted/5'}`}>
-                {/* PROBLEMA 3: nome clicável */}
-                <td className="px-3 py-2 sticky left-0 bg-card z-10">
-                  <button
-                    type="button"
-                    className="text-left font-medium text-primary hover:underline text-sm"
-                    onClick={() => onOpenDetalhe(r)}
-                  >
-                    {r.talhao.nome}
-                  </button>
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-xs">
-                  {r.mediaBienal != null ? r.mediaBienal.toFixed(1) : '—'}
-                </td>
-                {COLS_PLAN.map(c => {
-                  const recVal = r.rec?.[c.key];
-                  const editVal = edits[c.key];
-                  if (c.tipo === 'class') {
-                    const cls = micros[c.key];
-                    return (
-                      <td key={c.key} className="px-3 py-2">
-                        <div className="flex flex-col items-center gap-1">
-                          {cls && (
-                            <span className={`text-[10px] ${corClassificacao(cls.classe)}`}>
-                              {cls.classe}
-                            </span>
-                          )}
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={editVal ?? ''}
-                            onChange={e => onEditDose(r.talhao.id, c.key, e.target.value)}
-                            className="w-16 h-6 text-[10px] text-center border border-input rounded px-1 bg-background tabular-nums"
-                            placeholder="—"
-                          />
-                        </div>
-                      </td>
-                    );
-                  }
-                  // tipo === 'dose'
-                  return (
-                    <td key={c.key} className="px-3 py-2">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={editVal !== undefined ? editVal : (recVal ?? '')}
-                        onChange={e => onEditDose(r.talhao.id, c.key, e.target.value)}
-                        className="w-16 h-6 text-[10px] text-center border border-input rounded px-1 bg-background tabular-nums"
-                        placeholder="—"
-                      />
-                    </td>
-                  );
-                })}
-                <td className="px-3 py-2 text-xs">
-                  {r.produtoSugerido
-                    ? <span className="text-foreground font-medium">{r.produtoSugerido.nome}</span>
-                    : <span className="text-muted-foreground">—</span>
-                  }
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
   );
 }
 
@@ -496,14 +364,6 @@ export default function Adubacao2() {
       });
 
       setResultadosCalculo(resultados);
-      // Inicializa doses editadas com os valores calculados
-      const novasDoses = {};
-      resultados.forEach(r => {
-        if (!r.rec) return;
-        novasDoses[r.talhao.id] = {};
-        COLS_PLAN.forEach(c => { if (r.rec[c.key] != null) novasDoses[r.talhao.id][c.key] = r.rec[c.key]; });
-      });
-      setDosesEditadas(novasDoses);
       setCalculando(false);
       setAbaAtiva('planejamento');
     }, 100);
@@ -734,26 +594,14 @@ export default function Adubacao2() {
 
       {/* ── Aba: Planejamento ── */}
       {abaAtiva === 'planejamento' && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground italic">
-              {resultadosCalculo ? `${resultadosCalculo.filter(r=>r.rec).length} talhão(ões) com recomendação. Clique no nome para ver detalhes.` : 'Execute o cálculo na aba Análises'}
-            </p>
-            {produtor && (
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos||calculando} onClick={handleCalcularTodos}>
-                {calculando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
-                Recalcular
-              </Button>
-            )}
-          </div>
-          <AbaPlanejamento2
-            resultados={resultadosCalculo}
-            todos={todos}
-            dosesEditadas={dosesEditadas}
-            onEditDose={handleEditDose}
-            onOpenDetalhe={setModalDetalhe}
-          />
-        </div>
+        <AbaPlanejamento2
+          resultados={resultadosCalculo}
+          todos={todos}
+          calculando={calculando}
+          podeCacularTodos={podeCacularTodos}
+          onRecalcular={handleCalcularTodos}
+          onSalvar={() => {}}
+        />
       )}
 
       {/* ── Aba: Compras ── */}
