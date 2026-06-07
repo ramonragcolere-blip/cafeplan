@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,27 +10,55 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle } from 'lucide-react';
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 import ImportarPDFAgrupado from '@/components/adubacao2/ImportarPDFAgrupado';
+import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
+import { classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
 
-const PROTOCOLOS = [
-  'Protocolo Ramon',
-  '5ª Aproximação MG',
-  'Boletim 100 IAC',
-  'Personalizado',
-];
-
+const PROTOCOLOS = ['Protocolo Ramon', '5ª Aproximação MG', 'Boletim 100 IAC', 'Personalizado'];
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
-
 const ABAS = [
-  { id: 'analises',    label: 'Análises e Importação' },
+  { id: 'analises',     label: 'Análises e Importação' },
   { id: 'planejamento', label: 'Planejamento' },
-  { id: 'compras',     label: 'Consolidação de Compras' },
+  { id: 'compras',      label: 'Consolidação de Compras' },
 ];
+
+// Nutrientes da tabela de planejamento
+const COLS_PLAN = [
+  { key: 'N',  label: 'N',     tipo: 'dose' },
+  { key: 'P',  label: 'P₂O₅', tipo: 'dose' },
+  { key: 'K',  label: 'K₂O',  tipo: 'dose' },
+  { key: 'B',  label: 'B',    tipo: 'dose' },
+  { key: 'Mg', label: 'Mg',   tipo: 'dose' },
+  { key: 'Zn', label: 'Zn',   tipo: 'class' },
+  { key: 'Cu', label: 'Cu',   tipo: 'class' },
+  { key: 'Mn', label: 'Mn',   tipo: 'class' },
+  { key: 'Fe', label: 'Fe',   tipo: 'dose' },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function calcMicros(analise) {
+  if (!analise) return {};
+  return {
+    Zn: analise.zinco != null ? classificarZn(analise.zinco) : null,
+    Cu: analise.cobre != null ? classificarCu(analise.cobre) : null,
+    Mn: analise.manganes != null ? classificarMn(analise.manganes) : null,
+  };
+}
+
+function corClassificacao(classe) {
+  if (!classe) return 'text-muted-foreground';
+  if (classe === 'Baixo') return 'text-red-600 font-semibold';
+  if (classe === 'Médio') return 'text-amber-600 font-semibold';
+  if (classe === 'Bom')   return 'text-blue-600 font-semibold';
+  return 'text-green-600 font-semibold';
+}
 
 // ── Status badge ─────────────────────────────────────────────────────────────
-function getStatus(talhao, analises, agrupamentos) {
-  const ag = agrupamentos.find(g => g.talhaoIds.includes(talhao.id));
+// PROBLEMA 4: "agrupada" só quando o usuário agrupou explicitamente.
+function getStatus(talhao, analises, agrupamentosExplicitos) {
+  const ag = agrupamentosExplicitos.find(g => g.talhaoIds.includes(talhao.id));
   if (ag) return { tipo: 'agrupada', outros: ag.talhaoIds.filter(id => id !== talhao.id) };
   const temAnalise = analises.some(a => a.talhao_id === talhao.id);
   if (temAnalise) return { tipo: 'importada' };
@@ -38,19 +66,16 @@ function getStatus(talhao, analises, agrupamentos) {
 }
 
 function StatusBadge({ status, talhoes }) {
-  if (status.tipo === 'importada') {
-    return (
-      <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
-        <CheckCircle2 className="w-3.5 h-3.5" /> Importada
-      </span>
-    );
-  }
+  if (status.tipo === 'importada') return (
+    <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
+      <CheckCircle2 className="w-3.5 h-3.5" /> Importada
+    </span>
+  );
   if (status.tipo === 'agrupada') {
     const nomes = status.outros.map(id => talhoes.find(t => t.id === id)?.nome || id);
     return (
       <span className="flex items-center gap-1 text-xs text-blue-700 font-medium flex-wrap">
-        <Link2 className="w-3.5 h-3.5 shrink-0" />
-        Agrupada: {nomes.join(', ')}
+        <Link2 className="w-3.5 h-3.5 shrink-0" /> Agrupada: {nomes.join(', ')}
       </span>
     );
   }
@@ -61,49 +86,44 @@ function StatusBadge({ status, talhoes }) {
   );
 }
 
-// ── Modal importação 20-40 cm ─────────────────────────────────────────────────
+// ── Modal análise 20-40 cm ────────────────────────────────────────────────────
 const CAMPOS_2040 = [
-  { key: 'ph', label: 'pH' },
-  { key: 'potassio', label: 'K (mg/dm³)' },
-  { key: 'calcio', label: 'Ca (cmolc/dm³)' },
-  { key: 'magnesio', label: 'Mg (cmolc/dm³)' },
-  { key: 'aluminio', label: 'Al (cmolc/dm³)' },
-  { key: 'fosforo', label: 'P (mg/dm³)' },
-  { key: 'ctc', label: 'CTC' },
-  { key: 'saturacao_bases', label: 'V%' },
-  { key: 'data_analise', label: 'Data da Análise', date: true },
+  { key: 'ph',             label: 'pH' },
+  { key: 'potassio',       label: 'K (mg/dm³)' },
+  { key: 'calcio',         label: 'Ca (cmolc/dm³)' },
+  { key: 'magnesio',       label: 'Mg (cmolc/dm³)' },
+  { key: 'aluminio',       label: 'Al (cmolc/dm³)' },
+  { key: 'fosforo',        label: 'P (mg/dm³)' },
+  { key: 'ctc',            label: 'CTC' },
+  { key: 'saturacao_bases',label: 'V%' },
+  { key: 'data_analise',   label: 'Data da Análise', date: true },
 ];
 
-function ImportarManual2040({ talhao, safra, analise2040Existente, onSalvar, onClose }) {
+function ImportarManual2040({ talhao, analise2040Existente, onSalvar, onClose }) {
   const [dados, setDados] = useState(() => analise2040Existente || {});
   const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
-
   return (
     <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-sm">Análise 20-40 cm — {talhao.nome}</DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground">Apenas K é usado no cálculo de K solo. Os demais campos são opcionais para referência.</p>
+        <p className="text-xs text-muted-foreground">K é usado no cálculo. Os demais campos são opcionais.</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
           {CAMPOS_2040.map(c => (
             <div key={c.key}>
               <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
-              <Input
-                type={c.date ? 'date' : 'number'}
-                step={c.date ? undefined : '0.001'}
+              <Input type={c.date ? 'date' : 'number'} step={c.date ? undefined : '0.001'}
                 value={dados[c.key] ?? ''}
                 onChange={e => setDados(prev => ({ ...prev, [c.key]: c.date ? e.target.value : toNum(e.target.value) }))}
-                className="h-7 text-xs"
-              />
+                className="h-7 text-xs" />
             </div>
           ))}
         </div>
         <DialogFooter className="mt-4">
           <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
           <Button size="sm" onClick={() => onSalvar(dados)} className="gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            Salvar
+            <CheckCircle2 className="w-4 h-4" /> Salvar
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -112,7 +132,8 @@ function ImportarManual2040({ talhao, safra, analise2040Existente, onSalvar, onC
 }
 
 // ── Aba Planejamento ──────────────────────────────────────────────────────────
-function AbaPlanejamento2({ resultados, todos }) {
+// PROBLEMA 2: colunas editáveis para todos os nutrientes + classificação micros
+function AbaPlanejamento2({ resultados, todos, dosesEditadas, onEditDose, onOpenDetalhe }) {
   if (!resultados || resultados.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
@@ -126,35 +147,85 @@ function AbaPlanejamento2({ resultados, todos }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/10">
-            <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhão</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Média (sc/ha)</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">N (kg/ha)</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">P₂O₅ (kg/ha)</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">K₂O (kg/ha)</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">B (kg/ha)</th>
-            <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto Sugerido</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Dose Prod. (kg/ha)</th>
+            <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide sticky left-0 bg-card z-10">Talhão</th>
+            <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Média sc/ha</th>
+            {COLS_PLAN.map(c => (
+              <th key={c.key} className="px-3 py-3 text-center font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+                {c.label}{c.tipo === 'dose' ? ' kg/ha' : ''}
+              </th>
+            ))}
+            <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto Sugerido</th>
           </tr>
         </thead>
         <tbody>
-          {resultados.map((r, i) => (
-            <tr key={r.talhao.id} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
-              <td className="px-4 py-3 font-medium">{r.talhao.nome}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{r.mediaBienal != null ? r.mediaBienal.toFixed(1) : '—'}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{r.rec?.N ?? '—'}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{r.rec?.P ?? '—'}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{r.rec?.K ?? '—'}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{r.rec?.B ?? '—'}</td>
-              <td className="px-4 py-3 text-xs text-muted-foreground">
-                {r.produtoSugerido ? (
-                  <span className="text-foreground font-medium">{r.produtoSugerido.nome}</span>
-                ) : '—'}
-              </td>
-              <td className="px-4 py-3 text-right tabular-nums">
-                {r.doseProdutoHa != null ? r.doseProdutoHa : '—'}
-              </td>
-            </tr>
-          ))}
+          {resultados.map((r, i) => {
+            const micros = calcMicros(r.analise);
+            const edits = dosesEditadas[r.talhao.id] || {};
+            return (
+              <tr key={r.talhao.id} className={`border-b border-border/50 last:border-0 hover:bg-muted/10 ${i%2===0?'':'bg-muted/5'}`}>
+                {/* PROBLEMA 3: nome clicável */}
+                <td className="px-3 py-2 sticky left-0 bg-card z-10">
+                  <button
+                    type="button"
+                    className="text-left font-medium text-primary hover:underline text-sm"
+                    onClick={() => onOpenDetalhe(r)}
+                  >
+                    {r.talhao.nome}
+                  </button>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-xs">
+                  {r.mediaBienal != null ? r.mediaBienal.toFixed(1) : '—'}
+                </td>
+                {COLS_PLAN.map(c => {
+                  const recVal = r.rec?.[c.key];
+                  const editVal = edits[c.key];
+                  if (c.tipo === 'class') {
+                    const cls = micros[c.key];
+                    return (
+                      <td key={c.key} className="px-3 py-2">
+                        <div className="flex flex-col items-center gap-1">
+                          {cls && (
+                            <span className={`text-[10px] ${corClassificacao(cls.classe)}`}>
+                              {cls.classe}
+                            </span>
+                          )}
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            value={editVal ?? ''}
+                            onChange={e => onEditDose(r.talhao.id, c.key, e.target.value)}
+                            className="w-16 h-6 text-[10px] text-center border border-input rounded px-1 bg-background tabular-nums"
+                            placeholder="—"
+                          />
+                        </div>
+                      </td>
+                    );
+                  }
+                  // tipo === 'dose'
+                  return (
+                    <td key={c.key} className="px-3 py-2">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={editVal !== undefined ? editVal : (recVal ?? '')}
+                        onChange={e => onEditDose(r.talhao.id, c.key, e.target.value)}
+                        className="w-16 h-6 text-[10px] text-center border border-input rounded px-1 bg-background tabular-nums"
+                        placeholder="—"
+                      />
+                    </td>
+                  );
+                })}
+                <td className="px-3 py-2 text-xs">
+                  {r.produtoSugerido
+                    ? <span className="text-foreground font-medium">{r.produtoSugerido.nome}</span>
+                    : <span className="text-muted-foreground">—</span>
+                  }
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -162,7 +233,7 @@ function AbaPlanejamento2({ resultados, todos }) {
 }
 
 // ── Aba Consolidação de Compras ────────────────────────────────────────────────
-function AbaCompras2({ resultados }) {
+function AbaCompras2({ resultados, dosesEditadas }) {
   if (!resultados || resultados.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
@@ -171,41 +242,27 @@ function AbaCompras2({ resultados }) {
     );
   }
 
-  // Agrupa por produto
+  // Agrega por produto sugerido
   const mapa = {};
   resultados.forEach(r => {
     if (!r.produtoSugerido) return;
     const id = r.produtoSugerido.id;
     const area = r.talhao.area_ha || 0;
     const doseTotal = r.doseProdutoHa != null ? r.doseProdutoHa * area : 0;
-    const custoTotal = r.custoProdutoTotal || 0;
     const sacas = r.mediaBienal != null ? r.mediaBienal * area : 0;
-
-    if (!mapa[id]) {
-      mapa[id] = {
-        produto: r.produtoSugerido,
-        talhoes: [],
-        qtdTotal: 0,
-        custoTotal: 0,
-        areaTotal: 0,
-        sacasTotal: 0,
-      };
-    }
+    if (!mapa[id]) mapa[id] = { produto: r.produtoSugerido, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
     mapa[id].talhoes.push(r.talhao.nome);
     mapa[id].qtdTotal += doseTotal;
-    mapa[id].custoTotal += custoTotal;
     mapa[id].areaTotal += area;
     mapa[id].sacasTotal += sacas;
   });
 
   const linhas = Object.values(mapa);
-  if (linhas.length === 0) {
-    return (
-      <div className="text-center py-12 text-muted-foreground text-sm">
-        Nenhum produto com preço cadastrado para consolidar. Informe preços nos produtos.
-      </div>
-    );
-  }
+  if (linhas.length === 0) return (
+    <div className="text-center py-12 text-muted-foreground text-sm">
+      Nenhum produto sugerido para consolidar.
+    </div>
+  );
 
   return (
     <div className="overflow-x-auto">
@@ -213,34 +270,20 @@ function AbaCompras2({ resultados }) {
         <thead>
           <tr className="border-b border-border bg-muted/10">
             <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Produto</th>
-            <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhões que usam</th>
+            <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhões</th>
             <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Qtd total (kg)</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo total (R$)</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo/ha</th>
-            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Custo/saca</th>
+            <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Área total (ha)</th>
           </tr>
         </thead>
         <tbody>
-          {linhas.map((l, i) => {
-            const custoHa = l.areaTotal > 0 ? l.custoTotal / l.areaTotal : null;
-            const custoSaca = l.sacasTotal > 0 ? l.custoTotal / l.sacasTotal : null;
-            return (
-              <tr key={l.produto.id} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
-                <td className="px-4 py-3 font-medium">{l.produto.nome}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{l.talhoes.join(', ')}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{l.qtdTotal > 0 ? Math.round(l.qtdTotal).toLocaleString('pt-BR') : '—'}</td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {l.custoTotal > 0 ? l.custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {custoHa != null && l.custoTotal > 0 ? custoHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {custoSaca != null && l.custoTotal > 0 ? custoSaca.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
-                </td>
-              </tr>
-            );
-          })}
+          {linhas.map((l, i) => (
+            <tr key={l.produto.id} className={`border-b border-border/50 last:border-0 ${i%2===0?'':'bg-muted/5'}`}>
+              <td className="px-4 py-3 font-medium">{l.produto.nome}</td>
+              <td className="px-4 py-3 text-xs text-muted-foreground">{l.talhoes.join(', ')}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{l.qtdTotal > 0 ? Math.round(l.qtdTotal).toLocaleString('pt-BR') : '—'}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{l.areaTotal > 0 ? l.areaTotal.toFixed(1) : '—'}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -254,16 +297,17 @@ export default function Adubacao2() {
   const [safra, setSafra] = useState('2025/2026');
   const [protocolo, setProtocolo] = useState(PROTOCOLOS[0]);
   const [selecionados, setSelecionados] = useState([]);
-  const [agrupamentos, setAgrupamentos] = useState([]);
+  // PROBLEMA 4: agrupamentos só quando explícito
+  const [agrupamentosExplicitos, setAgrupamentosExplicitos] = useState([]);
   const [modalAgrupado, setModalAgrupado] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState('analises');
-  const [produtividade, setProdutividade] = useState({});
-  // { [talhaoId]: dados } para análise 20-40cm (local por enquanto)
-  const [analises2040Local, setAnalises2040Local] = useState({});
-  const [modal2040, setModal2040] = useState(null); // talhao ou null
-  // Resultados do cálculo para as abas Planejamento e Compras
   const [resultadosCalculo, setResultadosCalculo] = useState(null);
   const [calculando, setCalculando] = useState(false);
+  const [modal2040, setModal2040] = useState(null);
+  // PROBLEMA 2: doses editadas na tabela
+  const [dosesEditadas, setDosesEditadas] = useState({});
+  // PROBLEMA 3: modal detalhe
+  const [modalDetalhe, setModalDetalhe] = useState(null); // resultado do talhão
 
   // Queries
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
@@ -271,92 +315,160 @@ export default function Adubacao2() {
   const { data: todasAnalises = [] } = useQuery({ queryKey: ['analises_solo'], queryFn: () => base44.entities.AnaliseSolo.list() });
   const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
   const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples'], queryFn: () => base44.entities.FonteSimples.list() });
+  // PROBLEMA 1: dados persistidos
+  const { data: planejamentosDb = [] } = useQuery({
+    queryKey: ['planejamento_adubacao2'],
+    queryFn: () => base44.entities.PlanejamentoAdubacao2.list(),
+  });
 
   const produtor = produtores.find(p => p.id === produtorId) || null;
-
-  const talhoes = useMemo(() =>
-    todosTalhoes.filter(t => t.codigo_produtor === produtor?.codigo),
-    [todosTalhoes, produtor]
-  );
-
-  const analises = useMemo(() =>
-    todasAnalises.filter(a => a.safra === safra && talhoes.some(t => t.id === a.talhao_id)),
-    [todasAnalises, safra, talhoes]
-  );
-
+  const talhoes = useMemo(() => todosTalhoes.filter(t => t.codigo_produtor === produtor?.codigo), [todosTalhoes, produtor]);
+  const analises = useMemo(() => todasAnalises.filter(a => a.safra === safra && talhoes.some(t => t.id === a.talhao_id)), [todasAnalises, safra, talhoes]);
   const todos = useMemo(() => [
     ...fertilizantes.map(f => ({ ...f, _tipo: 'formulado' })),
     ...fontesSimples.map(f => ({ ...f, _tipo: 'fonte' })),
   ], [fertilizantes, fontesSimples]);
 
-  // Mutations para análise de solo
-  const createAnalise = useMutation({
-    mutationFn: d => base44.entities.AnaliseSolo.create(d),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo'] }),
-  });
-  const updateAnalise = useMutation({
-    mutationFn: ({ id, d }) => base44.entities.AnaliseSolo.update(id, d),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo'] }),
-  });
+  // Registros salvos para produtor+safra
+  const registrosSalvos = useMemo(() =>
+    planejamentosDb.filter(r => r.codigo_produtor === produtor?.codigo && r.safra === safra),
+    [planejamentosDb, produtor, safra]
+  );
+
+  // Mutations de PlanejamentoAdubacao2
+  const createPlan = useMutation({ mutationFn: d => base44.entities.PlanejamentoAdubacao2.create(d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] }) });
+  const updatePlan = useMutation({ mutationFn: ({ id, d }) => base44.entities.PlanejamentoAdubacao2.update(id, d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] }) });
+
+  // Mutations análise de solo
+  const createAnalise = useMutation({ mutationFn: d => base44.entities.AnaliseSolo.create(d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo'] }) });
+  const updateAnalise = useMutation({ mutationFn: ({ id, d }) => base44.entities.AnaliseSolo.update(id, d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo'] }) });
+
+  // PROBLEMA 1: produtividade lida do banco
+  // { [talhaoId]: { safra1, safra2 } }
+  const produtividade = useMemo(() => {
+    const map = {};
+    registrosSalvos.forEach(r => {
+      map[r.talhao_id] = { safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '', safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '' };
+    });
+    return map;
+  }, [registrosSalvos]);
+
+  // Análises 20-40 lidas do banco
+  const analises2040 = useMemo(() => {
+    const map = {};
+    registrosSalvos.forEach(r => { if (r.analise2040) map[r.talhao_id] = r.analise2040; });
+    return map;
+  }, [registrosSalvos]);
+
+  // Estado local para edição (antes de salvar)
+  const [produtividadeLocal, setProdutividadeLocal] = useState({});
+  const [analises2040Local, setAnalises2040Local] = useState({});
+
+  // Sincroniza estado local quando dados do banco chegam
+  useEffect(() => {
+    if (registrosSalvos.length > 0) {
+      const prodMap = {};
+      const a2040Map = {};
+      registrosSalvos.forEach(r => {
+        prodMap[r.talhao_id] = { safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '', safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '' };
+        if (r.analise2040) a2040Map[r.talhao_id] = r.analise2040;
+      });
+      setProdutividadeLocal(prev => ({ ...prodMap, ...prev }));
+      setAnalises2040Local(prev => ({ ...a2040Map, ...prev }));
+    }
+  }, [registrosSalvos.length]);
+
+  const setProd = useCallback((talhaoId, campo, valor) => {
+    setProdutividadeLocal(prev => ({ ...prev, [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor } }));
+  }, []);
+
+  // Salvar produtividade+analise2040 para um talhão
+  const salvarDadosTalhao = useCallback(async (talhaoObj, overrideData = {}) => {
+    if (!produtor) return;
+    const locProd = produtividadeLocal[talhaoObj.id] || {};
+    const loc2040 = analises2040Local[talhaoObj.id] || null;
+    const existente = registrosSalvos.find(r => r.talhao_id === talhaoObj.id);
+    const payload = {
+      codigo_produtor: produtor.codigo,
+      safra,
+      talhao_id: talhaoObj.id,
+      talhao_nome: talhaoObj.nome,
+      safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
+      safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
+      analise2040: loc2040 || null,
+      ...overrideData,
+    };
+    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
+    else await createPlan.mutateAsync(payload);
+  }, [produtor, safra, produtividadeLocal, analises2040Local, registrosSalvos]);
 
   const handleImportarAnalise = async (talhao, dados) => {
     const existente = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
-    const payload = {
-      codigo_produtor: produtor.codigo,
-      talhao_id: talhao.id,
-      talhao_nome: talhao.nome,
-      safra,
-      ...dados,
-    };
-    if (existente) {
-      await updateAnalise.mutateAsync({ id: existente.id, d: payload });
-    } else {
-      await createAnalise.mutateAsync(payload);
-    }
+    const payload = { codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra, ...dados };
+    if (existente) await updateAnalise.mutateAsync({ id: existente.id, d: payload });
+    else await createAnalise.mutateAsync(payload);
   };
 
-  const handleImportarAgrupado = async (dados, talhao) => {
-    await handleImportarAnalise(talhao, dados);
-  };
+  const handleImportarAgrupado = async (dados, talhao) => handleImportarAnalise(talhao, dados);
 
   const handleFecharModalAgrupado = () => {
-    setAgrupamentos(prev => {
-      const filtered = prev.filter(g => !g.talhaoIds.some(id => selecionados.includes(id)));
-      return selecionados.length > 1 ? [...filtered, { talhaoIds: [...selecionados] }] : filtered;
-    });
+    // Só registra agrupamento explícito se o usuário usou "Importar para selecionados" com >1 talhão
+    if (selecionados.length > 1) {
+      setAgrupamentosExplicitos(prev => {
+        const filtered = prev.filter(g => !g.talhaoIds.some(id => selecionados.includes(id)));
+        return [...filtered, { talhaoIds: [...selecionados] }];
+      });
+    }
     setSelecionados([]);
     setModalAgrupado(false);
   };
 
-  const toggleSelecao = (id) => {
-    setSelecionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const toggleTodos = () => {
-    setSelecionados(prev => prev.length === talhoes.length ? [] : talhoes.map(t => t.id));
-  };
-
-  const setProd = useCallback((talhaoId, campo, valor) => {
-    setProdutividade(prev => ({
-      ...prev,
-      [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor },
-    }));
-  }, []);
-
-  // Análise 20-40: salva local
-  const handleSalvar2040 = (talhao, dados) => {
+  const handleSalvar2040 = async (talhao, dados) => {
     setAnalises2040Local(prev => ({ ...prev, [talhao.id]: dados }));
+    // Persiste imediatamente
+    const existente = registrosSalvos.find(r => r.talhao_id === talhao.id);
+    const locProd = produtividadeLocal[talhao.id] || {};
+    const payload = {
+      codigo_produtor: produtor.codigo,
+      safra,
+      talhao_id: talhao.id,
+      talhao_nome: talhao.nome,
+      safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
+      safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
+      analise2040: dados,
+    };
+    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
+    else await createPlan.mutateAsync(payload);
     setModal2040(null);
   };
 
-  // Cálculo central — Protocolo Ramon
+  // Salva produtividade ao sair do campo (onBlur)
+  const handleBlurProd = useCallback(async (talhao) => {
+    if (!produtor) return;
+    const locProd = produtividadeLocal[talhao.id] || {};
+    const existente = registrosSalvos.find(r => r.talhao_id === talhao.id);
+    const loc2040 = analises2040Local[talhao.id] || null;
+    const payload = {
+      codigo_produtor: produtor.codigo,
+      safra,
+      talhao_id: talhao.id,
+      talhao_nome: talhao.nome,
+      safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
+      safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
+      analise2040: loc2040 || null,
+    };
+    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
+    else await createPlan.mutateAsync(payload);
+  }, [produtor, safra, produtividadeLocal, analises2040Local, registrosSalvos]);
+
+  // Cálculo central
   const handleCalcularTodos = useCallback(() => {
     setCalculando(true);
     setTimeout(() => {
       const resultados = talhoes.map(talhao => {
-        const s1 = parseFloat(produtividade[talhao.id]?.safra1);
-        const s2 = parseFloat(produtividade[talhao.id]?.safra2);
-
+        const locProd = produtividadeLocal[talhao.id] || {};
+        const s1 = parseFloat(locProd.safra1);
+        const s2 = parseFloat(locProd.safra2);
         let mediaBienal = null;
         if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
         else if (!isNaN(s1)) mediaBienal = s1;
@@ -364,62 +476,104 @@ export default function Adubacao2() {
 
         const analise = analises.find(a => a.talhao_id === talhao.id) || null;
         const analise2040 = analises2040Local[talhao.id] || null;
+        const rec = mediaBienal != null && analise ? calcRecomendacaoRamon(mediaBienal, analise, analise2040) : null;
 
-        const rec = mediaBienal != null && analise
-          ? calcRecomendacaoRamon(mediaBienal, analise, analise2040)
-          : null;
-
-        // Sugestão de produto principal (N é o mais importante)
         let produtoSugerido = null;
         let doseProdutoHa = null;
-        let custoProdutoTotal = null;
-
         if (rec && todos.length > 0) {
-          // Tenta encontrar produto com N (principal para cálculo de custo)
-          const recParaSugestao = { N: rec.N, P: rec.P, K: rec.K, B: rec.B };
-          const sugestoes = sugerirProdutosInteligente(todos, recParaSugestao);
+          const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
           const sugN = sugestoes['n_pct'];
           if (sugN?.produtoId) {
             const prod = todos.find(p => p.id === sugN.produtoId);
             if (prod) {
               produtoSugerido = prod;
               const pctN = parseFloat(prod.n_pct) || 0;
-              if (pctN > 0 && rec.N != null) {
-                doseProdutoHa = Math.round((rec.N / (pctN / 100)) * 10) / 10;
-                const area = talhao.area_ha || 0;
-                // preço: tenta pegar do produto (sem preço cadastrado aqui, deixa null)
-                custoProdutoTotal = null;
-              }
+              if (pctN > 0 && rec.N != null) doseProdutoHa = Math.round((rec.N / (pctN / 100)) * 10) / 10;
             }
           }
         }
-
-        return { talhao, mediaBienal, analise, analise2040, rec, produtoSugerido, doseProdutoHa, custoProdutoTotal };
+        return { talhao, mediaBienal, analise, analise2040, rec, produtoSugerido, doseProdutoHa };
       });
 
       setResultadosCalculo(resultados);
+      // Inicializa doses editadas com os valores calculados
+      const novasDoses = {};
+      resultados.forEach(r => {
+        if (!r.rec) return;
+        novasDoses[r.talhao.id] = {};
+        COLS_PLAN.forEach(c => { if (r.rec[c.key] != null) novasDoses[r.talhao.id][c.key] = r.rec[c.key]; });
+      });
+      setDosesEditadas(novasDoses);
       setCalculando(false);
       setAbaAtiva('planejamento');
     }, 100);
-  }, [talhoes, produtividade, analises, analises2040Local, todos]);
+  }, [talhoes, produtividadeLocal, analises, analises2040Local, todos]);
+
+  // PROBLEMA 2: editar dose na tabela
+  const handleEditDose = useCallback((talhaoId, nutKey, valor) => {
+    setDosesEditadas(prev => ({
+      ...prev,
+      [talhaoId]: { ...(prev[talhaoId] || {}), [nutKey]: valor },
+    }));
+  }, []);
+
+  // PROBLEMA 3: salvar detalhamento
+  const handleSaveDetalhe = useCallback(async (resultadoTalhao, estadoDetalhe) => {
+    const talhao = resultadoTalhao.talhao;
+    const existente = registrosSalvos.find(r => r.talhao_id === talhao.id);
+    const locProd = produtividadeLocal[talhao.id] || {};
+    const loc2040 = analises2040Local[talhao.id] || null;
+    const payload = {
+      codigo_produtor: produtor.codigo,
+      safra,
+      talhao_id: talhao.id,
+      talhao_nome: talhao.nome,
+      safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
+      safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
+      analise2040: loc2040 || null,
+      doses_editadas: dosesEditadas[talhao.id] || {},
+      detalhamento: estadoDetalhe,
+    };
+    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
+    else await createPlan.mutateAsync(payload);
+  }, [produtor, safra, produtividadeLocal, analises2040Local, dosesEditadas, registrosSalvos]);
 
   const podeCacularTodos = analises.length > 0 || talhoes.some(t =>
-    !isNaN(parseFloat(produtividade[t.id]?.safra1)) || !isNaN(parseFloat(produtividade[t.id]?.safra2))
+    !isNaN(parseFloat(produtividadeLocal[t.id]?.safra1)) || !isNaN(parseFloat(produtividadeLocal[t.id]?.safra2))
   );
 
+  // Ao trocar produtor/safra, limpa resultados
+  const handleChangeProdutorSafra = useCallback((field, value) => {
+    if (field === 'produtor') {
+      setProdutorId(value === 'none' ? '' : value);
+      setSelecionados([]);
+      setAgrupamentosExplicitos([]);
+      setResultadosCalculo(null);
+      setDosesEditadas({});
+      setProdutividadeLocal({});
+      setAnalises2040Local({});
+    } else {
+      setSafra(value);
+      setResultadosCalculo(null);
+      setDosesEditadas({});
+      setProdutividadeLocal({});
+      setAnalises2040Local({});
+    }
+  }, []);
+
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Adubação 2.0</h1>
         <p className="text-sm text-muted-foreground mt-1">Gestão integrada de análises de solo e recomendação nutricional</p>
       </div>
 
-      {/* Cabeçalho de seleção */}
+      {/* Cabeçalho */}
       <div className="bg-card border border-border rounded-2xl p-5">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <Label className="text-xs mb-1 block">Produtor</Label>
-            <Select value={produtorId || 'none'} onValueChange={v => { setProdutorId(v === 'none' ? '' : v); setSelecionados([]); setAgrupamentos([]); setResultadosCalculo(null); }}>
+            <Select value={produtorId || 'none'} onValueChange={v => handleChangeProdutorSafra('produtor', v)}>
               <SelectTrigger><SelectValue placeholder="Selecione o produtor…" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Selecione…</SelectItem>
@@ -429,7 +583,7 @@ export default function Adubacao2() {
           </div>
           <div>
             <Label className="text-xs mb-1 block">Safra</Label>
-            <Select value={safra} onValueChange={setSafra}>
+            <Select value={safra} onValueChange={v => handleChangeProdutorSafra('safra', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {SAFRAS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -437,7 +591,7 @@ export default function Adubacao2() {
             </Select>
           </div>
           <div>
-            <Label className="text-xs mb-1 block">Protocolo de adubação</Label>
+            <Label className="text-xs mb-1 block">Protocolo</Label>
             <Select value={protocolo} onValueChange={setProtocolo}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -448,7 +602,7 @@ export default function Adubacao2() {
         </div>
         {protocolo && (
           <p className="mt-3 text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2">
-            Protocolo selecionado: <strong>{protocolo}</strong> — válido para toda a fazenda
+            Protocolo: <strong>{protocolo}</strong> — válido para toda a fazenda
           </p>
         )}
       </div>
@@ -456,15 +610,8 @@ export default function Adubacao2() {
       {/* Abas */}
       <div className="flex gap-0 border-b border-border">
         {ABAS.map(aba => (
-          <button
-            key={aba.id}
-            onClick={() => setAbaAtiva(aba.id)}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              abaAtiva === aba.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
+          <button key={aba.id} onClick={() => setAbaAtiva(aba.id)}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${abaAtiva===aba.id?'border-primary text-primary':'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {aba.label}
             {aba.id !== 'analises' && resultadosCalculo && (
               <span className="ml-1.5 text-xs bg-primary/10 text-primary rounded-full px-1.5 py-0.5">
@@ -475,7 +622,7 @@ export default function Adubacao2() {
         ))}
       </div>
 
-      {/* ── Aba: Análises e Importação ── */}
+      {/* ── Aba: Análises ── */}
       {abaAtiva === 'analises' && !produtor && (
         <div className="text-center py-16 text-muted-foreground">
           <Sprout className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -485,147 +632,94 @@ export default function Adubacao2() {
 
       {abaAtiva === 'analises' && produtor && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          {/* Barra de ações */}
           <div className="flex flex-wrap items-center gap-2 px-5 py-4 border-b border-border bg-muted/20">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              disabled={selecionados.length === 0}
-              onClick={() => setModalAgrupado(true)}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Importar análise para selecionados ({selecionados.length})
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={selecionados.length === 0} onClick={() => setModalAgrupado(true)}>
+              <Upload className="w-3.5 h-3.5" /> Importar para selecionados ({selecionados.length})
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado(true); }}
-            >
-              <FileUp className="w-3.5 h-3.5" />
-              Importar todas de uma vez
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+              onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado(true); }}>
+              <FileUp className="w-3.5 h-3.5" /> Importar todas de uma vez
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
+            <Button variant="outline" size="sm"
               className={`gap-1.5 text-xs ml-auto ${protocolo !== 'Protocolo Ramon' ? 'opacity-50' : ''}`}
-              disabled={!podeCacularTodos || calculando}
-              onClick={handleCalcularTodos}
-            >
+              disabled={!podeCacularTodos || calculando} onClick={handleCalcularTodos}>
               {calculando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
               Calcular recomendação para todos
             </Button>
           </div>
-
           {protocolo !== 'Protocolo Ramon' && (
             <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              O cálculo automático está disponível apenas para o Protocolo Ramon. Selecione-o acima.
+              O cálculo automático está disponível apenas para o Protocolo Ramon.
             </div>
           )}
 
-          {/* Tabela */}
           {talhoes.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground text-sm">
-              Nenhum talhão cadastrado para este produtor.
-            </div>
+            <div className="text-center py-12 text-muted-foreground text-sm">Nenhum talhão cadastrado.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/10">
-                    <th className="px-3 py-3 text-left w-10">
-                      <Checkbox
-                        checked={selecionados.length === talhoes.length && talhoes.length > 0}
-                        onCheckedChange={toggleTodos}
-                      />
+                    <th className="px-3 py-3 w-10">
+                      <Checkbox checked={selecionados.length === talhoes.length && talhoes.length > 0}
+                        onCheckedChange={() => setSelecionados(prev => prev.length === talhoes.length ? [] : talhoes.map(t => t.id))} />
                     </th>
-                    <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Talhão</th>
-                    <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Área (ha)</th>
-                    <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Nº plantas</th>
-                    <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Safra 1 (sc/ha)</th>
-                    <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Safra 2 (sc/ha)</th>
-                    <th className="px-3 py-3 text-right font-semibold text-xs text-muted-foreground uppercase tracking-wide">Média biênio</th>
-                    <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Análise Solo (0-20)</th>
-                    <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Análise 20-40 cm</th>
-                    <th className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide">Status</th>
+                    {['Talhão','Área (ha)','Nº plantas','Safra 1 (sc/ha)','Safra 2 (sc/ha)','Média','Análise 0-20','Análise 20-40','Status'].map(h => (
+                      <th key={h} className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {talhoes.map((talhao, i) => {
-                    const status = getStatus(talhao, analises, agrupamentos);
+                    const status = getStatus(talhao, analises, agrupamentosExplicitos);
                     const sel = selecionados.includes(talhao.id);
-                    const s1 = parseFloat(produtividade[talhao.id]?.safra1);
-                    const s2 = parseFloat(produtividade[talhao.id]?.safra2);
+                    const locProd = produtividadeLocal[talhao.id] || {};
+                    const s1 = parseFloat(locProd.safra1);
+                    const s2 = parseFloat(locProd.safra2);
                     let media = null;
                     if (!isNaN(s1) && !isNaN(s2)) media = (s1 + s2) / 2;
                     else if (!isNaN(s1)) media = s1;
                     else if (!isNaN(s2)) media = s2;
-
                     const tem2040 = !!analises2040Local[talhao.id];
 
                     return (
-                      <tr
-                        key={talhao.id}
-                        className={`border-b border-border/50 last:border-0 transition-colors ${sel ? 'bg-primary/5' : i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10'}`}
-                      >
-                        <td className="px-3 py-3">
-                          <Checkbox checked={sel} onCheckedChange={() => toggleSelecao(talhao.id)} />
+                      <tr key={talhao.id} className={`border-b border-border/50 last:border-0 transition-colors ${sel ? 'bg-primary/5' : i%2===0?'':'bg-muted/10'}`}>
+                        <td className="px-3 py-2">
+                          <Checkbox checked={sel} onCheckedChange={() => setSelecionados(prev => prev.includes(talhao.id) ? prev.filter(x=>x!==talhao.id) : [...prev, talhao.id])} />
                         </td>
-                        <td className="px-3 py-3 font-medium">{talhao.nome}</td>
-                        <td className="px-3 py-3 text-right tabular-nums">{talhao.area_ha ?? '—'}</td>
-                        <td className="px-3 py-3 text-right tabular-nums">{talhao.num_plantas?.toLocaleString() ?? '—'}</td>
-                        <td className="px-3 py-3 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={produtividade[talhao.id]?.safra1 ?? ''}
+                        <td className="px-3 py-2 font-medium whitespace-nowrap">{talhao.nome}</td>
+                        <td className="px-3 py-2 tabular-nums">{talhao.area_ha ?? '—'}</td>
+                        <td className="px-3 py-2 tabular-nums">{talhao.num_plantas?.toLocaleString() ?? '—'}</td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" step="0.1"
+                            value={locProd.safra1 ?? ''}
                             onChange={e => setProd(talhao.id, 'safra1', e.target.value)}
+                            onBlur={() => handleBlurProd(talhao)}
                             className="w-20 h-7 text-xs text-right border border-input rounded px-2 bg-background tabular-nums"
-                            placeholder="—"
-                          />
+                            placeholder="—" />
                         </td>
-                        <td className="px-3 py-3 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={produtividade[talhao.id]?.safra2 ?? ''}
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" step="0.1"
+                            value={locProd.safra2 ?? ''}
                             onChange={e => setProd(talhao.id, 'safra2', e.target.value)}
+                            onBlur={() => handleBlurProd(talhao)}
                             className="w-20 h-7 text-xs text-right border border-input rounded px-2 bg-background tabular-nums"
-                            placeholder="—"
-                          />
+                            placeholder="—" />
                         </td>
-                        <td className="px-3 py-3 text-right tabular-nums font-bold text-sm">
-                          {media != null ? media.toFixed(1) : '—'}
+                        <td className="px-3 py-2 tabular-nums font-bold text-sm">{media != null ? media.toFixed(1) : '—'}</td>
+                        <td className="px-3 py-2">
+                          <ImportarPDFTalhao talhao={talhao} safra={safra} analises={analises} analises2040={[]}
+                            onImportarAnalise={handleImportarAnalise} onImportarAnalise2040={() => {}} talhoes={talhoes} />
                         </td>
-                        <td className="px-3 py-3">
-                          <ImportarPDFTalhao
-                            talhao={talhao}
-                            safra={safra}
-                            analises={analises}
-                            analises2040={[]}
-                            onImportarAnalise={handleImportarAnalise}
-                            onImportarAnalise2040={() => {}}
-                            talhoes={talhoes}
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <button
-                            onClick={() => setModal2040(talhao)}
-                            className={`flex items-center gap-1 text-xs rounded px-2 py-1 border transition-colors ${
-                              tem2040
-                                ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
-                                : 'border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground hover:text-foreground'
-                            }`}
-                          >
+                        <td className="px-3 py-2">
+                          <button onClick={() => setModal2040(talhao)}
+                            className={`flex items-center gap-1 text-xs rounded px-2 py-1 border transition-colors ${tem2040?'border-green-300 bg-green-50 text-green-700 hover:bg-green-100':'border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground hover:text-foreground'}`}>
                             {tem2040 ? <CheckCircle2 className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
                             {tem2040 ? 'Importada' : 'Opcional'}
                           </button>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2">
                           <StatusBadge status={status} talhoes={talhoes} />
                         </td>
                       </tr>
@@ -641,59 +735,72 @@ export default function Adubacao2() {
       {/* ── Aba: Planejamento ── */}
       {abaAtiva === 'planejamento' && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-border bg-muted/20 flex items-center justify-between">
+          <div className="px-5 py-4 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground italic">
-              {resultadosCalculo ? `${resultadosCalculo.filter(r => r.rec).length} talhão(ões) com recomendação calculada` : 'Execute o cálculo na aba Análises'}
+              {resultadosCalculo ? `${resultadosCalculo.filter(r=>r.rec).length} talhão(ões) com recomendação. Clique no nome para ver detalhes.` : 'Execute o cálculo na aba Análises'}
             </p>
             {produtor && (
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={handleCalcularTodos}>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos||calculando} onClick={handleCalcularTodos}>
                 {calculando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
                 Recalcular
               </Button>
             )}
           </div>
-          <AbaPlanejamento2 resultados={resultadosCalculo} todos={todos} />
+          <AbaPlanejamento2
+            resultados={resultadosCalculo}
+            todos={todos}
+            dosesEditadas={dosesEditadas}
+            onEditDose={handleEditDose}
+            onOpenDetalhe={setModalDetalhe}
+          />
         </div>
       )}
 
-      {/* ── Aba: Consolidação de Compras ── */}
+      {/* ── Aba: Compras ── */}
       {abaAtiva === 'compras' && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-border bg-muted/20 flex items-center justify-between">
+          <div className="px-5 py-4 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground italic">
               {resultadosCalculo ? 'Consolidação por produto' : 'Execute o cálculo na aba Análises'}
             </p>
             {produtor && (
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={handleCalcularTodos}>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos||calculando} onClick={handleCalcularTodos}>
                 {calculando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
                 Recalcular
               </Button>
             )}
           </div>
-          <AbaCompras2 resultados={resultadosCalculo} />
+          <AbaCompras2 resultados={resultadosCalculo} dosesEditadas={dosesEditadas} />
         </div>
       )}
 
-      {/* Modal importação agrupada */}
+      {/* Modal agrupado */}
       {modalAgrupado && (
         <ImportarPDFAgrupado
           talhoes={talhoes.filter(t => selecionados.includes(t.id))}
-          safra={safra}
-          analises={analises}
-          analises2040={[]}
+          safra={safra} analises={analises} analises2040={[]}
           onImportarAnalise={handleImportarAgrupado}
           onClose={handleFecharModalAgrupado}
         />
       )}
 
-      {/* Modal análise 20-40 cm */}
+      {/* Modal 20-40 cm */}
       {modal2040 && (
         <ImportarManual2040
-          talhao={modal2040}
-          safra={safra}
-          analise2040Existente={analises2040Local[modal2040.id] || null}
+          talhao={modal2040} analise2040Existente={analises2040Local[modal2040.id] || null}
           onSalvar={(dados) => handleSalvar2040(modal2040, dados)}
           onClose={() => setModal2040(null)}
+        />
+      )}
+
+      {/* PROBLEMA 3: Modal detalhe talhão */}
+      {modalDetalhe && (
+        <ModalDetalheTalhao
+          resultado={modalDetalhe}
+          todos={todos}
+          detalhamento={registrosSalvos.find(r => r.talhao_id === modalDetalhe.talhao.id)?.detalhamento || null}
+          onSave={(estadoDetalhe) => handleSaveDetalhe(modalDetalhe, estadoDetalhe)}
+          onClose={() => setModalDetalhe(null)}
         />
       )}
     </div>

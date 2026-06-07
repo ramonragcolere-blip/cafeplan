@@ -1,0 +1,43 @@
+{
+  "name": "PlanejamentoAdubacao2",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "talhao_id": {
+      "type": "string"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "safra1_sc_ha": {
+      "type": "number",
+      "description": "Produtividade safra 1 (sc/ha)"
+    },
+    "safra2_sc_ha": {
+      "type": "number",
+      "description": "Produtividade safra 2 (sc/ha)"
+    },
+    "analise2040": {
+      "type": "object",
+      "description": "Dados da an\u00e1lise 20-40cm"
+    },
+    "doses_editadas": {
+      "type": "object",
+      "description": "Doses editadas manualmente pelo usu\u00e1rio { N, P, K, B, Zn, Cu, Mn, Fe, Mg }"
+    },
+    "detalhamento": {
+      "type": "object",
+      "description": "Detalhamento por nutriente: produto, parcelamento, meses, pre\u00e7o"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id"
+  ]
+}
