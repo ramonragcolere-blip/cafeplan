@@ -1,5 +1,5 @@
 const ORDEM = ['N', 'K', 'P', 'B', 'Zn', 'Mn', 'Cu'];
-const TOXICOS = new Set(['B', 'Zn', 'Mn', 'Cu']);
+const TOXICOS = new Set(['K', 'B', 'Zn', 'Mn', 'Cu']);
 const NUT_KEY = {
   N: 'n_pct', K: 'k2o_pct', P: 'p2o5_pct', B: 'b_pct',
   Zn: 'zn_pct', Mn: 'mn_pct', Cu: 'cu_pct', Mg: 'mg_pct'
@@ -25,10 +25,12 @@ export function sugerirProdutosInteligente(todos, rec) {
       if (pct === 0) continue;
       const dose = saldo[simbolo] / (pct / 100);
       let score = 0;
+      const PESOS = { N: 3, K: 3, P: 3, B: 1, Zn: 1, Mn: 1, Cu: 1, Mg: 1 };
       for (const [s2, k2] of Object.entries(NUT_KEY)) {
         const temNut = (parseFloat(prod[k2]) || 0) > 0;
+        const peso = PESOS[s2] || 1;
         if (!temNut) continue;
-        score += saldo[s2] > 0 ? 1 : -2;
+        score += saldo[s2] > 0 ? peso : -2;
       }
       let toxico = false;
       for (const tox of TOXICOS) {
