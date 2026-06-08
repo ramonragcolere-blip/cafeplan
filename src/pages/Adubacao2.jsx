@@ -236,33 +236,83 @@ export default function Adubacao2() {
 
   // Sincroniza estado local quando dados do banco chegam
   useEffect(() => {
-    if (registrosSalvos.length > 0) {
-      const prodMap = {};
-      const a2040Map = {};
-      // Agrega preços e parcelamentos de todos os registros salvos
-      let precosAgg = {};
-      let parcelamentosAgg = {};
-      registrosSalvos.forEach(r => {
-        prodMap[r.talhao_id] = { safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '', safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '' };
-        if (r.analise2040) a2040Map[r.talhao_id] = r.analise2040;
-        if (r.detalhamento?.precos) precosAgg = { ...precosAgg, ...r.detalhamento.precos };
-        if (r.detalhamento?.parcelamentos && Object.keys(r.detalhamento.parcelamentos).length > 0) {
-          parcelamentosAgg[r.talhao_id] = r.detalhamento.parcelamentos;
-        }
-      });
-      setProdutividadeLocal(prev => ({ ...prodMap, ...prev }));
-      setAnalises2040Local(prev => ({ ...a2040Map, ...prev }));
-      // Restaura preços e parcelamentos salvos (só se ainda não foram editados)
-      if (Object.keys(precosAgg).length > 0) {
-        setPrecosExterno(prev => Object.keys(prev).length === 0 ? precosAgg : prev);
-        if (Object.keys(precosRef.current).length === 0) precosRef.current = precosAgg;
+    if (registrosSalvos.length === 0 || talhoes.length === 0) return;
+
+    const prodMap = {};
+    const a2040Map = {};
+    let precosAgg = {};
+    let parcelamentosAgg = {};
+
+    registrosSalvos.forEach(r => {
+      prodMap[r.talhao_id] = {
+        safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '',
+        safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '',
+      };
+      if (r.analise2040) a2040Map[r.talhao_id] = r.analise2040;
+      if (r.detalhamento?.precos) precosAgg = { ...precosAgg, ...r.detalhamento.precos };
+      if (r.detalhamento?.parcelamentos && Object.keys(r.detalhamento.parcelamentos).length > 0) {
+        parcelamentosAgg[r.talhao_id] = r.detalhamento.parcelamentos;
       }
-      if (Object.keys(parcelamentosAgg).length > 0) {
-        setParcelamentosExterno(prev => Object.keys(prev).length === 0 ? parcelamentosAgg : prev);
-        if (Object.keys(parcelamentosRef.current).length === 0) parcelamentosRef.current = parcelamentosAgg;
-      }
+    });
+
+    setProdutividadeLocal(prodMap);
+    setAnalises2040Local(a2040Map);
+
+    if (Object.keys(precosAgg).length > 0) {
+      setPrecosExterno(precosAgg);
+      precosRef.current = precosAgg;
     }
-  }, [registrosSalvos.length]);
+    if (Object.keys(parcelamentosAgg).length > 0) {
+      setParcelamentosExterno(parcelamentosAgg);
+      parcelamentosRef.current = parcelamentosAgg;
+    }
+
+    // Reconstrói resultadosCalculo a partir dos dados salvos
+    const resultadosRestaurados = talhoes.map(talhao => {
+      const registro = registrosSalvos.find(r => r.talhao_id === talhao.id);
+      if (!registro?.detalhamento?.rec) {
+        const locProd = prodMap[talhao.id] || {};
+        const s1 = parseFloat(locProd.safra1);
+        const s2 = parseFloat(locProd.safra2);
+        let mediaBienal = null;
+        if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
+        else if (!isNaN(s1)) mediaBienal = s1;
+        else if (!isNaN(s2)) mediaBienal = s2;
+        const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
+        return { talhao, mediaBienal, analise, analise2040: a2040Map[talhao.id] || null, rec: null, produtoSugerido: null, doseProdutoHa: null };
+      }
+      const det = registro.detalhamento;
+      const locProd = prodMap[talhao.id] || {};
+      const s1 = parseFloat(locProd.safra1);
+      const s2 = parseFloat(locProd.safra2);
+      let mediaBienal = det.mediaBienal ?? null;
+      if (mediaBienal == null) {
+        if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
+        else if (!isNaN(s1)) mediaBienal = s1;
+        else if (!isNaN(s2)) mediaBienal = s2;
+      }
+      // produtoSugerido: tenta encontrar na lista de todos pelo id salvo
+      let produtoSugerido = null;
+      if (det.produtoSugerido?.id) {
+        produtoSugerido = todos.find(p => p.id === det.produtoSugerido.id) || { id: det.produtoSugerido.id, nome: det.produtoSugerido.nome };
+      }
+      const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
+      return {
+        talhao,
+        mediaBienal,
+        analise,
+        analise2040: a2040Map[talhao.id] || null,
+        rec: det.rec || null,
+        produtoSugerido,
+        doseProdutoHa: det.doseProdutoHa ?? null,
+      };
+    });
+
+    // Só restaura se houver ao menos um resultado com rec salvo e ainda não há resultados
+    if (resultadosRestaurados.some(r => r.rec != null)) {
+      setResultadosCalculo(resultadosRestaurados);
+    }
+  }, [registrosSalvos.length, talhoes.length, todos.length, todasAnalises.length, produtor?.id, safra]);
 
   const setProd = useCallback((talhaoId, campo, valor) => {
     setProdutividadeLocal(prev => ({ ...prev, [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor } }));
