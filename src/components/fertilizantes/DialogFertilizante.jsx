@@ -41,10 +41,46 @@ export default function DialogFertilizante({ open, onOpenChange, dados, onSave, 
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  // Extrai valores numéricos do texto de composição/função
+  // Suporta padrões como "19 % N", "19% K2O", "5,5% S", "0,5 % B"
+  const extrairComposicaoTexto = (texto) => {
+    if (!texto) return {};
+    const mapa = {
+      n_pct:    /(\d+[,.]?\d*)\s*%\s*N\b/i,
+      p2o5_pct: /(\d+[,.]?\d*)\s*%\s*P2?O5/i,
+      k2o_pct:  /(\d+[,.]?\d*)\s*%\s*K2?O/i,
+      ca_pct:   /(\d+[,.]?\d*)\s*%\s*Ca\b/i,
+      mg_pct:   /(\d+[,.]?\d*)\s*%\s*Mg\b/i,
+      s_pct:    /(\d+[,.]?\d*)\s*%\s*S\b/i,
+      b_pct:    /(\d+[,.]?\d*)\s*%\s*B\b/i,
+      zn_pct:   /(\d+[,.]?\d*)\s*%\s*Zn\b/i,
+      cu_pct:   /(\d+[,.]?\d*)\s*%\s*Cu\b/i,
+      mn_pct:   /(\d+[,.]?\d*)\s*%\s*Mn\b/i,
+      fe_pct:   /(\d+[,.]?\d*)\s*%\s*Fe\b/i,
+    };
+    const resultado = {};
+    for (const [key, regex] of Object.entries(mapa)) {
+      const match = texto.match(regex);
+      if (match) resultado[key] = parseFloat(match[1].replace(',', '.'));
+    }
+    return resultado;
+  };
+
   const handleSave = () => {
     const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
     const data = { ...form };
     CAMPOS.forEach(c => { data[c.key] = toNum(form[c.key]); });
+
+    // Tenta extrair composição do texto (funcao_composicao ou composicao_texto)
+    // e preenche apenas os campos numéricos que estão vazios
+    const textoFonte = (form.funcao_composicao || '') + ' ' + (form.composicao_texto || '');
+    const extraidos = extrairComposicaoTexto(textoFonte);
+    for (const [key, val] of Object.entries(extraidos)) {
+      if (data[key] == null || data[key] === '' || data[key] === undefined || isNaN(data[key])) {
+        data[key] = val;
+      }
+    }
+
     // Remove undefined to keep clean
     Object.keys(data).forEach(k => { if (data[k] === '' || data[k] === undefined) delete data[k]; });
     data.nome = form.nome; // ensure nome always present
