@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle, Save } from 'lucide-react';
+import { toast } from 'sonner';
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 import ImportarPDFAgrupado from '@/components/adubacao2/ImportarPDFAgrupado';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
@@ -462,6 +463,7 @@ export default function Adubacao2() {
     if (!produtor || !resultadosCalculo) return;
     const precos = precosRef.current;
     const parcelamentos = parcelamentosRef.current;
+    try {
     for (const r of resultadosCalculo) {
       const talhao = r.talhao;
       const existente = registrosSalvos.find(x => x.talhao_id === talhao.id);
@@ -488,8 +490,10 @@ export default function Adubacao2() {
       if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
       else await createPlan.mutateAsync(payload);
     }
-    setMsgCalculo('Planejamento salvo com sucesso!');
-    setTimeout(() => setMsgCalculo(''), 4000);
+    toast.success('Planejamento salvo com sucesso!', { duration: 3000 });
+    } catch {
+      toast.error('Erro ao salvar. Tente novamente.', { duration: 3000 });
+    }
   }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, registrosSalvos]);
 
   // PROBLEMA 2: editar dose na tabela
