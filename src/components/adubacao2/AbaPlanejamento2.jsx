@@ -1034,9 +1034,24 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
               {resultados.map((r, i) => {
                 const expandido = expandidos.has(r.talhao.id);
                 const area = r.talhao.area_ha || 0;
-                const precoPrinc = r.produtoSugerido ? precos[r.produtoSugerido.id] : null;
+                // Bug 2 fix: calcular produto ao vivo com todosFiltered para ser consistente com o painel expandido
+                let produtoSugeridoVivo = null;
+                let doseProdutoHaVivo = null;
+                if (r.rec && todosFiltered.length > 0) {
+                  const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
+                  const sugN = sugestoes['n_pct'];
+                  if (sugN?.produtoId) {
+                    const prod = todosFiltered.find(p => p.id === sugN.produtoId);
+                    if (prod) {
+                      produtoSugeridoVivo = prod;
+                      const pctN = parseFloat(prod.n_pct) || 0;
+                      if (pctN > 0 && r.rec.N != null) doseProdutoHaVivo = Math.round((r.rec.N / (pctN / 100)) * 10) / 10;
+                    }
+                  }
+                }
+                const precoPrinc = produtoSugeridoVivo ? precos[produtoSugeridoVivo.id] : null;
                 const precoNum = precoPrinc != null && precoPrinc !== '' ? parseFloat(precoPrinc) : null;
-                const custoHa = precoNum != null && r.doseProdutoHa != null ? precoNum * r.doseProdutoHa : null;
+                const custoHa = precoNum != null && doseProdutoHaVivo != null ? precoNum * doseProdutoHaVivo : null;
                 const custoTotal = custoHa != null ? custoHa * area : null;
 
                 return (
@@ -1056,9 +1071,9 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.K ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.B ?? '—'}</td>
                       <td className="px-3 py-2.5 text-xs max-w-[160px] truncate">
-                        {r.produtoSugerido ? <span className="font-medium">{r.produtoSugerido.nome}</span> : <span className="text-muted-foreground">—</span>}
+                        {produtoSugeridoVivo ? <span className="font-medium">{produtoSugeridoVivo.nome}</span> : <span className="text-muted-foreground">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.doseProdutoHa != null ? r.doseProdutoHa : '—'}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-xs">{doseProdutoHaVivo != null ? doseProdutoHaVivo : '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{custoHa != null ? fmtR(custoHa) : '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{custoTotal != null ? fmtR(custoTotal) : '—'}</td>
                       <td className="px-3 py-2.5 text-center"><StatusBadgePlan rec={r.rec} /></td>

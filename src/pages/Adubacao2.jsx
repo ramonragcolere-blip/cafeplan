@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle, Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { useToast } from '@/components/ui/use-toast';
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 import ImportarPDFAgrupado from '@/components/adubacao2/ImportarPDFAgrupado';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
@@ -162,6 +162,7 @@ function AbaCompras2({ resultados, dosesEditadas }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Adubacao2() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [produtorId, setProdutorId] = useState('');
   const [safra, setSafra] = useState('2025/2026');
   const [protocolo, setProtocolo] = useState(PROTOCOLOS[0]);
@@ -490,9 +491,9 @@ export default function Adubacao2() {
       if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
       else await createPlan.mutateAsync(payload);
     }
-    toast.success('Planejamento salvo com sucesso!', { duration: 3000 });
+    toast({ title: 'Planejamento salvo!', description: 'Dados salvos com sucesso.' });
     } catch {
-      toast.error('Erro ao salvar. Tente novamente.', { duration: 3000 });
+      toast({ title: 'Erro ao salvar', description: 'Tente novamente.', variant: 'destructive' });
     }
   }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, registrosSalvos]);
 
