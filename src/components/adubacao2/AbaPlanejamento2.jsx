@@ -221,12 +221,143 @@ function DropdownTrocarProduto({ todos, onTrocar }) {
   );
 }
 
+// ── Linha manual para elementos extras marcados ───────────────────────────────
+
+function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos }) {
+  const [produtoId, setProdutoId] = useState('');
+  const [doseManual, setDoseManual] = useState('');
+  const [busca, setBusca] = useState('');
+  const [dropAberto, setDropAberto] = useState(false);
+  const dropRef = useRef(null);
+
+  useEffect(() => {
+    if (!dropAberto) return;
+    const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setDropAberto(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropAberto]);
+
+  const produtosDoNutriente = useMemo(() => {
+    if (!nutField) return todos;
+    return todos
+      .filter(p => (parseFloat(p[nutField]) || 0) > 0)
+      .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  }, [todos, nutField]);
+
+  const produtosFiltrados = useMemo(() => {
+    const q = busca.toLowerCase();
+    return produtosDoNutriente.filter(p => !q || (p.nome || '').toLowerCase().includes(q));
+  }, [produtosDoNutriente, busca]);
+
+  const produtoSelecionado = todos.find(p => p.id === produtoId) || null;
+  const doseNum = doseManual !== '' ? parseFloat(doseManual) : null;
+  const preco = produtoId ? precos?.[produtoId] : null;
+  const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
+  const custoHa = precoNum != null && doseNum != null ? precoNum * doseNum : null;
+  const totalKg = doseNum != null && area ? Math.round(doseNum * area * 10) / 10 : null;
+  const custoTotal = custoHa != null && area ? custoHa * area : null;
+  const parc = produtoId ? parcelamentos?.[produtoId] : null;
+  const [expandidoParc, setExpandidoParc] = useState(false);
+
+  return (
+    <React.Fragment>
+      <tr className="border-b border-border/50 last:border-0 hover:bg-muted/10 bg-amber-50/30">
+        <td className="px-3 py-2 font-medium whitespace-nowrap max-w-[200px]">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">{elLabel}</span>
+            <div ref={dropRef} className="relative">
+              <button type="button" onClick={() => setDropAberto(a => !a)}
+                className="h-6 text-xs border border-input rounded px-2 bg-background flex items-center gap-1 w-40 hover:bg-muted/30">
+                <span className="truncate flex-1 text-left">
+                  {produtoSelecionado ? produtoSelecionado.nome : <span className="text-muted-foreground">Escolher produto…</span>}
+                </span>
+                <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+              </button>
+              {dropAberto && (
+                <div className="absolute z-50 left-0 top-full mt-1 w-64 bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
+                  <div className="p-2 border-b border-border">
+                    <input autoFocus type="text" placeholder="Buscar..."
+                      value={busca} onChange={e => setBusca(e.target.value)}
+                      className="w-full h-6 text-xs border border-input rounded px-2 bg-background" />
+                  </div>
+                  <div className="max-h-40 overflow-y-auto">
+                    <button type="button" onClick={() => { setProdutoId(''); setDropAberto(false); setBusca(''); }}
+                      className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/60">
+                      — Nenhum
+                    </button>
+                    {produtosFiltrados.map(p => (
+                      <button key={p.id} type="button"
+                        onClick={() => { setProdutoId(p.id); setDropAberto(false); setBusca(''); }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 truncate">
+                        {p.nome}
+                        {p.fornecedor && <span className="text-muted-foreground ml-1">· {p.fornecedor}</span>}
+                      </button>
+                    ))}
+                    {produtosFiltrados.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </td>
+        <td className="px-3 py-2">
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">Manual</span>
+        </td>
+        <td className="px-3 py-2 text-muted-foreground font-mono text-xs">
+          {produtoSelecionado && nutField && (parseFloat(produtoSelecionado[nutField]) || 0) > 0
+            ? `${elLabel} ${fmt(parseFloat(produtoSelecionado[nutField]), 1)}%`
+            : '—'}
+        </td>
+        <td className="px-3 py-2 text-right">
+          <input type="number" min="0" step="0.1" value={doseManual}
+            onChange={e => setDoseManual(e.target.value)} placeholder="—"
+            className="w-20 h-6 text-xs text-right border border-input rounded px-2 bg-background tabular-nums" />
+        </td>
+        <td className="px-3 py-2 tabular-nums text-right text-xs">{totalKg != null ? fmt(totalKg, 1) : '—'}</td>
+        <td className="px-3 py-2">
+          <input type="number" min="0" step="0.01"
+            value={produtoId ? (preco ?? '') : ''}
+            onChange={e => produtoId && onPrecoChange(produtoId, e.target.value)}
+            placeholder="—" disabled={!produtoId}
+            className="w-20 h-6 text-xs text-right border border-input rounded px-2 bg-background tabular-nums disabled:opacity-50" />
+        </td>
+        <td className="px-3 py-2 tabular-nums text-right text-xs">{custoHa != null ? fmtR(custoHa) : '—'}</td>
+        <td className="px-3 py-2 tabular-nums text-right text-xs">{custoTotal != null ? fmtR(custoTotal) : '—'}</td>
+        <td className="px-3 py-2">
+          {produtoId ? (
+            <button type="button" onClick={() => setExpandidoParc(a => !a)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <ResumoParcelamento parc={parc} />
+              <ChevronDown className={`w-3 h-3 transition-transform ${expandidoParc ? 'rotate-180' : ''}`} />
+            </button>
+          ) : <span className="text-muted-foreground text-xs">—</span>}
+        </td>
+      </tr>
+      {expandidoParc && produtoId && (
+        <tr>
+          <td colSpan={9} className="px-3 pb-3 bg-amber-50/20">
+            <EditorParcelamento
+              parc={parc}
+              onChange={p => onParcelamentoChange(produtoId, p)}
+              onAplicarTodos={p => onAplicarParcTodos(produtoId, p)}
+              onRecolher={() => setExpandidoParc(false)}
+            />
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
+  );
+}
+
 // ── Tabela de Produtos do Talhão ───────────────────────────────────────────────
 
-function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto }) {
+function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras }) {
   const [expandidoProd, setExpandidoProd] = useState(null);
 
-  if (!linhas || linhas.length === 0) {
+  const semLinhas = (!linhas || linhas.length === 0) && (!elementosExtras || elementosExtras.length === 0);
+  if (semLinhas) {
     return (
       <div className="bg-muted/30 border border-dashed border-border rounded-lg px-4 py-3 text-xs text-muted-foreground text-center">
         Sem produtos sugeridos (verifique se há produtos cadastrados na Base de Insumos).
@@ -245,7 +376,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
           </tr>
         </thead>
         <tbody>
-          {linhas.map(linha => {
+          {(linhas || []).map(linha => {
             const { produto, nutrientes, ehPrincipal, doseKgHa, nutKey } = linha;
             const preco = precos?.[produto.id];
             const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
@@ -312,6 +443,21 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
               </React.Fragment>
             );
           })}
+          {/* Linhas de elementos extras (Zn, Cu, Mn, Mg, Fe, MO) marcados no grid */}
+          {(elementosExtras || []).map(el => (
+            <LinhaElementoExtra
+              key={`extra-${el.key}`}
+              elLabel={el.label}
+              nutField={el.nutField}
+              todos={todos}
+              area={area}
+              precos={precos}
+              onPrecoChange={onPrecoChange}
+              parcelamentos={parcelamentos}
+              onParcelamentoChange={onParcelamentoChange}
+              onAplicarParcTodos={onAplicarParcTodos}
+            />
+          ))}
         </tbody>
       </table>
     </div>
@@ -320,20 +466,17 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
 
 // ── Painel expandido de um talhão ─────────────────────────────────────────────
 
-// CORREÇÃO 1: Todos os elementos sempre aparecem. Checkbox interno.
-// Elementos com déficit (N, P, K, B): checkbox marcado automaticamente
-// Elementos extras (Zn, Cu, Mn, Mg, Fe, MO): checkbox desmarcado por padrão
 const TODOS_ELEMENTOS_GRID = [
-  { key: 'N',  label: 'N',    tipo: 'dose',  unit: 'kg/ha',  temRec: true },
-  { key: 'P',  label: 'P₂O₅', tipo: 'dose',  unit: 'kg/ha',  temRec: true },
-  { key: 'K',  label: 'K₂O',  tipo: 'dose',  unit: 'kg/ha',  temRec: true },
-  { key: 'B',  label: 'B',    tipo: 'dose',  unit: 'kg/ha',  temRec: true },
-  { key: 'Zn', label: 'Zn',   tipo: 'class', temRec: false },
-  { key: 'Cu', label: 'Cu',   tipo: 'class', temRec: false },
-  { key: 'Mn', label: 'Mn',   tipo: 'class', temRec: false },
-  { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha',  temRec: false },
-  { key: 'Fe', label: 'Fe',   tipo: 'class', temRec: false },
-  { key: 'MO', label: 'M.O.', tipo: 'valor', temRec: false },
+  { key: 'N',  label: 'N',    tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'n_pct' },
+  { key: 'P',  label: 'P₂O₅', tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'p2o5_pct' },
+  { key: 'K',  label: 'K₂O',  tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'k2o_pct' },
+  { key: 'B',  label: 'B',    tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'b_pct' },
+  { key: 'Zn', label: 'Zn',   tipo: 'class', temRec: false,  nutField: 'zn_pct' },
+  { key: 'Cu', label: 'Cu',   tipo: 'class', temRec: false,  nutField: 'cu_pct' },
+  { key: 'Mn', label: 'Mn',   tipo: 'class', temRec: false,  nutField: 'mn_pct' },
+  { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha',  temRec: false,  nutField: 'mg_pct' },
+  { key: 'Fe', label: 'Fe',   tipo: 'class', temRec: false,  nutField: 'fe_pct' },
+  { key: 'MO', label: 'M.O.', tipo: 'valor', temRec: false,  nutField: null },
 ];
 
 function StatusBadgePlan({ rec }) {
@@ -373,10 +516,9 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     setTrocas(prev => ({ ...prev, [nutKey]: produto.id }));
   }, []);
 
-  // Linhas de produtos: apenas elementos marcados contribuem para a tabela
+  // Linhas de produtos automáticos: apenas N/P/K/B marcados
   const linhasProdutos = useMemo(() => {
     if (!rec) return [];
-    // Filtra rec para incluir apenas nutrientes marcados
     const recFiltrado = { ...rec };
     if (!marcados['N']) delete recFiltrado.N;
     if (!marcados['P']) delete recFiltrado.P;
@@ -384,6 +526,11 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['B']) delete recFiltrado.B;
     return montarLinhasProdutos(todos, recFiltrado, trocas);
   }, [todos, rec, marcados, trocas]);
+
+  // Elementos extras marcados (não-rec): Zn, Cu, Mn, Mg, Fe, MO
+  const elementosExtrasMarcados = useMemo(() => {
+    return TODOS_ELEMENTOS_GRID.filter(el => !el.temRec && marcados[el.key]);
+  }, [marcados]);
 
   // Rodapé: totais
   const totais = useMemo(() => {
@@ -518,6 +665,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
             onAplicarParcTodos={onAplicarParcTodos}
             todos={todosSemFiltro}
             onTrocarProduto={handleTrocarProduto}
+            elementosExtras={elementosExtrasMarcados}
           />
         </div>
       )}
