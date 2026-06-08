@@ -49,7 +49,7 @@ export function sugerirProdutosInteligente(todos, rec) {
       for (const s of ORDEM) {
         const temNutriente = (parseFloat(prod[SALDO_PARA_KEY[s]]) || 0) > 0;
         if (!temNutriente) continue;
-        score += saldo[s] > 0 ? 1 : -2;
+        score += (rec[s] != null && rec[s] > 0) ? 1 : -2;
       }
 
       const doseNecessaria = saldoAtual / (pctPrincipal / 100);
