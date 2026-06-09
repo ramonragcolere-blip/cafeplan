@@ -40,44 +40,27 @@ function converterUnidades(dados, laboratorio) {
 }
 
 const buildPrompt = (textoPDF) => `
-Você é um especialista em análise de solos agrícolas brasileiro.
-Extraia TODOS os dados do laudo abaixo com máxima precisão.
-NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
+Você é especialista em laudos de análise de solo da COOXUPÉ (Cooperativa Regional de Cafeicultores em Guaxupé).
 
 === TEXTO DO PDF ===
 ${textoPDF}
 === FIM ===
 
-PASSO 1 — IDENTIFIQUE O LABORATÓRIO:
-- COOXUPE: contém "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé"
-- LAB_VICOSA: contém "labsolosvicosa" ou "Laboratório de Análise de Solo Viçosa"
-- OUTRO: qualquer outro
-
-PASSO 2 — LOCALIZE os campos pelos RÓTULOS exatos do laudo:
-- pH: rótulo "pH CaCl2" ou "pH"
-- materia_organica: rótulo "M.O." em g/dm³
-- fosforo: rótulo "P" em mg/dm³
-- potassio: rótulo "K"
-- calcio: rótulo "Ca"
-- magnesio: rótulo "Mg"
-- aluminio: rótulo "Al" ou "Al³⁺"
-- h_al: rótulo "H+Al" ou "H + Al"
-- sb: rótulo "S.B." ou "SB"
-- ctc: rótulo "C.T.C." ou "CTC"
-- saturacao_bases: rótulo "V%"
-- enxofre: rótulo "S" em mg/dm³
-- boro: rótulo "B" em mg/dm³
-- zinco: rótulo "Zn" em mg/dm³
-- cobre: rótulo "Cu" em mg/dm³
-- manganes: rótulo "Mn" em mg/dm³
-- ferro: rótulo "Fe" em mg/dm³
-
-PASSO 3 — Se houver múltiplas camadas (0-20 e 20-40), retorne apenas a camada 0-20.
-PASSO 4 — Campos não encontrados → null. SEMPRE retorne o JSON.
+ATENÇÃO ao layout da COOXUPÉ:
+- A tabela tem duas linhas de dados. pH aparece na primeira coluna com valor logo abaixo do traço "-"
+- K aparece como "K NH4CI mmolc/dm3" — pegue o valor numérico (ex: 3,3)
+- B aparece como "B Água Quente mg/dm3" — pegue o valor numérico (ex: 2,85)
+- Zn aparece como "Zn DTPA mg/dm3" — pegue o valor numérico
+- Mn aparece como "Mn DTPA mg/dm3" — pegue o valor numérico  
+- Cu aparece como "Cu DTPA mg/dm3" — pegue o valor numérico
+- CTC aparece como "C.T.C. mmolc/dm3" — pegue o valor numérico
+- H+Al aparece como "H+Al mmolc/dm3" — pegue o valor numérico
+- Ignore o traço "-" que aparece antes do valor de pH
+- NÃO converta unidades — retorne valores exatamente como no laudo
 
 Retorne SOMENTE JSON válido:
 {
-  "laboratorio": "OUTRO",
+  "laboratorio": "COOXUPE",
   "dados": {
     "ph": null, "materia_organica": null, "fosforo": null, "potassio": null,
     "calcio": null, "magnesio": null, "aluminio": null, "h_al": null,
