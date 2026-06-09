@@ -100,6 +100,10 @@ export default function ImportarPDFTalhao({ talhao, safra, analises, analises204
         }
       } catch (_) {}
 
+      console.log('=== TEXTO PDF EXTRAÍDO ===');
+      console.log(textoPDF);
+      console.log('=== FIM TEXTO PDF ===');
+
       const resposta = await base44.integrations.Core.InvokeLLM({
         prompt: buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.'),
         file_urls: [file_url],
