@@ -1,0 +1,81 @@
+{
+  "name": "EquipamentosProdutor",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "C\u00f3digo do produtor"
+    },
+    "trator_marca": {
+      "type": "string",
+      "description": "Marca do trator"
+    },
+    "trator_modelo": {
+      "type": "string",
+      "description": "Modelo do trator"
+    },
+    "trator_potencia_cv": {
+      "type": "number",
+      "description": "Pot\u00eancia do trator (cv)"
+    },
+    "trator_consumo_sem_implemento": {
+      "type": "number",
+      "description": "Consumo sem implemento (L/h)"
+    },
+    "trator_consumo_rocada": {
+      "type": "number",
+      "description": "Consumo na ro\u00e7ada (L/h)"
+    },
+    "trator_consumo_trincha": {
+      "type": "number",
+      "description": "Consumo na trincha (L/h)"
+    },
+    "trator_consumo_carreta_pesada": {
+      "type": "number",
+      "description": "Consumo com carreta pesada (L/h)"
+    },
+    "secador_marca_modelo": {
+      "type": "string",
+      "description": "Marca/Modelo do secador"
+    },
+    "secador_tipo": {
+      "type": "string",
+      "enum": [
+        "Rotativo",
+        "Est\u00e1tico"
+      ],
+      "description": "Tipo do secador"
+    },
+    "secador_capacidade_sacas": {
+      "type": "number",
+      "description": "Capacidade do secador (sacas/batelada)"
+    },
+    "secador_potencia_kw": {
+      "type": "number",
+      "description": "Pot\u00eancia total do secador (kW)"
+    },
+    "secador_kwh_saca": {
+      "type": "number",
+      "description": "Consumo por saca (kWh/saca)"
+    },
+    "despolpador_marca_modelo": {
+      "type": "string",
+      "description": "Marca/Modelo do despolpador"
+    },
+    "lavador_marca_modelo": {
+      "type": "string",
+      "description": "Marca/Modelo do lavador"
+    },
+    "preco_diesel": {
+      "type": "number",
+      "description": "Pre\u00e7o do diesel (R$/L)"
+    },
+    "tarifa_energia_cemig": {
+      "type": "number",
+      "description": "Tarifa de energia CEMIG (R$/kWh)"
+    }
+  },
+  "required": [
+    "codigo_produtor"
+  ]
+}

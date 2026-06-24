@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Badge } from '@/components/ui/badge';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import EquipamentosFazenda from '@/components/produtores/EquipamentosFazenda';
 
 const emptyProdutor = {
   codigo: '', nome: '', cpf_cnpj: '', fazenda: '', municipio: '', uf: 'MG',
@@ -132,7 +133,7 @@ export default function Produtores() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Produtor' : 'Novo Produtor'}</DialogTitle>
           </DialogHeader>
@@ -169,6 +170,13 @@ export default function Produtores() {
               </Select>
             </div>
           </div>
+          {/* SEÇÃO EQUIPAMENTOS — só exibe ao editar (produtor já tem código) */}
+          {editingId && form.codigo && (
+            <div className="border-t pt-4 space-y-1">
+              <p className="font-semibold text-sm text-muted-foreground mb-3">🚜 Equipamentos da Fazenda</p>
+              <EquipamentosFazenda codigoProdutor={form.codigo} />
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>Salvar</Button>
