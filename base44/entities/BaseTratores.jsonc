@@ -1,0 +1,42 @@
+{
+  "name": "BaseTratores",
+  "type": "object",
+  "properties": {
+    "marca": {
+      "type": "string"
+    },
+    "modelo": {
+      "type": "string"
+    },
+    "cv": {
+      "type": "number"
+    },
+    "cafeiro": {
+      "type": "boolean",
+      "description": "Trator espec\u00edfico para caf\u00e9 (estreito)"
+    },
+    "consumo_sem_implemento": {
+      "type": "number",
+      "description": "L/h sem implemento"
+    },
+    "consumo_rocada": {
+      "type": "number",
+      "description": "L/h ro\u00e7ada"
+    },
+    "consumo_trincha": {
+      "type": "number",
+      "description": "L/h trincha/herbicida"
+    },
+    "consumo_carreta_pesada": {
+      "type": "number",
+      "description": "L/h carreta pesada"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "marca",
+    "modelo"
+  ]
+}

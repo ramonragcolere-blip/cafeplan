@@ -18,6 +18,7 @@ import BaseFertilizantes from './pages/BaseFertilizantes';
 import AplicacoesFoliares from './pages/AplicacoesFoliares';
 import Calendario from './pages/Calendario';
 import Adubacao2 from './pages/Adubacao2';
+import Planejamento from './pages/Planejamento';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -56,6 +57,7 @@ const AuthenticatedApp = () => {
         <Route path="/foliar" element={<AplicacoesFoliares />} />
         <Route path="/calendario" element={<Calendario />} />
         <Route path="/adubacao2" element={<Adubacao2 />} />
+        <Route path="/planejamento" element={<Planejamento />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

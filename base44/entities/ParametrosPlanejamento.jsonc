@@ -1,0 +1,22 @@
+{
+  "name": "ParametrosPlanejamento",
+  "type": "object",
+  "properties": {
+    "chave": {
+      "type": "string",
+      "description": "Identificador \u00fanico do par\u00e2metro"
+    },
+    "label": {
+      "type": "string"
+    },
+    "valor": {
+      "type": "number"
+    },
+    "unidade": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "chave"
+  ]
+}

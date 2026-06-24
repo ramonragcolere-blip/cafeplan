@@ -1,0 +1,38 @@
+{
+  "name": "BaseSecadores",
+  "type": "object",
+  "properties": {
+    "marca_modelo": {
+      "type": "string"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "Rotativo",
+        "Est\u00e1tico"
+      ]
+    },
+    "capacidade_sacas": {
+      "type": "number",
+      "description": "Capacidade por batelada (sacas)"
+    },
+    "potencia_kw": {
+      "type": "number",
+      "description": "Pot\u00eancia total (kW)"
+    },
+    "kwh_batelada": {
+      "type": "number",
+      "description": "kWh por batelada"
+    },
+    "kwh_saca": {
+      "type": "number",
+      "description": "kWh por saca"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "marca_modelo"
+  ]
+}

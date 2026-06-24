@@ -1,0 +1,64 @@
+{
+  "name": "PlanejamentoOperacoes",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "talhao_id": {
+      "type": "string"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "operacao": {
+      "type": "string",
+      "description": "Nome da opera\u00e7\u00e3o"
+    },
+    "meses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Meses de execu\u00e7\u00e3o"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "Mecanizado",
+        "Manual",
+        "Misto"
+      ]
+    },
+    "trator_implemento": {
+      "type": "string"
+    },
+    "horas_ha": {
+      "type": "number"
+    },
+    "consumo_diesel_lha": {
+      "type": "number"
+    },
+    "custo_diesel_rha": {
+      "type": "number"
+    },
+    "horas_mo_ha": {
+      "type": "number"
+    },
+    "custo_mo_rha": {
+      "type": "number"
+    },
+    "custo_total_rha": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id",
+    "operacao"
+  ]
+}

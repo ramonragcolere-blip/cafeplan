@@ -1,0 +1,60 @@
+{
+  "name": "PlanejamentoPosColheita",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "talhao_id": {
+      "type": "string"
+    },
+    "talhao_nome": {
+      "type": "string"
+    },
+    "prod_estimada_sc": {
+      "type": "number"
+    },
+    "lavagem_horas": {
+      "type": "number"
+    },
+    "lavagem_kwh": {
+      "type": "number"
+    },
+    "lavagem_custo_r": {
+      "type": "number"
+    },
+    "secagem_bateladas": {
+      "type": "number"
+    },
+    "secagem_kwh_total": {
+      "type": "number"
+    },
+    "secagem_custo_r": {
+      "type": "number"
+    },
+    "secagem_tarifa_tipo": {
+      "type": "string",
+      "enum": [
+        "Verde",
+        "Azul"
+      ]
+    },
+    "beneficio_r_saca": {
+      "type": "number"
+    },
+    "armazenagem_r_saca": {
+      "type": "number"
+    },
+    "outros_r_saca": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id"
+  ]
+}
