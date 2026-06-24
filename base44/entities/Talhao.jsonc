@@ -85,6 +85,41 @@
       "type": "number",
       "description": "Medidas/hora (m\u00e1quina)"
     },
+    "pct_mec_colheita": {
+      "type": "number",
+      "description": "% mecanizado da colheita (0-100)"
+    },
+    "pct_mec_rocada": {
+      "type": "number",
+      "description": "% mecanizado da ro\u00e7ada (0-100)"
+    },
+    "pct_mec_herbicida": {
+      "type": "number",
+      "description": "% mecanizado da aplica\u00e7\u00e3o de herbicida (0-100)"
+    },
+    "pct_mec_adubacao": {
+      "type": "number",
+      "description": "% mecanizado da aduba\u00e7\u00e3o (0-100)"
+    },
+    "declividade": {
+      "type": "string",
+      "enum": [
+        "Plano 0-8%",
+        "Suave ondulado 8-20%",
+        "Ondulado 20-45%",
+        "Forte ondulado >45%"
+      ],
+      "description": "Declividade predominante do talh\u00e3o"
+    },
+    "rendimento_colheita_manual_lppd": {
+      "type": "number",
+      "description": "Rendimento colheita manual (litros/pessoa/dia)",
+      "default": 250
+    },
+    "num_pessoas_colheita": {
+      "type": "number",
+      "description": "N\u00famero de pessoas dispon\u00edveis para colheita"
+    },
     "status": {
       "type": "string",
       "enum": [

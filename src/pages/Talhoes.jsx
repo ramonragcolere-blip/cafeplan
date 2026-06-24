@@ -16,6 +16,8 @@ const emptyTalhao = {
   codigo_produtor: null, nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
   metodo_colheita: 'Manual', fase_atual: 'Em produção', litros_por_pe: '', pct_colher: 1, preco_por_medida: '',
   seq_colheita: '', medidas_dia_manual: '', horas_dia_maq: '', metros_hora_maq: '', medidas_hora_maq: '',
+  pct_mec_colheita: '', pct_mec_rocada: '', pct_mec_herbicida: '', pct_mec_adubacao: '',
+  declividade: '', rendimento_colheita_manual_lppd: 250, num_pessoas_colheita: '',
   status: 'ativo', observacoes: ''
 };
 
@@ -89,6 +91,12 @@ export default function Talhoes() {
       horas_dia_maq: toNum(form.horas_dia_maq),
       metros_hora_maq: toNum(form.metros_hora_maq),
       medidas_hora_maq: toNum(form.medidas_hora_maq),
+      pct_mec_colheita: toNum(form.pct_mec_colheita),
+      pct_mec_rocada: toNum(form.pct_mec_rocada),
+      pct_mec_herbicida: toNum(form.pct_mec_herbicida),
+      pct_mec_adubacao: toNum(form.pct_mec_adubacao),
+      rendimento_colheita_manual_lppd: toNum(form.rendimento_colheita_manual_lppd) ?? 250,
+      num_pessoas_colheita: toNum(form.num_pessoas_colheita),
     };
     if (editingId) updateMutation.mutate({ id: editingId, data });
     else createMutation.mutate(data);
@@ -221,6 +229,57 @@ export default function Talhoes() {
             <div><Label>Preço/Medida (R$)</Label><VoiceInput type="number" value={form.preco_por_medida} onChange={e => setForm({...form, preco_por_medida: e.target.value})} /></div>
             <div><Label>Área (ha)</Label><VoiceInput type="number" value={form.area_ha} onChange={e => setForm({...form, area_ha: e.target.value})} /></div>
             <div><Label>Sequência de Colheita</Label><VoiceInput type="number" min="1" value={form.seq_colheita} onChange={e => setForm({...form, seq_colheita: e.target.value})} placeholder="Ex: 1, 2, 3..." /></div>
+
+            {/* MECANIZAÇÃO */}
+            <div className="sm:col-span-2 border-t pt-4"><p className="font-semibold text-sm text-muted-foreground">⚙️ Mecanização</p></div>
+            <div>
+              <Label>% Mec. Colheita</Label>
+              <div className="flex items-center gap-2">
+                <input type="range" min="0" max="100" step="5" value={form.pct_mec_colheita || 0} onChange={e => setForm({...form, pct_mec_colheita: e.target.value})} className="flex-1 accent-primary" />
+                <span className="text-sm tabular-nums w-10 text-right">{form.pct_mec_colheita || 0}%</span>
+              </div>
+            </div>
+            <div>
+              <Label>% Mec. Roçada</Label>
+              <div className="flex items-center gap-2">
+                <input type="range" min="0" max="100" step="5" value={form.pct_mec_rocada || 0} onChange={e => setForm({...form, pct_mec_rocada: e.target.value})} className="flex-1 accent-primary" />
+                <span className="text-sm tabular-nums w-10 text-right">{form.pct_mec_rocada || 0}%</span>
+              </div>
+            </div>
+            <div>
+              <Label>% Mec. Herbicida</Label>
+              <div className="flex items-center gap-2">
+                <input type="range" min="0" max="100" step="5" value={form.pct_mec_herbicida || 0} onChange={e => setForm({...form, pct_mec_herbicida: e.target.value})} className="flex-1 accent-primary" />
+                <span className="text-sm tabular-nums w-10 text-right">{form.pct_mec_herbicida || 0}%</span>
+              </div>
+            </div>
+            <div>
+              <Label>% Mec. Adubação</Label>
+              <div className="flex items-center gap-2">
+                <input type="range" min="0" max="100" step="5" value={form.pct_mec_adubacao || 0} onChange={e => setForm({...form, pct_mec_adubacao: e.target.value})} className="flex-1 accent-primary" />
+                <span className="text-sm tabular-nums w-10 text-right">{form.pct_mec_adubacao || 0}%</span>
+              </div>
+            </div>
+
+            {/* TOPOGRAFIA */}
+            <div className="sm:col-span-2 border-t pt-4"><p className="font-semibold text-sm text-muted-foreground">🏔️ Topografia</p></div>
+            <div className="sm:col-span-2">
+              <Label>Declividade predominante</Label>
+              <Select value={form.declividade || ''} onValueChange={v => setForm({...form, declividade: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione a declividade" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Plano 0-8%">Plano (0-8%) — mecanização plena</SelectItem>
+                  <SelectItem value="Suave ondulado 8-20%">Suave ondulado (8-20%) — mecanização parcial</SelectItem>
+                  <SelectItem value="Ondulado 20-45%">Ondulado (20-45%) — mecanização restrita</SelectItem>
+                  <SelectItem value="Forte ondulado >45%">Forte ondulado (&gt;45%) — sem mecanização</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* COLHEITA MANUAL */}
+            <div className="sm:col-span-2 border-t pt-4"><p className="font-semibold text-sm text-muted-foreground">👥 Colheita Manual</p></div>
+            <div><Label>Rendimento (L/pessoa/dia)</Label><VoiceInput type="number" value={form.rendimento_colheita_manual_lppd} onChange={e => setForm({...form, rendimento_colheita_manual_lppd: e.target.value})} placeholder="Padrão: 250" /></div>
+            <div><Label>Nº de pessoas disponíveis</Label><VoiceInput type="number" value={form.num_pessoas_colheita} onChange={e => setForm({...form, num_pessoas_colheita: e.target.value})} placeholder="Ex: 5" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
