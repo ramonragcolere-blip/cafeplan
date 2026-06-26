@@ -145,8 +145,13 @@ export default function EquipamentosFazenda({ codigoProdutor }) {
   if (!codigoProdutor) return null;
   if (isLoading) return <div className="py-4 text-xs text-muted-foreground">Carregando equipamentos...</div>;
 
-  const tratorModelos = baseTratores.map(t => t.modelo).filter(Boolean);
+  const marcas = [...new Set(baseTratores.map(t => t.marca).filter(Boolean))].sort();
+  const modelosDaMarca = baseTratores.filter(t => t.marca === form.trator_marca).map(t => t.modelo).filter(Boolean).sort();
   const secadorOpcoes = baseSecadores.map(s => s.marca_modelo).filter(Boolean);
+
+  const handleMarca = (marca) => {
+    setForm(prev => ({ ...prev, trator_marca: marca, trator_modelo: '' }));
+  };
 
   return (
     <div className="space-y-5 pt-1">
@@ -156,17 +161,32 @@ export default function EquipamentosFazenda({ codigoProdutor }) {
           <Tractor className="w-4 h-4 text-primary" /> Trator
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FieldText label="Marca" value={form.trator_marca} onChange={set('trator_marca')} placeholder="Ex: John Deere" />
+          <div>
+            <Label className="text-xs text-muted-foreground">Marca</Label>
+            {marcas.length > 0 ? (
+              <select
+                value={form.trator_marca}
+                onChange={e => handleMarca(e.target.value)}
+                className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
+              >
+                <option value="">Selecionar marca...</option>
+                {marcas.map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="__outra__">Outra</option>
+              </select>
+            ) : (
+              <Input value={form.trator_marca} onChange={set('trator_marca')} placeholder="Ex: John Deere" className="h-8 text-sm" />
+            )}
+          </div>
           <div>
             <Label className="text-xs text-muted-foreground">Modelo</Label>
-            {tratorModelos.length > 0 ? (
+            {modelosDaMarca.length > 0 ? (
               <select
                 value={form.trator_modelo}
                 onChange={e => handleTratorModelo(e.target.value)}
                 className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
               >
-                <option value="">Selecionar...</option>
-                {tratorModelos.map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="">Selecionar modelo...</option>
+                {modelosDaMarca.map(m => <option key={m} value={m}>{m}</option>)}
                 <option value="__outro__">Outro (digitar)</option>
               </select>
             ) : (
