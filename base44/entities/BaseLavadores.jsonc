@@ -1,0 +1,32 @@
+{
+  "name": "BaseLavadores",
+  "type": "object",
+  "properties": {
+    "marca": {
+      "type": "string"
+    },
+    "modelo": {
+      "type": "string"
+    },
+    "capacidade_lh": {
+      "type": "number",
+      "description": "Capacidade (L/h)"
+    },
+    "capacidade_sc_h": {
+      "type": "number",
+      "description": "Capacidade (sc/h)"
+    },
+    "potencia_total_kw": {
+      "type": "number",
+      "description": "Pot\u00eancia total (kW)"
+    },
+    "consumo_agua_mh": {
+      "type": "number",
+      "description": "Consumo de \u00e1gua (m\u00b3/h)"
+    }
+  },
+  "required": [
+    "marca",
+    "modelo"
+  ]
+}

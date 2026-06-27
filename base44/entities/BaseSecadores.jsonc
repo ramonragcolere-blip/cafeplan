@@ -2,37 +2,42 @@
   "name": "BaseSecadores",
   "type": "object",
   "properties": {
-    "marca_modelo": {
+    "marca": {
+      "type": "string"
+    },
+    "modelo": {
       "type": "string"
     },
     "tipo": {
       "type": "string",
       "enum": [
         "Rotativo",
-        "Est\u00e1tico"
+        "Estatico"
       ]
     },
     "capacidade_sacas": {
       "type": "number",
-      "description": "Capacidade por batelada (sacas)"
+      "description": "Capacidade em sacas"
     },
-    "potencia_kw": {
+    "capacidade_litros": {
+      "type": "number",
+      "description": "Capacidade em litros"
+    },
+    "potencia_total_kw": {
       "type": "number",
       "description": "Pot\u00eancia total (kW)"
     },
-    "kwh_batelada": {
+    "tempo_secagem_h": {
       "type": "number",
-      "description": "kWh por batelada"
+      "description": "Tempo de secagem (h)"
     },
-    "kwh_saca": {
+    "lenha_m3h": {
       "type": "number",
-      "description": "kWh por saca"
-    },
-    "observacoes": {
-      "type": "string"
+      "description": "Consumo de lenha (m\u00b3/h)"
     }
   },
   "required": [
-    "marca_modelo"
+    "marca",
+    "modelo"
   ]
 }

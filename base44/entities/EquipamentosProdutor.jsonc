@@ -7,16 +7,13 @@
       "description": "C\u00f3digo do produtor"
     },
     "trator_marca": {
-      "type": "string",
-      "description": "Marca do trator"
+      "type": "string"
     },
     "trator_modelo": {
-      "type": "string",
-      "description": "Modelo do trator"
+      "type": "string"
     },
     "trator_potencia_cv": {
-      "type": "number",
-      "description": "Pot\u00eancia do trator (cv)"
+      "type": "number"
     },
     "trator_consumo_sem_implemento": {
       "type": "number",
@@ -34,37 +31,82 @@
       "type": "number",
       "description": "Consumo com carreta pesada (L/h)"
     },
-    "secador_marca_modelo": {
-      "type": "string",
-      "description": "Marca/Modelo do secador"
+    "secador_marca": {
+      "type": "string"
+    },
+    "secador_modelo": {
+      "type": "string"
     },
     "secador_tipo": {
       "type": "string",
       "enum": [
         "Rotativo",
-        "Est\u00e1tico"
-      ],
-      "description": "Tipo do secador"
+        "Estatico"
+      ]
     },
     "secador_capacidade_sacas": {
       "type": "number",
-      "description": "Capacidade do secador (sacas/batelada)"
+      "description": "Capacidade (sacas/batelada)"
+    },
+    "secador_capacidade_litros": {
+      "type": "number",
+      "description": "Capacidade (litros)"
     },
     "secador_potencia_kw": {
       "type": "number",
-      "description": "Pot\u00eancia total do secador (kW)"
+      "description": "Pot\u00eancia total (kW)"
     },
     "secador_kwh_saca": {
       "type": "number",
       "description": "Consumo por saca (kWh/saca)"
     },
-    "despolpador_marca_modelo": {
-      "type": "string",
-      "description": "Marca/Modelo do despolpador"
+    "lavador_marca": {
+      "type": "string"
     },
-    "lavador_marca_modelo": {
-      "type": "string",
-      "description": "Marca/Modelo do lavador"
+    "lavador_modelo": {
+      "type": "string"
+    },
+    "lavador_capacidade_lh": {
+      "type": "number",
+      "description": "Capacidade (L/h)"
+    },
+    "lavador_capacidade_sc_h": {
+      "type": "number",
+      "description": "Capacidade (sc/h)"
+    },
+    "lavador_potencia_kw": {
+      "type": "number",
+      "description": "Pot\u00eancia total (kW)"
+    },
+    "lavador_consumo_agua_mh": {
+      "type": "number",
+      "description": "Consumo de \u00e1gua (m\u00b3/h)"
+    },
+    "despolpador_marca": {
+      "type": "string"
+    },
+    "despolpador_modelo": {
+      "type": "string"
+    },
+    "despolpador_capacidade_lh": {
+      "type": "number",
+      "description": "Capacidade (L/h)"
+    },
+    "despolpador_capacidade_sc_h": {
+      "type": "number",
+      "description": "Capacidade (sc/h)"
+    },
+    "despolpador_potencia_kw": {
+      "type": "number",
+      "description": "Pot\u00eancia total (kW)"
+    },
+    "despolpador_kwh_hora_real": {
+      "type": "number",
+      "description": "kWh/hora real"
+    },
+    "despolpador_consumo_agua_lh": {
+      "type": "number",
+      "description": "Consumo de \u00e1gua (L/h)"
     },
     "preco_diesel": {
       "type": "number",

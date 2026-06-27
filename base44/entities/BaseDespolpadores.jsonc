@@ -1,0 +1,36 @@
+{
+  "name": "BaseDespolpadores",
+  "type": "object",
+  "properties": {
+    "marca": {
+      "type": "string"
+    },
+    "modelo": {
+      "type": "string"
+    },
+    "capacidade_lh": {
+      "type": "number",
+      "description": "Capacidade (L/h)"
+    },
+    "capacidade_sc_h": {
+      "type": "number",
+      "description": "Capacidade (sc/h)"
+    },
+    "potencia_total_kw": {
+      "type": "number",
+      "description": "Pot\u00eancia total (kW)"
+    },
+    "kwh_hora_real": {
+      "type": "number",
+      "description": "kWh/hora real"
+    },
+    "consumo_agua_lh": {
+      "type": "number",
+      "description": "Consumo de \u00e1gua (L/h)"
+    }
+  },
+  "required": [
+    "marca",
+    "modelo"
+  ]
+}
