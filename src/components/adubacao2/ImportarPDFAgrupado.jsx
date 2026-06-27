@@ -39,16 +39,40 @@ function converterUnidades(dados, laboratorio) {
 }
 
 const buildPromptMultiplo = (textoPDF, numTalhoes) => `
-Você é um especialista em análise de solos agrícolas brasileiro.
-O PDF contém ${numTalhoes} análise(s) de solo. Extraia TODOS os dados de cada análise.
-NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
+Extraia os dados desta análise de solo da Cooxupé e retorne APENAS um array JSON válido, sem texto adicional, sem markdown, sem blocos de código.
+
+O PDF contém ${numTalhoes} análise(s) de solo. Extraia TODOS os dados de cada análise, na ordem em que aparecem no documento.
 
 Primeiro identifique o laboratório:
 - COOXUPE: contém "Cooxupé" ou "Cooperativa Regional de Cafeicultores em Guaxupé"
 - LAB_VICOSA: contém "labsolosvicosa" ou "Laboratório de Análise de Solo Viçosa"
 - OUTRO: qualquer outro
 
-Retorne APENAS um array JSON válido, sem texto adicional, sem markdown, sem blocos de código. Cada objeto representa uma análise de solo encontrada no PDF, na ordem em que aparecem no documento, com os campos: pH, MO, P, K, Ca, Mg, S, B, Cu, Fe, Mn, Zn, V, CTC, H_Al
+NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
+
+Para cada análise encontrada no PDF, retorne um objeto com os campos:
+- laboratorio: identificador do laboratório (COOXUPE, LAB_VICOSA ou OUTRO)
+- ph: valor numérico do pH CaCl2
+- materia_organica: matéria orgânica em g/dm³
+- fosforo: fósforo em mg/dm³
+- potassio: potássio em mmol/dm³ (procurar por "K mmol/dm³" ou "K mg/dm³" — retornar o valor como está, sem converter)
+- calcio: cálcio em cmolc/dm³ ou mmolc/dm³ (retornar como está)
+- magnesio: magnésio em cmolc/dm³ ou mmolc/dm³ (retornar como está)
+- enxofre: enxofre em mg/dm³
+- boro: boro em mg/dm³
+- zinco: zinco em mg/dm³
+- cobre: cobre em mg/dm³
+- manganes: manganês em mg/dm³
+- ferro: ferro em mg/dm³
+- ctc: capacidade de troca catiônica em mmolc/dm³ (retornar como está)
+- saturacao_bases: saturação por bases em % (campo V%)
+- h_al: acidez potencial H+Al em mmolc/dm³
+- aluminio: alumínio Al em mmolc/dm³
+- sb: soma de bases SB em mmolc/dm³
+- data_analise: data de emissão ou liberação no formato DD/MM/AAAA
+
+Se algum campo não for encontrado, retornar null para esse campo.
+Retornar um array mesmo que haja apenas uma análise: [{ "laboratorio": "COOXUPE", "ph": ..., ... }]
 
 O formato exato deve ser:
 [
