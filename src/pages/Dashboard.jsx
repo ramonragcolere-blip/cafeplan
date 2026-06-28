@@ -1,14 +1,80 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Users, TreePine, ClipboardList, AlertTriangle } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import StatCard from '@/components/dashboard/StatCard';
 import ColheitaProgressoSection from '@/components/dashboard/ColheitaProgressoSection';
 import AdubacaoSection from '@/components/dashboard/AdubacaoSection';
 import AlertasSection from '@/components/dashboard/AlertasSection';
 import ResumoProdutorSection from '@/components/dashboard/ResumoProdutorSection';
 import CustosPlanejadosSection from '@/components/dashboard/CustosPlanejadosSection';
+
+function ProdutorAutocomplete({ produtores, value, onChange }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // Sincroniza o texto quando o valor externo muda (ex: seleção via tabela)
+  useEffect(() => {
+    if (!value) { setQuery(''); return; }
+    const p = produtores.find(p => p.codigo === value);
+    if (p) setQuery(`${p.codigo} — ${p.nome}`);
+  }, [value, produtores]);
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtrados = useMemo(() => {
+    if (!query.trim()) return [];
+    const q = query.toLowerCase();
+    return produtores.filter(p =>
+      p.nome?.toLowerCase().includes(q) || p.codigo?.toLowerCase().includes(q)
+    );
+  }, [query, produtores]);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    setOpen(true);
+    if (val === '') onChange('');
+  };
+
+  const handleSelect = (p) => {
+    setQuery(`${p.codigo} — ${p.nome}`);
+    onChange(p.codigo);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative w-full sm:w-72">
+      <input
+        type="text"
+        value={query}
+        onChange={handleChange}
+        onFocus={() => { if (query.trim()) setOpen(true); }}
+        placeholder="Digite o nome do produtor..."
+        className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      {open && filtrados.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md">
+          {filtrados.map(p => (
+            <div
+              key={p.id}
+              onMouseDown={() => handleSelect(p)}
+              className="px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
+            >
+              {p.codigo} — {p.nome}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [produtorFiltro, setProdutorFiltro] = useState('');
@@ -49,19 +115,11 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
           <p className="text-muted-foreground mt-1">Visão geral da colheita de café</p>
         </div>
-        <div className="w-full sm:w-72">
-          <Select value={produtorFiltro} onValueChange={setProdutorFiltro}>
-            <SelectTrigger>
-              <SelectValue placeholder="Todos os produtores" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={null}>Todos os produtores</SelectItem>
-              {produtores.map(p => (
-                <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <ProdutorAutocomplete
+          produtores={produtores}
+          value={produtorFiltro}
+          onChange={setProdutorFiltro}
+        />
       </div>
 
       {/* Resumo propriedade (produtor específico) */}
