@@ -14,6 +14,7 @@ import ImportarAgrupado020 from '@/components/adubacao2/ImportarAgrupado020';
 import ImportarAgrupado2040 from '@/components/adubacao2/ImportarAgrupado2040';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
+import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 
@@ -22,6 +23,7 @@ const PROTOCOLOS = ['Protocolo Ramon', '5ª Aproximação MG', 'Boletim 100 IAC'
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 const ABAS = [
   { id: 'analises',     label: 'Análises e Importação' },
+  { id: 'calagem',      label: 'Calagem' },
   { id: 'planejamento', label: 'Planejamento' },
   { id: 'compras',      label: 'Consolidação de Compras' },
 ];
@@ -776,6 +778,20 @@ export default function Adubacao2() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Aba: Calagem ── */}
+      {abaAtiva === 'calagem' && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <AbaCalagem2
+            talhoes={talhoes}
+            analises={analises}
+            safra={safra}
+            codigoProdutor={produtor?.codigo}
+            fertilizantes={fertilizantes}
+            fontesSimples={fontesSimples}
+          />
         </div>
       )}
 
