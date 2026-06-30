@@ -201,12 +201,12 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const talhaoId = talhao.id;
   const ctxKey = `${codigoProdutor}|${safra}|${talhaoId}`;
 
-  // Converte valores da análise (mesma lógica do CalcCalagem.jsx)
-  const caAtual   = analise?.calcio          != null ? Number(analise.calcio)          / 10 : undefined;
-  const mgAtual   = analise?.magnesio        != null ? Number(analise.magnesio)        / 10 : undefined;
-  const kAtual    = analise?.potassio        != null ? Number(analise.potassio)        / 10 : undefined;
+  // Ca e Mg já estão em cmolc/dm³ no banco (convertidos na importação) — leitura direta
+  const caAtual   = analise?.calcio          != null ? Number(analise.calcio)          : undefined;
+  const mgAtual   = analise?.magnesio        != null ? Number(analise.magnesio)        : undefined;
+  const kAtual    = analise?.potassio        != null ? Number(analise.potassio)        / 391 : undefined; // mg/dm³ → cmolc/dm³
   const v1        = analise?.saturacao_bases != null ? Number(analise.saturacao_bases) : undefined;
-  const ctcAtual  = analise?.ctc             != null ? Number(analise.ctc)             / 10 :
+  const ctcAtual  = analise?.ctc             != null ? Number(analise.ctc)             :
     (caAtual != null && mgAtual != null ? caAtual + mgAtual + (kAtual || 0) : undefined);
 
   const { data: registrosSalvos = [], isLoading: carregando } = useQuery({

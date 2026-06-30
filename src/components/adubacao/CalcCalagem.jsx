@@ -242,15 +242,13 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
 
   const queryClient = useQueryClient();
 
-  // Ca, Mg em mmolc/dm³ → ÷10 para cmolc/dm³
-  const caAtual = analise?.calcio   != null ? analise.calcio   / 10 : undefined;
-  const mgAtual = analise?.magnesio != null ? analise.magnesio / 10 : undefined;
-  const kAtual  = analise?.potassio != null ? analise.potassio / 10 : undefined; // mmolc→cmolc para CTC
-  const hAlAtual = analise?.h_al != null ? analise.h_al / 10 : // AnaliseSolo2040 tem h_al
-                   analise?.enxofre != null ? undefined : undefined; // AnaliseSolo 0-20 não tem h_al direto
+  // Ca e Mg já estão em cmolc/dm³ no banco (conversão feita na importação) — leitura direta
+  const caAtual = analise?.calcio   != null ? Number(analise.calcio)   : undefined;
+  const mgAtual = analise?.magnesio != null ? Number(analise.magnesio) : undefined;
+  const kAtual  = analise?.potassio != null ? Number(analise.potassio) / 391 : undefined; // mg/dm³ → cmolc/dm³
   const v1      = analise?.saturacao_bases != null ? Number(analise.saturacao_bases) : undefined;
-  // CTC: usa campo ctc se disponível, senão calcula Ca+Mg+K+H+Al
-  const ctcAtual = analise?.ctc != null ? Number(analise.ctc) / 10 :
+  // CTC: usa campo ctc se disponível (já em cmolc/dm³), senão calcula Ca+Mg+K
+  const ctcAtual = analise?.ctc != null ? Number(analise.ctc) :
     (caAtual != null && mgAtual != null ? caAtual + mgAtual + (kAtual || 0) : undefined);
 
   const area             = talhao?.area_ha || 0;
