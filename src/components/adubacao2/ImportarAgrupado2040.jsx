@@ -78,7 +78,7 @@ Se algum campo não for encontrado, retornar null.
 ${textoPDF}
 === FIM ===`;
 
-// ── Popover de "aplicar a outros talhões" ─────────────────────────────────────
+// ── Dialog "aplicar a outros talhões" ─────────────────────────────────────────
 function PopoverAplicarOutros({ talhoes, pares, idxOrigem, onAplicar, onClose }) {
   const arquivoOrigem = pares[idxOrigem]?.arquivo;
   const [selecionados, setSelecionados] = useState([]);
@@ -88,33 +88,41 @@ function PopoverAplicarOutros({ talhoes, pares, idxOrigem, onAplicar, onClose })
   );
 
   return (
-    <div className="absolute z-50 right-0 top-8 bg-background border border-border rounded-xl shadow-xl p-3 w-64">
-      <p className="text-xs font-semibold mb-2 text-foreground">Aplicar "{arquivoOrigem?.name}" também a:</p>
-      <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
-        {talhoes.map((t, i) => {
-          if (i === idxOrigem) return null;
-          const jaTemEste = pares[i]?.arquivo?.name === arquivoOrigem?.name;
-          return (
-            <label key={t.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/30 rounded px-1 py-0.5">
-              <Checkbox
-                checked={selecionados.includes(t.id) || jaTemEste}
-                disabled={jaTemEste}
-                onCheckedChange={() => toggle(t.id)}
-              />
-              <span className="text-xs">{t.nome}</span>
-              {jaTemEste && <span className="text-xs text-muted-foreground ml-auto">já associado</span>}
-            </label>
-          );
-        })}
-      </div>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" className="flex-1 text-xs h-7" onClick={onClose}>Cancelar</Button>
-        <Button size="sm" className="flex-1 text-xs h-7 gap-1" disabled={selecionados.length === 0}
-          onClick={() => { onAplicar(selecionados); onClose(); }}>
-          <Copy className="w-3 h-3" /> Aplicar
-        </Button>
-      </div>
-    </div>
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-sm flex items-center gap-2">
+            <Users className="w-4 h-4 text-orange-500" />
+            Aplicar mesmo PDF a outros talhões
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2 mb-1 break-all">"{arquivoOrigem?.name}"</p>
+        <div className="space-y-1 max-h-56 overflow-y-auto border border-border rounded-lg p-2">
+          {talhoes.map((t, i) => {
+            if (i === idxOrigem) return null;
+            const jaTemEste = pares[i]?.arquivo?.name === arquivoOrigem?.name;
+            return (
+              <label key={t.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/30 rounded px-2 py-1">
+                <Checkbox
+                  checked={selecionados.includes(t.id) || jaTemEste}
+                  disabled={jaTemEste}
+                  onCheckedChange={() => toggle(t.id)}
+                />
+                <span className="text-sm">{t.nome}</span>
+                {jaTemEste && <span className="text-xs text-muted-foreground ml-auto">já associado</span>}
+              </label>
+            );
+          })}
+        </div>
+        <DialogFooter className="gap-2 mt-2">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" className="gap-1.5" disabled={selecionados.length === 0}
+            onClick={() => { onAplicar(selecionados); onClose(); }}>
+            <Copy className="w-3.5 h-3.5" /> Aplicar a {selecionados.length > 0 ? selecionados.length : ''} talhão(ões)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -256,16 +264,13 @@ function EtapaAssociacao({ talhoes, pares, setPares, onSemPDF, onConfirmar, onCl
                     </button>
                   )}
                   {popoverAberto === idx && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setPopoverAberto(null)} />
-                      <PopoverAplicarOutros
-                        talhoes={talhoes}
-                        pares={pares}
-                        idxOrigem={idx}
-                        onAplicar={(ids) => aplicarAOutros(idx, ids)}
-                        onClose={() => setPopoverAberto(null)}
-                      />
-                    </>
+                    <PopoverAplicarOutros
+                      talhoes={talhoes}
+                      pares={pares}
+                      idxOrigem={idx}
+                      onAplicar={(ids) => aplicarAOutros(idx, ids)}
+                      onClose={() => setPopoverAberto(null)}
+                    />
                   )}
                 </div>
               </div>
