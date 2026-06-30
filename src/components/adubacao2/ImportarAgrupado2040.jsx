@@ -10,11 +10,18 @@ import { base44 } from '@/api/base44Client';
 
 const CAMPOS_2040 = [
   { key: 'ph',              label: 'pH' },
+  { key: 'materia_organica',label: 'M.O.' },
+  { key: 'fosforo',         label: 'P (mg/dm³)' },
   { key: 'potassio',        label: 'K (mg/dm³)' },
   { key: 'calcio',          label: 'Ca (cmolc/dm³)' },
   { key: 'magnesio',        label: 'Mg (cmolc/dm³)' },
   { key: 'aluminio',        label: 'Al (cmolc/dm³)' },
-  { key: 'fosforo',         label: 'P (mg/dm³)' },
+  { key: 'enxofre',         label: 'S (mg/dm³)' },
+  { key: 'boro',            label: 'B (mg/dm³)' },
+  { key: 'zinco',           label: 'Zn (mg/dm³)' },
+  { key: 'cobre',           label: 'Cu (mg/dm³)' },
+  { key: 'manganes',        label: 'Mn (mg/dm³)' },
+  { key: 'ferro',           label: 'Fe (mg/dm³)' },
   { key: 'ctc',             label: 'CTC' },
   { key: 'saturacao_bases', label: 'V%' },
   { key: 'data_analise',    label: 'Data da Análise', date: true },
@@ -70,7 +77,7 @@ Primeiro identifique o laboratório:
 NÃO converta unidades. Procure especificamente a seção 20-40 cm ou segunda profundidade do laudo.
 
 Retorne um objeto com os campos:
-- laboratorio, ph, potassio, calcio, magnesio, aluminio, fosforo, ctc, saturacao_bases, h_al, sb, data_analise
+- laboratorio, ph, materia_organica, fosforo, potassio, calcio, magnesio, aluminio, enxofre, boro, zinco, cobre, manganes, ferro, ctc, saturacao_bases, h_al, aluminio, sb, data_analise
 
 Se algum campo não for encontrado, retornar null.
 
