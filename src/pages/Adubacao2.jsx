@@ -347,7 +347,26 @@ export default function Adubacao2() {
     else await createAnalise.mutateAsync(payload);
   };
 
-  const handleImportarAgrupado = async (dados, talhao) => handleImportarAnalise(talhao, dados);
+  const handleImportarAgrupado = async (itensList) => {
+    // itensList: [{ talhao, dados, laboratorio }]
+    let sucesso = 0;
+    let falha = 0;
+    for (const item of itensList) {
+      try {
+        await handleImportarAnalise(item.talhao, item.dados);
+        sucesso++;
+      } catch {
+        falha++;
+      }
+    }
+    // Invalida queries para atualizar status
+    queryClient.invalidateQueries({ queryKey: ['analises_solo'] });
+    toast({
+      title: falha === 0 ? 'Importação concluída!' : 'Importação parcial',
+      description: `${sucesso} talhão(ões) importado(s) com sucesso${falha > 0 ? `, ${falha} com erro` : ''}.`,
+      variant: falha > 0 && sucesso === 0 ? 'destructive' : 'default',
+    });
+  };
 
   const handleFecharModalAgrupado = () => {
     // Só registra agrupamento explícito se o usuário usou "Importar para selecionados" com >1 talhão

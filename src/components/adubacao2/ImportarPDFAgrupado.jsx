@@ -187,9 +187,12 @@ export default function ImportarPDFAgrupado({ talhoes, safra, analises, onImport
   };
 
   const handleSalvar = async () => {
-    for (const item of analisesPorTalhao) {
-      await onImportarAnalise({ ...item.dados, laboratorio_origem: item.laboratorio }, item.talhao);
-    }
+    const itensList = analisesPorTalhao.map(item => ({
+      talhao: item.talhao,
+      dados: { ...item.dados, laboratorio_origem: item.laboratorio },
+      laboratorio: item.laboratorio,
+    }));
+    await onImportarAnalise(itensList);
     setSalvo(true);
   };
 
