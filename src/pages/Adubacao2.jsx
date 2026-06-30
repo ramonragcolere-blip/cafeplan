@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle, Save } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
-import ImportarPDFAgrupado from '@/components/adubacao2/ImportarPDFAgrupado';
+import ImportarAgrupado020 from '@/components/adubacao2/ImportarAgrupado020';
+import ImportarAgrupado2040 from '@/components/adubacao2/ImportarAgrupado2040';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
@@ -169,7 +170,8 @@ export default function Adubacao2() {
   const [selecionados, setSelecionados] = useState([]);
   // PROBLEMA 4: agrupamentos só quando explícito
   const [agrupamentosExplicitos, setAgrupamentosExplicitos] = useState([]);
-  const [modalAgrupado, setModalAgrupado] = useState(false);
+  const [modalAgrupado020, setModalAgrupado020] = useState(false);
+  const [modalAgrupado2040, setModalAgrupado2040] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState('analises');
   const [resultadosCalculo, setResultadosCalculo] = useState(null);
   const [calculando, setCalculando] = useState(false);
@@ -368,8 +370,7 @@ export default function Adubacao2() {
     });
   };
 
-  const handleFecharModalAgrupado = () => {
-    // Só registra agrupamento explícito se o usuário usou "Importar para selecionados" com >1 talhão
+  const handleFecharModalAgrupado020 = () => {
     if (selecionados.length > 1) {
       setAgrupamentosExplicitos(prev => {
         const filtered = prev.filter(g => !g.talhaoIds.some(id => selecionados.includes(id)));
@@ -377,7 +378,12 @@ export default function Adubacao2() {
       });
     }
     setSelecionados([]);
-    setModalAgrupado(false);
+    setModalAgrupado020(false);
+  };
+
+  const handleFecharModalAgrupado2040 = () => {
+    setSelecionados([]);
+    setModalAgrupado2040(false);
   };
 
   const handleSalvar2040 = async (talhao, dados) => {
@@ -646,12 +652,29 @@ export default function Adubacao2() {
       {abaAtiva === 'analises' && produtor && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 px-5 py-4 border-b border-border bg-muted/20">
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={selecionados.length === 0} onClick={() => setModalAgrupado(true)}>
-              <Upload className="w-3.5 h-3.5" /> Importar para selecionados ({selecionados.length})
+            {/* 0-20 cm */}
+            <div className="flex items-center gap-1 bg-green-50 border border-green-200 rounded-lg px-2 py-1">
+              <span className="text-xs font-semibold text-green-800">0-20 cm</span>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs border-green-300 text-green-800 hover:bg-green-50"
+              disabled={selecionados.length === 0} onClick={() => setModalAgrupado020(true)}>
+              <Upload className="w-3.5 h-3.5" /> Selecionados ({selecionados.length})
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs"
-              onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado(true); }}>
-              <FileUp className="w-3.5 h-3.5" /> Importar todas de uma vez
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs border-green-300 text-green-800 hover:bg-green-50"
+              onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado020(true); }}>
+              <FileUp className="w-3.5 h-3.5" /> Todos de uma vez
+            </Button>
+            {/* 20-40 cm */}
+            <div className="flex items-center gap-1 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1 ml-2">
+              <span className="text-xs font-semibold text-orange-800">20-40 cm</span>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs border-orange-300 text-orange-800 hover:bg-orange-50"
+              disabled={selecionados.length === 0} onClick={() => setModalAgrupado2040(true)}>
+              <Upload className="w-3.5 h-3.5" /> Selecionados ({selecionados.length})
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs border-orange-300 text-orange-800 hover:bg-orange-50"
+              onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado2040(true); }}>
+              <FileUp className="w-3.5 h-3.5" /> Todos de uma vez
             </Button>
             <div className="ml-auto flex items-center gap-2">
               {msgCalculo && (
@@ -790,13 +813,22 @@ export default function Adubacao2() {
         </div>
       )}
 
-      {/* Modal agrupado */}
-      {modalAgrupado && (
-        <ImportarPDFAgrupado
+      {/* Modal agrupado 0-20 cm */}
+      {modalAgrupado020 && (
+        <ImportarAgrupado020
           talhoes={talhoes.filter(t => selecionados.includes(t.id))}
-          safra={safra} analises={analises} analises2040={[]}
           onImportarAnalise={handleImportarAgrupado}
-          onClose={handleFecharModalAgrupado}
+          onClose={handleFecharModalAgrupado020}
+        />
+      )}
+
+      {/* Modal agrupado 20-40 cm */}
+      {modalAgrupado2040 && (
+        <ImportarAgrupado2040
+          talhoes={talhoes.filter(t => selecionados.includes(t.id))}
+          analises2040Existentes={analises2040Local}
+          onSalvar2040={handleSalvar2040}
+          onClose={handleFecharModalAgrupado2040}
         />
       )}
 
