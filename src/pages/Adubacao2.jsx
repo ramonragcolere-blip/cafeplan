@@ -15,6 +15,7 @@ import ImportarAgrupado2040 from '@/components/adubacao2/ImportarAgrupado2040';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
+import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 
@@ -26,6 +27,7 @@ const ABAS = [
   { id: 'calagem',      label: 'Calagem' },
   { id: 'planejamento', label: 'Planejamento' },
   { id: 'compras',      label: 'Consolidação de Compras' },
+  { id: 'resumo',       label: 'Resumo Geral' },
 ];
 
 // ── Status badge ─────────────────────────────────────────────────────────────
@@ -826,6 +828,17 @@ export default function Adubacao2() {
             )}
           </div>
           <AbaCompras2 resultados={resultadosCalculo} dosesEditadas={dosesEditadas} />
+        </div>
+      )}
+
+      {/* ── Aba: Resumo Geral ── */}
+      {abaAtiva === 'resumo' && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden p-5">
+          <AbaResumoGeral2
+            produtor={produtor}
+            safra={safra}
+            talhoes={todosTalhoes}
+          />
         </div>
       )}
 
