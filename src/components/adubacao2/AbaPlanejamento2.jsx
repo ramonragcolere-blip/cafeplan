@@ -493,7 +493,7 @@ function StatusBadgePlan({ rec }) {
 }
 
 function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar }) {
-  const { talhao, rec, mediaBienal, analise } = resultado;
+  const { talhao, rec, mediaBienal, analise, analise2040 } = resultado;
   const micros = calcMicros(analise);
   const area = talhao.area_ha || 0;
 
@@ -587,11 +587,39 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
                 const cls = micros[el.key];
                 if (cls?.classe) classeBadge = cls.classe;
               } else if (el.tipo === 'valor') {
-                // MO: mostra do analise
                 valor = analise?.materia_organica ?? null;
               }
 
               const temDeficit = el.temRec && valor != null && valor > 0;
+
+              // ── Teor do solo para exibição ──────────────────────────────
+              let teor = null; // { texto, unidade }
+              const fmtT = (v) => v != null ? Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : null;
+              if (el.key === 'K') {
+                const k0 = analise?.potassio != null ? fmtT(analise.potassio) : null;
+                const k1 = analise2040?.potassio != null ? fmtT(analise2040.potassio) : null;
+                if (k0 != null && k1 != null) teor = { texto: `${k0} (0-20) | ${k1} (20-40)`, unidade: 'mg/dm³' };
+                else if (k0 != null) teor = { texto: k0, unidade: 'mg/dm³' };
+              } else if (el.key === 'P') {
+                const p0 = analise?.fosforo != null ? fmtT(analise.fosforo) : null;
+                const p1 = analise2040?.fosforo != null ? fmtT(analise2040.fosforo) : null;
+                if (p0 != null && p1 != null) teor = { texto: `${p0} (0-20) | ${p1} (20-40)`, unidade: 'mg/dm³' };
+                else if (p0 != null) teor = { texto: p0, unidade: 'mg/dm³' };
+              } else if (el.key === 'Ca') {
+                const v = analise?.calcio; if (v != null) teor = { texto: fmtT(v), unidade: 'cmolc/dm³' };
+              } else if (el.key === 'Mg') {
+                const v = analise?.magnesio; if (v != null) teor = { texto: fmtT(v), unidade: 'cmolc/dm³' };
+              } else if (el.key === 'B') {
+                const v = analise?.boro; if (v != null) teor = { texto: fmtT(v), unidade: 'mg/dm³' };
+              } else if (el.key === 'Zn') {
+                const v = analise?.zinco; if (v != null) teor = { texto: fmtT(v), unidade: 'mg/dm³' };
+              } else if (el.key === 'Cu') {
+                const v = analise?.cobre; if (v != null) teor = { texto: fmtT(v), unidade: 'mg/dm³' };
+              } else if (el.key === 'Mn') {
+                const v = analise?.manganes; if (v != null) teor = { texto: fmtT(v), unidade: 'mg/dm³' };
+              } else if (el.key === 'Fe') {
+                const v = analise?.ferro; if (v != null) teor = { texto: fmtT(v), unidade: 'mg/dm³' };
+              }
 
               return (
                 <div key={el.key}
@@ -631,6 +659,12 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
                   )}
                   {el.tipo === 'dose' && !el.temRec && (
                     <p className="text-base font-bold text-muted-foreground">—</p>
+                  )}
+                  {/* Teor do solo */}
+                  {teor && (
+                    <p className="text-[9px] text-blue-600 mt-1 leading-tight font-medium truncate" title={`Solo: ${teor.texto} ${teor.unidade}`}>
+                      Solo: {teor.texto} {teor.unidade}
+                    </p>
                   )}
                   {/* Indicador de déficit */}
                   {temDeficit && ativo && (
