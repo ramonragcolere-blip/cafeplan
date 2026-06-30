@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, Loader2, CheckCircle2, AlertTriangle, GripVertical, FileText, ArrowRight, XCircle, Mountain } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Upload, Loader2, CheckCircle2, AlertTriangle, GripVertical, FileText, ArrowRight, XCircle, Mountain, Copy, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 const CAMPOS_2040 = [
@@ -44,6 +45,20 @@ function parearPorNome(arquivos, talhoes) {
   });
 }
 
+const CORES_GRUPO = [
+  'bg-orange-100 text-orange-700 border-orange-300',
+  'bg-purple-100 text-purple-700 border-purple-300',
+  'bg-teal-100 text-teal-700 border-teal-300',
+  'bg-rose-100 text-rose-700 border-rose-300',
+  'bg-blue-100 text-blue-700 border-blue-300',
+  'bg-amber-100 text-amber-700 border-amber-300',
+];
+
+function getCorGrupo(nomeArquivo, arquivosUnicos) {
+  const idx = arquivosUnicos.indexOf(nomeArquivo);
+  return idx >= 0 ? CORES_GRUPO[idx % CORES_GRUPO.length] : '';
+}
+
 const buildPrompt2040 = (textoPDF) => `
 Extraia os dados desta análise de solo na profundidade 20-40 cm e retorne APENAS um objeto JSON válido, sem texto adicional, sem markdown.
 
@@ -63,12 +78,53 @@ Se algum campo não for encontrado, retornar null.
 ${textoPDF}
 === FIM ===`;
 
+// ── Popover de "aplicar a outros talhões" ─────────────────────────────────────
+function PopoverAplicarOutros({ talhoes, pares, idxOrigem, onAplicar, onClose }) {
+  const arquivoOrigem = pares[idxOrigem]?.arquivo;
+  const [selecionados, setSelecionados] = useState([]);
+
+  const toggle = (id) => setSelecionados(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
+  return (
+    <div className="absolute z-50 right-0 top-8 bg-background border border-border rounded-xl shadow-xl p-3 w-64">
+      <p className="text-xs font-semibold mb-2 text-foreground">Aplicar "{arquivoOrigem?.name}" também a:</p>
+      <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+        {talhoes.map((t, i) => {
+          if (i === idxOrigem) return null;
+          const jaTemEste = pares[i]?.arquivo?.name === arquivoOrigem?.name;
+          return (
+            <label key={t.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/30 rounded px-1 py-0.5">
+              <Checkbox
+                checked={selecionados.includes(t.id) || jaTemEste}
+                disabled={jaTemEste}
+                onCheckedChange={() => toggle(t.id)}
+              />
+              <span className="text-xs">{t.nome}</span>
+              {jaTemEste && <span className="text-xs text-muted-foreground ml-auto">já associado</span>}
+            </label>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" className="flex-1 text-xs h-7" onClick={onClose}>Cancelar</Button>
+        <Button size="sm" className="flex-1 text-xs h-7 gap-1" disabled={selecionados.length === 0}
+          onClick={() => { onAplicar(selecionados); onClose(); }}>
+          <Copy className="w-3 h-3" /> Aplicar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Etapa 1: Associação ────────────────────────────────────────────────────────
 function EtapaAssociacao({ talhoes, pares, setPares, onSemPDF, onConfirmar, onClose }) {
   const fileRef = useRef();
   const [arquivos, setArquivos] = useState([]);
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOver, setDragOver] = useState(null);
+  const [popoverAberto, setPopoverAberto] = useState(null);
 
   const handleFiles = (e) => {
     const files = Array.from(e.target.files || []);
@@ -78,26 +134,33 @@ function EtapaAssociacao({ talhoes, pares, setPares, onSemPDF, onConfirmar, onCl
     e.target.value = '';
   };
 
-  const handleDragStart = (idx) => setDragIdx(idx);
-  const handleDragOver = (e, idx) => { e.preventDefault(); setDragOver(idx); };
+  // DnD: COPIA o arquivo para o destino
+  const handleDragStart = (e, idx) => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'copy'; };
+  const handleDragOver = (e, idx) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOver(idx); };
   const handleDrop = (e, idx) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDragOver(null); return; }
-    setPares(prev => {
-      const novo = [...prev];
-      const tmp = novo[dragIdx].arquivo;
-      novo[dragIdx] = { ...novo[dragIdx], arquivo: novo[idx].arquivo };
-      novo[idx] = { ...novo[idx], arquivo: tmp };
-      return novo;
-    });
+    const arqOrigem = pares[dragIdx]?.arquivo;
+    if (!arqOrigem) { setDragIdx(null); setDragOver(null); return; }
+    setPares(prev => prev.map((p, i) => i === idx ? { ...p, arquivo: arqOrigem } : p));
     setDragIdx(null);
     setDragOver(null);
   };
 
   const trocarArquivo = (talhaoIdx, nomeArquivo) => {
-    const arqSelecionado = arquivos.find(a => a.name === nomeArquivo) || null;
-    setPares(prev => prev.map((p, i) => i === talhaoIdx ? { ...p, arquivo: arqSelecionado } : p));
+    const arq = arquivos.find(a => a.name === nomeArquivo) || null;
+    setPares(prev => prev.map((p, i) => i === talhaoIdx ? { ...p, arquivo: arq } : p));
   };
+
+  const aplicarAOutros = (idxOrigem, idsTalhoes) => {
+    const arq = pares[idxOrigem]?.arquivo;
+    if (!arq) return;
+    setPares(prev => prev.map((p) => idsTalhoes.includes(p.talhao.id) ? { ...p, arquivo: arq } : p));
+  };
+
+  const arquivosUsados = [...new Set(pares.filter(p => p.arquivo).map(p => p.arquivo.name))];
+  const contagemPorArquivo = {};
+  pares.forEach(p => { if (p.arquivo) contagemPorArquivo[p.arquivo.name] = (contagemPorArquivo[p.arquivo.name] || 0) + 1; });
 
   const podeContinuarComPDF = pares.length > 0 && pares.every(p => p.arquivo);
 
@@ -105,8 +168,8 @@ function EtapaAssociacao({ talhoes, pares, setPares, onSemPDF, onConfirmar, onCl
     <div className="space-y-4">
       <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-xs text-orange-800">
         <p className="font-semibold mb-1">Análise 20-40 cm — duas opções:</p>
-        <p>• <strong>Com PDF:</strong> selecione os arquivos e o sistema tentará extrair os dados automaticamente (você poderá editar antes de salvar).</p>
-        <p>• <strong>Sem PDF:</strong> preencha os campos manualmente para cada talhão.</p>
+        <p>• <strong>Com PDF:</strong> selecione arquivos. <strong>Arraste</strong> para compartilhar um PDF com vários talhões, ou use <Users className="inline w-3 h-3" /> para marcar múltiplos.</p>
+        <p>• <strong>Sem PDF:</strong> preencha manualmente.</p>
       </div>
 
       <div className="flex gap-2">
@@ -125,44 +188,99 @@ function EtapaAssociacao({ talhoes, pares, setPares, onSemPDF, onConfirmar, onCl
 
       {pares.length > 0 && (
         <div className="border border-border rounded-xl overflow-hidden">
-          <div className="bg-muted/20 px-3 py-2 border-b border-border grid grid-cols-[24px_1fr_24px_1fr] gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          <div className="bg-muted/20 px-3 py-2 border-b border-border grid grid-cols-[20px_1fr_20px_1fr_28px] gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             <span></span>
             <span>Arquivo PDF</span>
             <span></span>
             <span>Talhão de destino</span>
+            <span></span>
           </div>
-          {pares.map((par, idx) => (
-            <div
-              key={par.talhao.id}
-              draggable
-              onDragStart={() => handleDragStart(idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDrop={(e) => handleDrop(e, idx)}
-              onDragEnd={() => { setDragIdx(null); setDragOver(null); }}
-              className={`grid grid-cols-[24px_1fr_24px_1fr] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-0 cursor-grab active:cursor-grabbing transition-colors
-                ${dragOver === idx ? 'bg-orange-50 border-orange-300' : idx % 2 === 0 ? 'bg-background' : 'bg-muted/5'}`}
-            >
-              <GripVertical className="w-4 h-4 text-muted-foreground/40" />
-              <div className="flex items-center gap-1.5 min-w-0">
-                <FileText className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                {arquivos.length > 1 ? (
-                  <Select value={par.arquivo?.name || ''} onValueChange={v => trocarArquivo(idx, v)}>
-                    <SelectTrigger className="h-7 text-xs border-dashed">
-                      <SelectValue placeholder="— sem arquivo —" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {arquivos.map(a => (
-                        <SelectItem key={a.name} value={a.name}>{a.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <span className="text-xs truncate">{par.arquivo?.name || <span className="text-muted-foreground italic">sem arquivo</span>}</span>
-                )}
+          {pares.map((par, idx) => {
+            const compartilhado = par.arquivo && contagemPorArquivo[par.arquivo.name] > 1;
+            const corGrupo = par.arquivo ? getCorGrupo(par.arquivo.name, arquivosUsados) : '';
+            return (
+              <div
+                key={par.talhao.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={() => { setDragIdx(null); setDragOver(null); }}
+                className={`grid grid-cols-[20px_1fr_20px_1fr_28px] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-0 transition-colors cursor-grab active:cursor-grabbing
+                  ${dragOver === idx ? 'bg-orange-50 border-orange-300' : dragIdx === idx ? 'opacity-60' : idx % 2 === 0 ? 'bg-background' : 'bg-muted/5'}`}
+              >
+                <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40" />
+
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {compartilhado && (
+                    <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded border ${corGrupo}`}>
+                      ×{contagemPorArquivo[par.arquivo.name]}
+                    </span>
+                  )}
+                  <FileText className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                  {arquivos.length > 1 ? (
+                    <Select value={par.arquivo?.name || ''} onValueChange={v => trocarArquivo(idx, v)}>
+                      <SelectTrigger className="h-7 text-xs border-dashed min-w-0 flex-1">
+                        <SelectValue placeholder="— sem arquivo —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {arquivos.map(a => (
+                          <SelectItem key={a.name} value={a.name}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <span className="text-xs truncate">
+                      {par.arquivo?.name || <span className="text-muted-foreground italic">sem arquivo</span>}
+                    </span>
+                  )}
+                </div>
+
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/50 justify-self-center" />
+
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {compartilhado && (
+                    <span className={`shrink-0 inline-block w-2 h-2 rounded-full border-2 ${corGrupo.split(' ')[0]}`} />
+                  )}
+                  <span className="text-xs font-medium truncate">{par.talhao.nome}</span>
+                </div>
+
+                <div className="relative justify-self-end">
+                  {par.arquivo && (
+                    <button
+                      className="w-6 h-6 flex items-center justify-center rounded hover:bg-orange-100 text-orange-500 hover:text-orange-700 transition-colors"
+                      title="Aplicar este PDF a outros talhões"
+                      onClick={(e) => { e.stopPropagation(); setPopoverAberto(popoverAberto === idx ? null : idx); }}
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {popoverAberto === idx && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setPopoverAberto(null)} />
+                      <PopoverAplicarOutros
+                        talhoes={talhoes}
+                        pares={pares}
+                        idxOrigem={idx}
+                        onAplicar={(ids) => aplicarAOutros(idx, ids)}
+                        onClose={() => setPopoverAberto(null)}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
-              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/50 justify-self-center" />
-              <span className="text-xs font-medium truncate">{par.talhao.nome}</span>
-            </div>
+            );
+          })}
+        </div>
+      )}
+
+      {arquivosUsados.filter(n => contagemPorArquivo[n] > 1).length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-muted-foreground">PDFs compartilhados:</span>
+          {arquivosUsados.filter(n => contagemPorArquivo[n] > 1).map(nome => (
+            <span key={nome} className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${getCorGrupo(nome, arquivosUsados)}`}>
+              {nome.replace('.pdf', '').slice(0, 20)} → {contagemPorArquivo[nome]} talhões
+            </span>
           ))}
         </div>
       )}
@@ -185,15 +303,14 @@ function EtapaProcessando({ total, atual }) {
     <div className="flex flex-col items-center justify-center py-12 gap-4 text-muted-foreground">
       <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
       <p className="text-sm font-medium">Extraindo dados 20-40 cm com IA…</p>
-      <p className="text-xs">{atual} de {total} arquivo(s) processados</p>
+      <p className="text-xs">{atual} de {total} arquivo(s) únicos processados</p>
     </div>
   );
 }
 
-// ── Etapa 3: Revisão/edição manual ────────────────────────────────────────────
+// ── Etapa 3: Revisão ──────────────────────────────────────────────────────────
 function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
   const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
-
   const updateDado = (idx, key, value) => {
     setItens(prev => prev.map((item, i) =>
       i === idx ? { ...item, dados: { ...item.dados, [key]: value } } : item
@@ -203,26 +320,23 @@ function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
   return (
     <div className="space-y-5">
       <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-xs text-orange-800">
-        Confira e edite os dados abaixo. O campo <strong>K (potássio)</strong> é o mais importante para o cálculo.
+        Confira e edite os dados. Talhões com o mesmo PDF têm os mesmos valores iniciais — edite individualmente se necessário.
       </div>
       {itens.map((item, idx) => (
         <div key={item.talhao.id} className="border border-border rounded-xl overflow-hidden">
-          <div className="bg-muted/20 px-4 py-2.5 border-b border-border flex items-center gap-2">
+          <div className="bg-muted/20 px-4 py-2.5 border-b border-border flex items-center gap-2 flex-wrap">
             <Mountain className="w-3.5 h-3.5 text-orange-600" />
             <span className="text-xs font-semibold">{item.talhao.nome}</span>
-            {item.arquivoNome && <span className="text-xs text-muted-foreground ml-1">← {item.arquivoNome}</span>}
+            {item.arquivoNome && <span className="text-xs text-muted-foreground">← {item.arquivoNome}</span>}
           </div>
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
             {CAMPOS_2040.map(c => (
               <div key={c.key}>
                 <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
-                <Input
-                  type={c.date ? 'date' : 'number'}
-                  step={c.date ? undefined : '0.001'}
+                <Input type={c.date ? 'date' : 'number'} step={c.date ? undefined : '0.001'}
                   value={item.dados[c.key] ?? ''}
                   onChange={e => updateDado(idx, c.key, c.date ? e.target.value : toNum(e.target.value))}
-                  className="h-7 text-xs"
-                />
+                  className="h-7 text-xs" />
               </div>
             ))}
           </div>
@@ -251,9 +365,7 @@ function EtapaResumo({ resultados, onClose }) {
       <div className="border border-border rounded-xl overflow-hidden">
         {resultados.map((r, i) => (
           <div key={r.talhao.id} className={`flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
-            {r.status === 'ok'
-              ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-              : <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
+            {r.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
             <span className="text-xs font-medium flex-1">{r.talhao.nome}</span>
             <span className={`text-xs font-medium ${r.status === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
               {r.status === 'ok' ? 'Salvo' : 'Erro'}
@@ -277,71 +389,66 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
   const [resultados, setResultados] = useState([]);
   const [salvando, setSalvando] = useState(false);
 
-  // Sem PDF: vai direto para revisão com dados existentes ou em branco
   const handleSemPDF = useCallback(() => {
-    const itensManuais = talhoes.map(talhao => ({
-      talhao,
-      arquivoNome: '',
+    setItens(talhoes.map(talhao => ({
+      talhao, arquivoNome: '',
       dados: analises2040Existentes?.[talhao.id] || {},
       laboratorio: 'OUTRO',
-    }));
-    setItens(itensManuais);
+    })));
     setEtapa('revisao');
   }, [talhoes, analises2040Existentes]);
 
   const handleConfirmar = useCallback(async (paresConfirmados) => {
     setEtapa('processando');
     setProgresso(0);
-    const itensPorcessados = [];
 
-    for (let i = 0; i < paresConfirmados.length; i++) {
-      const par = paresConfirmados[i];
-      setProgresso(i);
-      let dadosExtraidos = analises2040Existentes?.[par.talhao.id] || {};
+    // Cache: cada PDF único é processado uma única vez
+    const cacheExtracao = {};
+    let processados = 0;
+
+    for (const par of paresConfirmados) {
+      if (!par.arquivo || cacheExtracao[par.arquivo.name]) continue;
+      let dadosExtraidos = {};
       let laboratorio = 'OUTRO';
-
-      if (par.arquivo) {
+      try {
+        const { file_url } = await base44.integrations.Core.UploadFile({ file: par.arquivo });
+        let textoPDF = '';
         try {
-          const { file_url } = await base44.integrations.Core.UploadFile({ file: par.arquivo });
-          let textoPDF = '';
-          try {
-            const extracao = await base44.integrations.Core.ExtractDataFromUploadedFile({
-              file_url,
-              json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
-            });
-            if (extracao?.status === 'success' && extracao?.output?.texto_completo) {
-              textoPDF = extracao.output.texto_completo;
-            }
-          } catch (_) {}
-
-          const resposta = await base44.integrations.Core.InvokeLLM({
-            prompt: buildPrompt2040(textoPDF || 'Leia os dados da profundidade 20-40cm diretamente do PDF.'),
-            file_urls: [file_url],
-            model: 'claude_sonnet_4_6',
+          const extracao = await base44.integrations.Core.ExtractDataFromUploadedFile({
+            file_url,
+            json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
           });
-
-          let parsed = resposta;
-          if (typeof resposta === 'string') {
-            const m = resposta.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
-            parsed = m ? JSON.parse(m[0]) : null;
-          }
-          if (parsed) {
-            laboratorio = parsed.laboratorio || 'OUTRO';
-            const { laboratorio: _l, ...brutos } = parsed;
-            dadosExtraidos = converterUnidades(brutos, laboratorio);
-          }
+          if (extracao?.status === 'success' && extracao?.output?.texto_completo) textoPDF = extracao.output.texto_completo;
         } catch (_) {}
-      }
-
-      itensPorcessados.push({
-        talhao: par.talhao,
-        arquivoNome: par.arquivo?.name || '',
-        dados: dadosExtraidos,
-        laboratorio,
-      });
+        const resposta = await base44.integrations.Core.InvokeLLM({
+          prompt: buildPrompt2040(textoPDF || 'Leia os dados da profundidade 20-40cm diretamente do PDF.'),
+          file_urls: [file_url],
+          model: 'claude_sonnet_4_6',
+        });
+        let parsed = resposta;
+        if (typeof resposta === 'string') {
+          const m = resposta.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
+          parsed = m ? JSON.parse(m[0]) : null;
+        }
+        if (parsed) {
+          laboratorio = parsed.laboratorio || 'OUTRO';
+          const { laboratorio: _l, ...brutos } = parsed;
+          dadosExtraidos = converterUnidades(brutos, laboratorio);
+        }
+      } catch (_) {}
+      cacheExtracao[par.arquivo.name] = { dados: dadosExtraidos, laboratorio };
+      processados++;
+      setProgresso(processados);
     }
 
-    setProgresso(paresConfirmados.length);
+    // Cada talhão recebe cópia própria
+    const itensPorcessados = paresConfirmados.map(par => ({
+      talhao: par.talhao,
+      arquivoNome: par.arquivo?.name || '',
+      dados: par.arquivo ? { ...(cacheExtracao[par.arquivo.name]?.dados || {}) } : (analises2040Existentes?.[par.talhao.id] || {}),
+      laboratorio: par.arquivo ? (cacheExtracao[par.arquivo.name]?.laboratorio || 'OUTRO') : 'OUTRO',
+    }));
+
     setItens(itensPorcessados);
     setEtapa('revisao');
   }, [analises2040Existentes]);
@@ -369,6 +476,8 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
     resumo: 'Resumo da importação',
   }[etapa];
 
+  const totalUnicos = [...new Set(pares.filter(p => p.arquivo).map(p => p.arquivo.name))].length;
+
   return (
     <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -381,26 +490,10 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
             {titulo} — {talhoes.length} talhão(ões)
           </DialogTitle>
         </DialogHeader>
-
-        {etapa === 'associacao' && (
-          <EtapaAssociacao
-            talhoes={talhoes}
-            pares={pares}
-            setPares={setPares}
-            onSemPDF={handleSemPDF}
-            onConfirmar={handleConfirmar}
-            onClose={onClose}
-          />
-        )}
-        {etapa === 'processando' && (
-          <EtapaProcessando total={pares.length} atual={progresso} />
-        )}
-        {etapa === 'revisao' && (
-          <EtapaRevisao itens={itens} setItens={setItens} onSalvar={handleSalvar} salvando={salvando} />
-        )}
-        {etapa === 'resumo' && (
-          <EtapaResumo resultados={resultados} onClose={onClose} />
-        )}
+        {etapa === 'associacao' && <EtapaAssociacao talhoes={talhoes} pares={pares} setPares={setPares} onSemPDF={handleSemPDF} onConfirmar={handleConfirmar} onClose={onClose} />}
+        {etapa === 'processando' && <EtapaProcessando total={totalUnicos} atual={progresso} />}
+        {etapa === 'revisao' && <EtapaRevisao itens={itens} setItens={setItens} onSalvar={handleSalvar} salvando={salvando} />}
+        {etapa === 'resumo' && <EtapaResumo resultados={resultados} onClose={onClose} />}
       </DialogContent>
     </Dialog>
   );
