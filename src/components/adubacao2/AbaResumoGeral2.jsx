@@ -48,37 +48,51 @@ function formatQtd(kg) {
 
 /**
  * Props:
- *  - resultados: array igual ao de AbaPlanejamento2 (talhao, rec, mediaBienal, analise, analise2040, produtoSugerido, doseProdutoHa)
+ *  - resultados: array igual ao de AbaPlanejamento2
  *  - todos: lista de fertilizantes+fontesSimples
- *  - produtosEfetivos: mapa { [talhaoId]: { produto, doseKgHa } } — produto efetivo salvo/escolhido manualmente
+ *  - produtosEfetivos: mapa { [talhaoId]: { produto, doseKgHa } }
+ *  - calagens: array de registros BaseRecomendacaoCalagem do produtor/safra
+ *  - talhoes: lista de talhoes
  *  - produtor: objeto produtor
  *  - safra: string
  */
-export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, produtor, safra }) {
+export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra }) {
 
-  // Constrói grupos por talhão usando o produto efetivo (salvo/filtrado) quando disponível
+  // Mapa de calagem por talhão
+  const calagensMap = useMemo(() => {
+    const m = {};
+    calagens.forEach(c => { m[c.talhao_id] = c; });
+    return m;
+  }, [calagens]);
+
+  // Constrói grupos por talhão (adubação + calagem)
   const grupos = useMemo(() => {
-    if (!resultados || resultados.length === 0) return [];
-    return resultados
-      .filter(r => r.rec)
-      .map(r => {
-        const { talhao, rec } = r;
-        const area = talhao.area_ha || 0;
-        const numPlantas = talhao.num_plantas || 0;
-        const metros = getMetros(talhao);
+    // Coleta todos os talhões relevantes (com rec OU com calagem)
+    const talhaoIds = new Set([
+      ...(resultados || []).filter(r => r.rec).map(r => r.talhao.id),
+      ...calagens.map(c => c.talhao_id),
+    ]);
 
-        // Produto salvo no banco (restaurado em detalhamento.produtoSugerido)
-        const produtoSalvo = r.produtoSugerido || null;
-        const doseSalva = r.doseProdutoHa || null;
+    return Array.from(talhaoIds).map(talhaoId => {
+      const resultado = (resultados || []).find(r => r.talhao.id === talhaoId);
+      const talhao = resultado?.talhao || talhoes.find(t => t.id === talhaoId);
+      if (!talhao) return null;
 
-        // Produto efetivo do filtro atual (se aba Planejamento foi aberta nesta sessão)
-        const efetivo = produtosEfetivos[talhao.id];
+      const area = talhao.area_ha || 0;
+      const numPlantas = talhao.num_plantas || 0;
+      const metros = getMetros(talhao);
+      const linhas = [];
 
-        // Prioridade: efetivo da sessão > salvo no banco > recalcula
+      // Linha de adubação NPK (se há recomendação calculada)
+      if (resultado?.rec) {
+        const rec = resultado.rec;
+        const efetivo = produtosEfetivos[talhaoId];
+        const produtoSalvo = resultado.produtoSugerido || null;
+        const doseSalva = resultado.doseProdutoHa || null;
+
         let produtoPrincipal = efetivo?.produto || produtoSalvo;
         let dosePrincipal = efetivo?.doseKgHa ?? doseSalva;
 
-        // Fallback: recalcula se não há produto persistido
         if (!produtoPrincipal && todos.length > 0) {
           const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
           const sugN = sugestoes['n_pct'];
@@ -92,18 +106,27 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
           }
         }
 
-        if (!produtoPrincipal || !dosePrincipal) return null;
+        if (produtoPrincipal && dosePrincipal) {
+          const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
+          const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
+          const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+          linhas.push({ produtoNome: produtoPrincipal.nome, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['N/P/K'], isCalagem: false });
+        }
+      }
 
-        const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
+      // Linha de calagem (se há registro salvo para este talhão)
+      const calagem = calagensMap[talhaoId];
+      if (calagem?.produto_nome && calagem?.dose_kg_ha) {
+        const totalKg = area > 0 ? Math.round(calagem.dose_kg_ha * area) : calagem.dose_total_kg || null;
         const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
         const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+        linhas.push({ produtoNome: calagem.produto_nome, doseKgHa: calagem.dose_kg_ha, totalKg, gPlanta, gMetro, nutLabels: ['Calagem'], isCalagem: true });
+      }
 
-        const linhas = [{ produtoNome: produtoPrincipal.nome, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['N/P/K'], isCalagem: false }];
-
-        return { talhao, linhas };
-      })
-      .filter(Boolean);
-  }, [resultados, todos, produtosEfetivos]);
+      if (linhas.length === 0) return null;
+      return { talhao, linhas };
+    }).filter(Boolean);
+  }, [resultados, todos, produtosEfetivos, calagensMap, talhoes]);
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
@@ -133,7 +156,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     </div>
   );
 
-  if (!resultados || resultados.length === 0 || grupos.length === 0) return (
+  if (grupos.length === 0) return (
     <div className="text-center py-16 text-muted-foreground bg-card border border-border rounded-2xl">
       <LayoutList className="w-10 h-10 mx-auto mb-3 opacity-30" />
       <p className="text-lg font-medium">Nenhum planejamento encontrado.</p>
@@ -263,22 +286,26 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                         </td>
                       </tr>
                       {linhas.map((linha, li) => (
-                        <tr key={`${talhao.id}-${li}`}
-                          className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
-                          <td className="px-4 py-2.5 font-medium text-foreground">{linha.produtoNome}</td>
-                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                            {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                            {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                            {linha.nutLabels?.join(', ') || '—'}
-                          </td>
-                        </tr>
+                       <tr key={`${talhao.id}-${li}`}
+                         className={`border-b border-border/50 ${linha.isCalagem ? 'bg-amber-50/60' : li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
+                         <td className="px-4 py-2.5 font-medium text-foreground">{linha.produtoNome}</td>
+                         <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                           {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
+                         </td>
+                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                           {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
+                         </td>
+                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                           {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
+                         </td>
+                         <td className="px-4 py-2.5 text-xs">
+                           {linha.isCalagem ? (
+                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">Calagem</span>
+                           ) : (
+                             <span className="text-muted-foreground">{linha.nutLabels?.join(', ') || '—'}</span>
+                           )}
+                         </td>
+                       </tr>
                       ))}
                     </React.Fragment>
                   );

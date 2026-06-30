@@ -210,6 +210,18 @@ export default function Adubacao2() {
     ...fontesSimples.map(f => ({ ...f, _tipo: 'fonte' })),
   ], [fertilizantes, fontesSimples]);
 
+  // Query de calagem
+  const { data: calagensDb = [] } = useQuery({
+    queryKey: ['calagem_recomendacoes'],
+    queryFn: () => base44.entities.BaseRecomendacaoCalagem.list(),
+  });
+
+  // Registros de calagem para produtor+safra
+  const calagensProdutor = useMemo(() =>
+    calagensDb.filter(c => c.codigo_produtor === produtor?.codigo && c.safra === safra),
+    [calagensDb, produtor, safra]
+  );
+
   // Registros salvos para produtor+safra
   const registrosSalvos = useMemo(() =>
     planejamentosDb.filter(r => r.codigo_produtor === produtor?.codigo && r.safra === safra),
@@ -323,17 +335,18 @@ export default function Adubacao2() {
     if (resultadosRestaurados.some(r => r.rec != null)) {
       setResultadosCalculo(resultadosRestaurados);
 
-      // Restaura mapa de produtos efetivos a partir dos dados salvos
+      // Restaura mapa de produtos efetivos a partir dos dados salvos (origem 'salvo')
       const prodEfetivosMap = {};
       resultadosRestaurados.forEach(r => {
         if (r.produtoSugerido && r.doseProdutoHa != null) {
           const prodCompleto = todos.find(p => p.id === r.produtoSugerido.id) || r.produtoSugerido;
-          prodEfetivosMap[r.talhao.id] = { produto: prodCompleto, doseKgHa: r.doseProdutoHa };
+          prodEfetivosMap[r.talhao.id] = { produto: prodCompleto, doseKgHa: r.doseProdutoHa, origem: 'salvo' };
         }
       });
       if (Object.keys(prodEfetivosMap).length > 0) {
         produtosEfetivosRef.current = prodEfetivosMap;
         setProdutosEfetivosExterno(prodEfetivosMap);
+        setProdutosIniciaisExterno(prodEfetivosMap);
       }
     }
   }, [registrosSalvos.length, talhoes.length, todos.length, todasAnalises.length, produtor?.id, safra]);
@@ -507,6 +520,8 @@ export default function Adubacao2() {
     parcelamentosRef.current = p;
   }, []);
 
+  const [produtosIniciaisExterno, setProdutosIniciaisExterno] = useState({});
+
   const handleProdutosEfetivosChange = useCallback((m) => {
     produtosEfetivosRef.current = m;
     setProdutosEfetivosExterno(m);
@@ -593,6 +608,7 @@ export default function Adubacao2() {
   const handleChangeProdutorSafra = useCallback((field, value) => {
     precosRef.current = {};
     parcelamentosRef.current = {};
+    produtosEfetivosRef.current = {};
     if (field === 'produtor') {
       setProdutorId(value === 'none' ? '' : value);
       setSelecionados([]);
@@ -603,6 +619,8 @@ export default function Adubacao2() {
       setAnalises2040Local({});
       setPrecosExterno({});
       setParcelamentosExterno({});
+      setProdutosEfetivosExterno({});
+      setProdutosIniciaisExterno({});
     } else {
       setSafra(value);
       setResultadosCalculo(null);
@@ -611,6 +629,8 @@ export default function Adubacao2() {
       setAnalises2040Local({});
       setPrecosExterno({});
       setParcelamentosExterno({});
+      setProdutosEfetivosExterno({});
+      setProdutosIniciaisExterno({});
     }
   }, []);
 
@@ -841,6 +861,7 @@ export default function Adubacao2() {
           onProdutosEfetivosChange={handleProdutosEfetivosChange}
           precosIniciais={precosExterno}
           parcelamentosIniciais={parcelamentosExterno}
+          produtosIniciais={produtosIniciaisExterno}
         />
       )}
 
@@ -869,6 +890,8 @@ export default function Adubacao2() {
             resultados={resultadosCalculo}
             todos={todos}
             produtosEfetivos={produtosEfetivosExterno}
+            calagens={calagensProdutor}
+            talhoes={talhoes}
             produtor={produtor}
             safra={safra}
           />
