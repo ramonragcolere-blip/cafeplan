@@ -50,60 +50,60 @@ function formatQtd(kg) {
  * Props:
  *  - resultados: array igual ao de AbaPlanejamento2 (talhao, rec, mediaBienal, analise, analise2040, produtoSugerido, doseProdutoHa)
  *  - todos: lista de fertilizantes+fontesSimples
+ *  - produtosEfetivos: mapa { [talhaoId]: { produto, doseKgHa } } — produto efetivo salvo/escolhido manualmente
  *  - produtor: objeto produtor
  *  - safra: string
  */
-export default function AbaResumoGeral2({ resultados, todos, produtor, safra }) {
+export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, produtor, safra }) {
 
-  // Constrói grupos por talhão: para cada resultado calcula linhas de produto
+  // Constrói grupos por talhão usando o produto efetivo (salvo/filtrado) quando disponível
   const grupos = useMemo(() => {
     if (!resultados || resultados.length === 0) return [];
     return resultados
-      .filter(r => r.rec && todos.length > 0)
+      .filter(r => r.rec)
       .map(r => {
         const { talhao, rec } = r;
         const area = talhao.area_ha || 0;
         const numPlantas = talhao.num_plantas || 0;
         const metros = getMetros(talhao);
 
-        // Usa a mesma lógica de sugestão do AbaPlanejamento2
-        const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+        // Produto salvo no banco (restaurado em detalhamento.produtoSugerido)
+        const produtoSalvo = r.produtoSugerido || null;
+        const doseSalva = r.doseProdutoHa || null;
 
-        // Agrupa produtos: pode haver vários nutrientes no mesmo produto
-        const mapaProds = {};
-        for (const [nutKey, sug] of Object.entries(sugestoes)) {
-          if (!sug?.produtoId) continue;
-          const prod = todos.find(p => p.id === sug.produtoId);
-          if (!prod) continue;
-          const pct = parseFloat(prod[nutKey]) || 0;
-          const nutLabels = { n_pct: 'N', p2o5_pct: 'P₂O₅', k2o_pct: 'K₂O', b_pct: 'B' };
-          const nutLabel = nutLabels[nutKey] || nutKey;
-          const recVal = { n_pct: rec.N, p2o5_pct: rec.P, k2o_pct: rec.K, b_pct: rec.B }[nutKey] || 0;
-          let doseKgHa = 0;
-          if (pct > 0 && recVal > 0) doseKgHa = Math.round((recVal / (pct / 100)) * 10) / 10;
+        // Produto efetivo do filtro atual (se aba Planejamento foi aberta nesta sessão)
+        const efetivo = produtosEfetivos[talhao.id];
 
-          if (!mapaProds[prod.id]) {
-            mapaProds[prod.id] = { produtoNome: prod.nome, doseKgHa: 0, nutLabels: [] };
+        // Prioridade: efetivo da sessão > salvo no banco > recalcula
+        let produtoPrincipal = efetivo?.produto || produtoSalvo;
+        let dosePrincipal = efetivo?.doseKgHa ?? doseSalva;
+
+        // Fallback: recalcula se não há produto persistido
+        if (!produtoPrincipal && todos.length > 0) {
+          const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+          const sugN = sugestoes['n_pct'];
+          if (sugN?.produtoId) {
+            const prod = todos.find(p => p.id === sugN.produtoId);
+            if (prod) {
+              produtoPrincipal = prod;
+              const pctN = parseFloat(prod.n_pct) || 0;
+              dosePrincipal = pctN > 0 && rec.N != null ? Math.round((rec.N / (pctN / 100)) * 10) / 10 : null;
+            }
           }
-          // Usa a maior dose entre os nutrientes (nutriente limitante)
-          if (doseKgHa > mapaProds[prod.id].doseKgHa) mapaProds[prod.id].doseKgHa = doseKgHa;
-          mapaProds[prod.id].nutLabels.push(nutLabel);
         }
 
-        const linhas = Object.values(mapaProds)
-          .filter(l => l.doseKgHa > 0)
-          .map(l => {
-            const totalKg = area > 0 ? Math.round(l.doseKgHa * area) : null;
-            const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
-            const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-            return { ...l, totalKg, gPlanta, gMetro, isCalagem: false };
-          });
+        if (!produtoPrincipal || !dosePrincipal) return null;
 
-        if (linhas.length === 0) return null;
+        const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
+        const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
+        const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+
+        const linhas = [{ produtoNome: produtoPrincipal.nome, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['N/P/K'], isCalagem: false }];
+
         return { talhao, linhas };
       })
       .filter(Boolean);
-  }, [resultados, todos]);
+  }, [resultados, todos, produtosEfetivos]);
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {

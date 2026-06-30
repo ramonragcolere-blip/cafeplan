@@ -107,7 +107,7 @@ function ImportarManual2040({ talhao, analise2040Existente, onSalvar, onClose })
 }
 
 // ── Aba Consolidação de Compras ────────────────────────────────────────────────
-function AbaCompras2({ resultados, dosesEditadas }) {
+function AbaCompras2({ resultados, dosesEditadas, produtosEfetivos = {} }) {
   if (!resultados || resultados.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
@@ -116,15 +116,18 @@ function AbaCompras2({ resultados, dosesEditadas }) {
     );
   }
 
-  // Agrega por produto sugerido
+  // Agrega por produto efetivo (filtro/manual > salvo no banco > sugestão automática)
   const mapa = {};
   resultados.forEach(r => {
-    if (!r.produtoSugerido) return;
-    const id = r.produtoSugerido.id;
+    const efetivo = produtosEfetivos[r.talhao.id];
+    const produto = efetivo?.produto || r.produtoSugerido;
+    const dose = efetivo?.doseKgHa ?? r.doseProdutoHa;
+    if (!produto) return;
+    const id = produto.id;
     const area = r.talhao.area_ha || 0;
-    const doseTotal = r.doseProdutoHa != null ? r.doseProdutoHa * area : 0;
+    const doseTotal = dose != null ? dose * area : 0;
     const sacas = r.mediaBienal != null ? r.mediaBienal * area : 0;
-    if (!mapa[id]) mapa[id] = { produto: r.produtoSugerido, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
+    if (!mapa[id]) mapa[id] = { produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
     mapa[id].talhoes.push(r.talhao.nome);
     mapa[id].qtdTotal += doseTotal;
     mapa[id].areaTotal += area;
@@ -319,6 +322,19 @@ export default function Adubacao2() {
     // Só restaura se houver ao menos um resultado com rec salvo e ainda não há resultados
     if (resultadosRestaurados.some(r => r.rec != null)) {
       setResultadosCalculo(resultadosRestaurados);
+
+      // Restaura mapa de produtos efetivos a partir dos dados salvos
+      const prodEfetivosMap = {};
+      resultadosRestaurados.forEach(r => {
+        if (r.produtoSugerido && r.doseProdutoHa != null) {
+          const prodCompleto = todos.find(p => p.id === r.produtoSugerido.id) || r.produtoSugerido;
+          prodEfetivosMap[r.talhao.id] = { produto: prodCompleto, doseKgHa: r.doseProdutoHa };
+        }
+      });
+      if (Object.keys(prodEfetivosMap).length > 0) {
+        produtosEfetivosRef.current = prodEfetivosMap;
+        setProdutosEfetivosExterno(prodEfetivosMap);
+      }
     }
   }, [registrosSalvos.length, talhoes.length, todos.length, todasAnalises.length, produtor?.id, safra]);
 
@@ -477,6 +493,9 @@ export default function Adubacao2() {
   const [parcelamentosExterno, setParcelamentosExterno] = useState({});
   const precosRef = useRef({});
   const parcelamentosRef = useRef({});
+  // Mapa de produto efetivo por talhão (reflete filtro/troca manual da aba Planejamento)
+  const produtosEfetivosRef = useRef({});
+  const [produtosEfetivosExterno, setProdutosEfetivosExterno] = useState({});
 
   const handlePrecosChange = useCallback((p) => {
     setPrecosExterno(p);
@@ -486,6 +505,11 @@ export default function Adubacao2() {
   const handleParcelamentosChange = useCallback((p) => {
     setParcelamentosExterno(p);
     parcelamentosRef.current = p;
+  }, []);
+
+  const handleProdutosEfetivosChange = useCallback((m) => {
+    produtosEfetivosRef.current = m;
+    setProdutosEfetivosExterno(m);
   }, []);
 
   // C2: Salvar tudo (planejamento completo) — usa refs para pegar valores mais recentes
@@ -511,8 +535,14 @@ export default function Adubacao2() {
         detalhamento: {
           rec: r.rec,
           mediaBienal: r.mediaBienal,
-          produtoSugerido: r.produtoSugerido ? { id: r.produtoSugerido.id, nome: r.produtoSugerido.nome } : null,
-          doseProdutoHa: r.doseProdutoHa,
+          // Usa o produto efetivo (reflete filtro/troca manual) se disponível, senão usa o original
+          produtoSugerido: (() => {
+            const efetivo = produtosEfetivosRef.current[talhao.id];
+            if (efetivo?.produto) return { id: efetivo.produto.id, nome: efetivo.produto.nome };
+            if (r.produtoSugerido) return { id: r.produtoSugerido.id, nome: r.produtoSugerido.nome };
+            return null;
+          })(),
+          doseProdutoHa: produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
           precos,
           parcelamentos: parcelamentos[talhao.id] || {},
         },
@@ -808,6 +838,7 @@ export default function Adubacao2() {
           onSalvar={handleSalvarTudo}
           onPrecosChange={handlePrecosChange}
           onParcelamentosChange={handleParcelamentosChange}
+          onProdutosEfetivosChange={handleProdutosEfetivosChange}
           precosIniciais={precosExterno}
           parcelamentosIniciais={parcelamentosExterno}
         />
@@ -827,7 +858,7 @@ export default function Adubacao2() {
               </Button>
             )}
           </div>
-          <AbaCompras2 resultados={resultadosCalculo} dosesEditadas={dosesEditadas} />
+          <AbaCompras2 resultados={resultadosCalculo} dosesEditadas={dosesEditadas} produtosEfetivos={produtosEfetivosExterno} />
         </div>
       )}
 
@@ -837,6 +868,7 @@ export default function Adubacao2() {
           <AbaResumoGeral2
             resultados={resultadosCalculo}
             todos={todos}
+            produtosEfetivos={produtosEfetivosExterno}
             produtor={produtor}
             safra={safra}
           />

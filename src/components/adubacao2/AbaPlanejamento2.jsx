@@ -882,7 +882,7 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, precosIniciais, parcelamentosIniciais }) {
+export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
@@ -926,6 +926,26 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   // Notifica pai quando preços ou parcelamentos mudam
   useEffect(() => { onPrecosChange?.(precos); }, [precos]);
   useEffect(() => { onParcelamentosChange?.(parcelamentos); }, [parcelamentos]);
+
+  // Notifica pai com mapa de produto efetivo por talhão { [talhaoId]: { produto, doseKgHa } }
+  useEffect(() => {
+    if (!onProdutosEfetivosChange || !resultados) return;
+    const mapa = {};
+    resultados.forEach(r => {
+      if (!r.rec || !todosFiltered.length) return;
+      const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
+      const sugN = sugestoes['n_pct'];
+      if (sugN?.produtoId) {
+        const prod = todosFiltered.find(p => p.id === sugN.produtoId);
+        if (prod) {
+          const pctN = parseFloat(prod.n_pct) || 0;
+          const dose = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
+          mapa[r.talhao.id] = { produto: prod, doseKgHa: dose };
+        }
+      }
+    });
+    onProdutosEfetivosChange(mapa);
+  }, [todosFiltered, resultados]);
 
   const handlePrecoChange = useCallback((prodId, val) => {
     setPrecos(prev => ({ ...prev, [prodId]: val }));
