@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { LayoutList, Loader2, Printer } from 'lucide-react';
+import { LayoutList, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 
 const PRINT_STYLES = `
 @media print {
@@ -19,7 +18,7 @@ const PRINT_STYLES = `
 }
 `;
 
-// ── Helpers (idênticos ao módulo antigo) ─────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getMetros(talhao) {
   const esp = talhao?.espacamento;
@@ -30,37 +29,7 @@ function getMetros(talhao) {
   return 0;
 }
 
-function baseKey(nutrienteKey) {
-  return nutrienteKey?.split('__')[0] || nutrienteKey;
-}
-
-const ORDEM_NUTRIENTE = ['calagem', 'mg_pct', 'n_pct', 'p2o5_pct', 'k2o_pct', 'ca_pct', 's_pct', 'zn_pct', 'b_pct', 'mn_pct', 'cu_pct', 'fe_pct'];
-
-function ordemNutriente(key) {
-  const base = baseKey(key);
-  const idx = ORDEM_NUTRIENTE.indexOf(base);
-  return idx === -1 ? 99 : idx;
-}
-
-function formatEpoca(plan) {
-  const isCalagem = baseKey(plan.nutriente_key) === 'calagem';
-  if (isCalagem) return 'A definir';
-  const numAplic = plan.num_aplic || 1;
-  const mesesArr = plan.meses || [];
-  if (numAplic === 1) {
-    const m = mesesArr[0];
-    const arr = Array.isArray(m) ? m : (m ? [m] : []);
-    return arr.length > 0 ? arr.join(', ') : '—';
-  }
-  return Array.from({ length: numAplic }, (_, i) => {
-    const m = mesesArr[i];
-    const arr = Array.isArray(m) ? m : (m ? [m] : []);
-    return `${i + 1}ª: ${arr.length > 0 ? arr.join(', ') : '—'}`;
-  });
-}
-
-function ordemConsolidado(nomeProd, isCalagem) {
-  if (isCalagem) return 1;
+function ordemConsolidado(nomeProd) {
   const n = (nomeProd || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (/calcari/.test(n)) return 1;
   if (/sulfato.de.magnesio|kieserit/.test(n)) return 2;
@@ -77,107 +46,85 @@ function formatQtd(kg) {
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export default function AbaResumoGeral2({ produtor, safra, talhoes }) {
-  const codigoProdutor = produtor?.codigo;
+/**
+ * Props:
+ *  - resultados: array igual ao de AbaPlanejamento2 (talhao, rec, mediaBienal, analise, analise2040, produtoSugerido, doseProdutoHa)
+ *  - todos: lista de fertilizantes+fontesSimples
+ *  - produtor: objeto produtor
+ *  - safra: string
+ */
+export default function AbaResumoGeral2({ resultados, todos, produtor, safra }) {
 
-  const { data: planejamentos = [], isLoading } = useQuery({
-    queryKey: ['base_planejamento_resumo2', codigoProdutor, safra],
-    queryFn: () => codigoProdutor && safra
-      ? base44.entities.BasePlanejamentoAdubacao.filter({ codigo_produtor: codigoProdutor, safra })
-      : Promise.resolve([]),
-    enabled: !!(codigoProdutor && safra),
-  });
-
-  const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
-  const { data: fontesSimples  = [] } = useQuery({ queryKey: ['fontes_simples'],  queryFn: () => base44.entities.FonteSimples.list() });
-
-  const todosProdutos = useMemo(() => [...fertilizantes, ...fontesSimples], [fertilizantes, fontesSimples]);
-
-  const talhoesProdutor = useMemo(() =>
-    talhoes.filter(t => t.codigo_produtor === codigoProdutor),
-    [talhoes, codigoProdutor]);
-
-  // Grupos por talhão
+  // Constrói grupos por talhão: para cada resultado calcula linhas de produto
   const grupos = useMemo(() => {
-    return talhoesProdutor.map(talhao => {
-      const area = talhao.area_ha || 0;
-      const numPlantas = talhao.num_plantas || 0;
-      const metros = getMetros(talhao);
+    if (!resultados || resultados.length === 0) return [];
+    return resultados
+      .filter(r => r.rec && todos.length > 0)
+      .map(r => {
+        const { talhao, rec } = r;
+        const area = talhao.area_ha || 0;
+        const numPlantas = talhao.num_plantas || 0;
+        const metros = getMetros(talhao);
 
-      const plansTalhao = planejamentos
-        .filter(p => p.talhao_id === talhao.id)
-        .filter(p => {
-          if (!p.produto_id) return false;
-          const nome = (p.produto_nome || '').trim().toLowerCase();
-          if (nome === 'nenhum produto' || nome === '') return false;
-          const dose = parseFloat(p.dose_rec_manual) || 0;
-          return dose > 0;
-        })
-        .sort((a, b) => ordemNutriente(a.nutriente_key) - ordemNutriente(b.nutriente_key));
+        // Usa a mesma lógica de sugestão do AbaPlanejamento2
+        const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
 
-      const linhas = plansTalhao.map(plan => {
-        const produto = todosProdutos.find(p => p.id === plan.produto_id) || null;
-        const isCalagem = baseKey(plan.nutriente_key) === 'calagem';
-        let doseProdHa = 0;
-        if (isCalagem) {
-          doseProdHa = parseFloat(plan.dose_rec_manual) || 0;
-        } else {
-          const doseNutri = parseFloat(plan.dose_rec_manual) || 0;
-          const pctNutri = produto ? (parseFloat(produto[baseKey(plan.nutriente_key)]) || 0) : 0;
-          doseProdHa = pctNutri > 0
-            ? Math.round((doseNutri / (pctNutri / 100)) * 10) / 10
-            : doseNutri;
+        // Agrupa produtos: pode haver vários nutrientes no mesmo produto
+        const mapaProds = {};
+        for (const [nutKey, sug] of Object.entries(sugestoes)) {
+          if (!sug?.produtoId) continue;
+          const prod = todos.find(p => p.id === sug.produtoId);
+          if (!prod) continue;
+          const pct = parseFloat(prod[nutKey]) || 0;
+          const nutLabels = { n_pct: 'N', p2o5_pct: 'P₂O₅', k2o_pct: 'K₂O', b_pct: 'B' };
+          const nutLabel = nutLabels[nutKey] || nutKey;
+          const recVal = { n_pct: rec.N, p2o5_pct: rec.P, k2o_pct: rec.K, b_pct: rec.B }[nutKey] || 0;
+          let doseKgHa = 0;
+          if (pct > 0 && recVal > 0) doseKgHa = Math.round((recVal / (pct / 100)) * 10) / 10;
+
+          if (!mapaProds[prod.id]) {
+            mapaProds[prod.id] = { produtoNome: prod.nome, doseKgHa: 0, nutLabels: [] };
+          }
+          // Usa a maior dose entre os nutrientes (nutriente limitante)
+          if (doseKgHa > mapaProds[prod.id].doseKgHa) mapaProds[prod.id].doseKgHa = doseKgHa;
+          mapaProds[prod.id].nutLabels.push(nutLabel);
         }
-        const totalKg = area > 0 && doseProdHa > 0 ? Math.round(doseProdHa * area) : null;
-        const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
-        const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-        const epoca   = formatEpoca(plan);
-        return { produtoNome: plan.produto_nome || produto?.nome || '—', totalKg, gPlanta, gMetro, epoca, isCalagem };
-      });
 
-      return { talhao, linhas };
-    }).filter(g => g.linhas.length > 0);
-  }, [talhoesProdutor, planejamentos, todosProdutos]);
+        const linhas = Object.values(mapaProds)
+          .filter(l => l.doseKgHa > 0)
+          .map(l => {
+            const totalKg = area > 0 ? Math.round(l.doseKgHa * area) : null;
+            const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
+            const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+            return { ...l, totalKg, gPlanta, gMetro, isCalagem: false };
+          });
 
-  // Consolidado por produto
+        if (linhas.length === 0) return null;
+        return { talhao, linhas };
+      })
+      .filter(Boolean);
+  }, [resultados, todos]);
+
+  // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
     function normKey(nome) {
       return (nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
     }
     const map = new Map();
-    planejamentos.forEach(plan => {
-      if (!plan.produto_id) return;
-      const nome = (plan.produto_nome || '').trim();
-      if (!nome || nome.toLowerCase() === 'nenhum produto') return;
-      const talhao = talhoesProdutor.find(t => t.id === plan.talhao_id);
-      const area = talhao?.area_ha || 0;
-      const isCalagem = baseKey(plan.nutriente_key) === 'calagem';
-      const dose = parseFloat(plan.dose_rec_manual) || 0;
-      if (dose <= 0) return;
-      let doseProdHa = 0;
-      if (isCalagem) {
-        doseProdHa = dose;
-      } else {
-        const produto = todosProdutos.find(p => p.id === plan.produto_id);
-        const pctNutri = produto ? (parseFloat(produto[baseKey(plan.nutriente_key)]) || 0) : 0;
-        doseProdHa = pctNutri > 0 ? Math.round((dose / (pctNutri / 100)) * 10) / 10 : dose;
-      }
-      const totalKg = area > 0 && doseProdHa > 0 ? Math.round(doseProdHa * area) : 0;
-      const preco = parseFloat(String(plan.preco || '').replace(',', '.')) || null;
-      const key = normKey(nome);
-      if (!map.has(key)) map.set(key, { produtoNome: nome, totalKg: 0, preco: null, isCalagem });
-      const entry = map.get(key);
-      entry.totalKg += totalKg;
-      if (nome.length > entry.produtoNome.length) entry.produtoNome = nome;
-      if (entry.preco == null && preco) entry.preco = preco;
+    grupos.forEach(({ linhas }) => {
+      linhas.forEach(l => {
+        const key = normKey(l.produtoNome);
+        if (!map.has(key)) map.set(key, { produtoNome: l.produtoNome, totalKg: 0, preco: null });
+        map.get(key).totalKg += l.totalKg || 0;
+      });
     });
     return Array.from(map.values()).sort((a, b) => {
-      const oa = ordemConsolidado(a.produtoNome, a.isCalagem);
-      const ob = ordemConsolidado(b.produtoNome, b.isCalagem);
+      const oa = ordemConsolidado(a.produtoNome);
+      const ob = ordemConsolidado(b.produtoNome);
       if (oa !== ob) return oa - ob;
       return a.produtoNome.localeCompare(b.produtoNome, 'pt-BR');
     });
-  }, [planejamentos, talhoesProdutor, todosProdutos]);
+  }, [grupos]);
 
   if (!produtor || !safra) return (
     <div className="text-center py-16 text-muted-foreground">
@@ -186,18 +133,11 @@ export default function AbaResumoGeral2({ produtor, safra, talhoes }) {
     </div>
   );
 
-  if (isLoading) return (
-    <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
-      <Loader2 className="w-5 h-5 animate-spin" />
-      <span>Carregando planejamentos...</span>
-    </div>
-  );
-
-  if (grupos.length === 0) return (
+  if (!resultados || resultados.length === 0 || grupos.length === 0) return (
     <div className="text-center py-16 text-muted-foreground bg-card border border-border rounded-2xl">
       <LayoutList className="w-10 h-10 mx-auto mb-3 opacity-30" />
       <p className="text-lg font-medium">Nenhum planejamento encontrado.</p>
-      <p className="text-sm mt-1">Salve o planejamento na aba "Planejamento" antes de visualizar o resumo.</p>
+      <p className="text-sm mt-1">Calcule a recomendação na aba "Análises e Importação" para gerar o resumo.</p>
     </div>
   );
 
@@ -276,9 +216,7 @@ export default function AbaResumoGeral2({ produtor, safra, talhoes }) {
                   );
                 })}
                 {(() => {
-                  const totalGeral = consolidado.reduce((acc, item) => {
-                    return acc + (item.preco && item.totalKg ? item.totalKg * item.preco : 0);
-                  }, 0);
+                  const totalGeral = consolidado.reduce((acc, item) => acc + (item.preco && item.totalKg ? item.totalKg * item.preco : 0), 0);
                   return totalGeral > 0 ? (
                     <tr className="bg-amber-50 border-t-2 border-amber-200">
                       <td colSpan={3} className="px-4 py-2.5 font-bold text-amber-800 uppercase tracking-wide text-xs">Total Geral</td>
@@ -306,8 +244,8 @@ export default function AbaResumoGeral2({ produtor, safra, talhoes }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/40 border-b border-border">
-                  {['Produto', 'Qtd. total (kg)', 'g / planta', 'g / metro', 'Época de aplicação'].map(h => (
-                    <th key={h} className={`px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Produto' || h === 'Época de aplicação' ? 'text-left' : 'text-right'}`}>{h}</th>
+                  {['Produto', 'Qtd. total (kg)', 'g / planta', 'g / metro', 'Nutrientes'].map(h => (
+                    <th key={h} className={`px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Produto' || h === 'Nutrientes' ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -324,46 +262,24 @@ export default function AbaResumoGeral2({ produtor, safra, talhoes }) {
                           {partes.join(' · ')}
                         </td>
                       </tr>
-                      {linhas.map((linha, li) => {
-                        const epocaArr = Array.isArray(linha.epoca) ? linha.epoca : null;
-                        const epocaStr = typeof linha.epoca === 'string' ? linha.epoca : null;
-                        return (
-                          <tr key={`${talhao.id}-${li}`}
-                            className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
-                            <td className="px-4 py-2.5">
-                              <span className="font-medium text-foreground">{linha.produtoNome}</span>
-                              {linha.isCalagem && (
-                                <span className="ml-2 text-xs bg-lime-100 text-lime-700 border border-lime-200 px-1.5 py-0.5 rounded-full">Calagem</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                              {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                              {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                              {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              {epocaArr ? (
-                                <div className="space-y-0.5">
-                                  {epocaArr.map((e, ei) => (
-                                    <div key={ei} className="text-xs">
-                                      <span className="font-semibold text-primary">{e.split(':')[0]}:</span>
-                                      <span className="ml-1">{e.split(':').slice(1).join(':')}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className={`text-sm ${epocaStr === 'A definir' ? 'text-muted-foreground italic' : 'text-foreground'}`}>
-                                  {epocaStr || '—'}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {linhas.map((linha, li) => (
+                        <tr key={`${talhao.id}-${li}`}
+                          className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
+                          <td className="px-4 py-2.5 font-medium text-foreground">{linha.produtoNome}</td>
+                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                            {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                            {linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                            {linha.nutLabels?.join(', ') || '—'}
+                          </td>
+                        </tr>
+                      ))}
                     </React.Fragment>
                   );
                 })}

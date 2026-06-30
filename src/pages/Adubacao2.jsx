@@ -835,9 +835,10 @@ export default function Adubacao2() {
       {abaAtiva === 'resumo' && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden p-5">
           <AbaResumoGeral2
+            resultados={resultadosCalculo}
+            todos={todos}
             produtor={produtor}
             safra={safra}
-            talhoes={todosTalhoes}
           />
         </div>
       )}
