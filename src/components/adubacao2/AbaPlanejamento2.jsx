@@ -882,7 +882,7 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, produtosIniciais }) {
+export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
@@ -927,33 +927,46 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   useEffect(() => { onPrecosChange?.(precos); }, [precos]);
   useEffect(() => { onParcelamentosChange?.(parcelamentos); }, [parcelamentos]);
 
-  // Notifica pai com mapa de produto efetivo por talhão
+  // Notifica pai com mapa de produto efetivo por talhão.
+  // CORREÇÃO 2: se o talhão tem registro salvo no banco mas o produto ainda não resolveu
+  // (timing), não propaga fallback automático — aguarda resolução.
   useEffect(() => {
     if (!onProdutosEfetivosChange || !resultados) return;
+
+    // Conjunto de talhões com registro salvo (que podem ter produto ainda null por timing)
+    const idsSalvos = new Set((registrosSalvos || []).map(r => r.talhao_id));
+
+    // Se algum talhão com registro salvo ainda não tem produto resolvido em resultados,
+    // abortar a notificação — o pai vai re-disparar o efeito quando todos carregar.
+    const pendente = resultados.some(r =>
+      r.rec && idsSalvos.has(r.talhao.id) && r.temRegistroSalvo && !r.produtoSugerido && r.doseProdutoHa == null
+    );
+    if (pendente && todos.length === 0) return;
+
     const mapa = {};
     resultados.forEach(r => {
-      if (!r.rec || !todosFiltered.length) return;
-      // Produto salvo no banco tem prioridade; fallback: sugestão automática
-      const produtoSalvo = r.produtoSugerido || null;
-      const doseSalva = r.doseProdutoHa || null;
-      let produto = produtoSalvo;
-      let dose = doseSalva;
-      if (!produto) {
-        const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
-        const sugN = sugestoes['n_pct'];
-        if (sugN?.produtoId) {
-          const prod = todosFiltered.find(p => p.id === sugN.produtoId);
-          if (prod) {
-            produto = prod;
-            const pctN = parseFloat(prod.n_pct) || 0;
-            dose = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
-          }
+      if (!r.rec) return;
+      // Produto salvo tem prioridade absoluta
+      if (r.produtoSugerido) {
+        mapa[r.talhao.id] = { produto: r.produtoSugerido, doseKgHa: r.doseProdutoHa };
+        return;
+      }
+      // Fallback automático apenas para talhões sem registro salvo
+      if (idsSalvos.has(r.talhao.id)) return;
+      if (!todosFiltered.length) return;
+      const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
+      const sugN = sugestoes['n_pct'];
+      if (sugN?.produtoId) {
+        const prod = todosFiltered.find(p => p.id === sugN.produtoId);
+        if (prod) {
+          const pctN = parseFloat(prod.n_pct) || 0;
+          const dose = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
+          mapa[r.talhao.id] = { produto: prod, doseKgHa: dose };
         }
       }
-      if (produto) mapa[r.talhao.id] = { produto, doseKgHa: dose };
     });
     onProdutosEfetivosChange(mapa);
-  }, [todosFiltered, resultados]);
+  }, [todosFiltered, resultados, registrosSalvos, todos.length]);
 
   const handlePrecoChange = useCallback((prodId, val) => {
     setPrecos(prev => ({ ...prev, [prodId]: val }));
@@ -1097,21 +1110,32 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                 const expandido = expandidos.has(r.talhao.id);
                 const area = r.talhao.area_ha || 0;
 
-                // Produto salvo no banco tem prioridade; fallback: sugestão automática
-                const produtoSalvo = r.produtoSugerido || null;
-                const doseSalva = r.doseProdutoHa || null;
-                let produtoExibido = produtoSalvo;
-                let doseProdutoHaVivo = doseSalva;
+                // CORREÇÃO 2: produto salvo é fonte primária.
+                // Fallback automático só ocorre para talhões SEM registro salvo no banco.
+                // Se tem registro salvo mas produto ainda null (timing), exibe "..." em vez de sugestão.
+                const idsSalvos = new Set((registrosSalvos || []).map(x => x.talhao_id));
+                const temRegistroSalvo = r.temRegistroSalvo || idsSalvos.has(r.talhao.id);
+                let produtoExibido = r.produtoSugerido || null;
+                let doseProdutoHaVivo = r.doseProdutoHa || null;
+                let produtoCarregando = false;
 
-                if (!produtoExibido && r.rec && todosFiltered.length > 0) {
-                  const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
-                  const sugN = sugestoes['n_pct'];
-                  if (sugN?.produtoId) {
-                    const prod = todosFiltered.find(p => p.id === sugN.produtoId);
-                    if (prod) {
-                      produtoExibido = prod;
-                      const pctN = parseFloat(prod.n_pct) || 0;
-                      if (pctN > 0 && r.rec.N != null) doseProdutoHaVivo = Math.round((r.rec.N / (pctN / 100)) * 10) / 10;
+                if (!produtoExibido && r.rec) {
+                  if (temRegistroSalvo) {
+                    // Tem registro no banco mas produto ainda não resolveu (timing de query)
+                    produtoCarregando = todos.length === 0;
+                  } else {
+                    // Sem registro salvo: usa sugestão automática livremente
+                    if (todosFiltered.length > 0) {
+                      const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
+                      const sugN = sugestoes['n_pct'];
+                      if (sugN?.produtoId) {
+                        const prod = todosFiltered.find(p => p.id === sugN.produtoId);
+                        if (prod) {
+                          produtoExibido = prod;
+                          const pctN = parseFloat(prod.n_pct) || 0;
+                          if (pctN > 0 && r.rec.N != null) doseProdutoHaVivo = Math.round((r.rec.N / (pctN / 100)) * 10) / 10;
+                        }
+                      }
                     }
                   }
                 }
@@ -1138,10 +1162,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.K ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.B ?? '—'}</td>
                       <td className="px-3 py-2.5 text-xs max-w-[180px]">
-                        {produtoExibido ? (
+                        {produtoCarregando ? (
+                          <span className="text-muted-foreground text-xs italic">…</span>
+                        ) : produtoExibido ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="font-medium truncate max-w-[160px]">{produtoExibido.nome}</span>
-                            {produtoSalvo ? (
+                            {r.produtoSugerido ? (
                               <span className="text-[9px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-1.5 py-0.5 w-fit">✓ Salvo</span>
                             ) : (
                               <span className="text-[9px] text-muted-foreground italic">Sugerido</span>

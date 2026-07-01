@@ -302,7 +302,8 @@ export default function Adubacao2() {
         else if (!isNaN(s1)) mediaBienal = s1;
         else if (!isNaN(s2)) mediaBienal = s2;
         const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
-        return { talhao, mediaBienal, analise, analise2040: a2040Map[talhao.id] || null, rec: null, produtoSugerido: null, doseProdutoHa: null };
+        // temRegistroSalvo: informa ao filho que este talhão tem registro no banco (mas sem planejamento ainda)
+        return { talhao, mediaBienal, analise, analise2040: a2040Map[talhao.id] || null, rec: null, produtoSugerido: null, doseProdutoHa: null, temRegistroSalvo: !!registro };
       }
       const det = registro.detalhamento;
       const locProd = prodMap[talhao.id] || {};
@@ -314,10 +315,12 @@ export default function Adubacao2() {
         else if (!isNaN(s1)) mediaBienal = s1;
         else if (!isNaN(s2)) mediaBienal = s2;
       }
-      // produtoSugerido: tenta encontrar na lista de todos pelo id salvo
-      let produtoSugerido = null;
-      if (det.produtoSugerido?.id) {
-        produtoSugerido = todos.find(p => p.id === det.produtoSugerido.id) || { id: det.produtoSugerido.id, nome: det.produtoSugerido.nome };
+      // CORREÇÃO 1: produto salvo é fonte primária — usar objeto do banco diretamente.
+      // todos.find() enriquece com dados do catálogo, mas nunca é condição para o produto existir.
+      let produtoSugerido = det.produtoSugerido ? { ...det.produtoSugerido } : null;
+      if (produtoSugerido && todos.length > 0) {
+        const prodCatalogo = todos.find(p => p.id === produtoSugerido.id);
+        if (prodCatalogo) produtoSugerido = prodCatalogo;
       }
       const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
       return {
@@ -328,28 +331,27 @@ export default function Adubacao2() {
         rec: det.rec || null,
         produtoSugerido,
         doseProdutoHa: det.doseProdutoHa ?? null,
+        temRegistroSalvo: true,
       };
     });
 
-    // Só restaura se houver ao menos um resultado com rec salvo e ainda não há resultados
+    // Só restaura se houver ao menos um resultado com rec salvo
     if (resultadosRestaurados.some(r => r.rec != null)) {
       setResultadosCalculo(resultadosRestaurados);
 
-      // Restaura mapa de produtos efetivos a partir dos dados salvos (origem 'salvo')
+      // Restaura mapa de produtos efetivos — usa o objeto do banco como fonte
       const prodEfetivosMap = {};
       resultadosRestaurados.forEach(r => {
         if (r.produtoSugerido && r.doseProdutoHa != null) {
-          const prodCompleto = todos.find(p => p.id === r.produtoSugerido.id) || r.produtoSugerido;
-          prodEfetivosMap[r.talhao.id] = { produto: prodCompleto, doseKgHa: r.doseProdutoHa, origem: 'salvo' };
+          prodEfetivosMap[r.talhao.id] = { produto: r.produtoSugerido, doseKgHa: r.doseProdutoHa };
         }
       });
       if (Object.keys(prodEfetivosMap).length > 0) {
         produtosEfetivosRef.current = prodEfetivosMap;
         setProdutosEfetivosExterno(prodEfetivosMap);
-        setProdutosIniciaisExterno(prodEfetivosMap);
       }
     }
-  }, [registrosSalvos.length, talhoes.length, todos.length, todasAnalises.length, produtor?.id, safra]);
+  }, [registrosSalvos.length, talhoes.length, todos, todasAnalises.length, produtor?.id, safra]);
 
   const setProd = useCallback((talhaoId, campo, valor) => {
     setProdutividadeLocal(prev => ({ ...prev, [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor } }));
@@ -520,8 +522,6 @@ export default function Adubacao2() {
     parcelamentosRef.current = p;
   }, []);
 
-  const [produtosIniciaisExterno, setProdutosIniciaisExterno] = useState({});
-
   const handleProdutosEfetivosChange = useCallback((m) => {
     produtosEfetivosRef.current = m;
     setProdutosEfetivosExterno(m);
@@ -620,7 +620,6 @@ export default function Adubacao2() {
       setPrecosExterno({});
       setParcelamentosExterno({});
       setProdutosEfetivosExterno({});
-      setProdutosIniciaisExterno({});
     } else {
       setSafra(value);
       setResultadosCalculo(null);
@@ -630,7 +629,6 @@ export default function Adubacao2() {
       setPrecosExterno({});
       setParcelamentosExterno({});
       setProdutosEfetivosExterno({});
-      setProdutosIniciaisExterno({});
     }
   }, []);
 
@@ -861,7 +859,7 @@ export default function Adubacao2() {
           onProdutosEfetivosChange={handleProdutosEfetivosChange}
           precosIniciais={precosExterno}
           parcelamentosIniciais={parcelamentosExterno}
-          produtosIniciais={produtosIniciaisExterno}
+          registrosSalvos={registrosSalvos}
         />
       )}
 
