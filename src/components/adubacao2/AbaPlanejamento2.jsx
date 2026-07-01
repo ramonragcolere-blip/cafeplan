@@ -145,24 +145,41 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
   const [busca, setBusca] = useState('');
   const [dropAberto, setDropAberto] = useState(false);
   const dropRef = useRef(null);
+  const btnRef = useRef(null);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     if (!dropAberto) return;
-    const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setDropAberto(false); };
+    const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target) && !btnRef.current?.contains(e.target)) setDropAberto(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [dropAberto]);
 
+  const abrirDrop = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX });
+    }
+    setDropAberto(a => !a);
+  };
+
+  // Produtos com o nutriente específico; fallback: todos os produtos se lista vazia
   const produtosDoNutriente = useMemo(() => {
-    if (!nutField) return todos;
-    return todos
-      .filter(p => (parseFloat(p[nutField]) || 0) > 0)
-      .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    const sorted = [...todos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    if (!nutField) return sorted;
+    const comNutriente = sorted.filter(p => (parseFloat(p[nutField]) || 0) > 0);
+    return comNutriente.length > 0 ? comNutriente : sorted;
+  }, [todos, nutField]);
+
+  const semProdutosEspecificos = useMemo(() => {
+    if (!nutField) return false;
+    return todos.filter(p => (parseFloat(p[nutField]) || 0) > 0).length === 0;
   }, [todos, nutField]);
 
   const produtosFiltrados = useMemo(() => {
-    const q = busca.toLowerCase();
-    return produtosDoNutriente.filter(p => !q || (p.nome || '').toLowerCase().includes(q));
+    const q = busca.toLowerCase().trim();
+    if (!q) return produtosDoNutriente;
+    return produtosDoNutriente.filter(p => (p.nome || '').toLowerCase().includes(q));
   }, [produtosDoNutriente, busca]);
 
   const produtoSelecionado = todos.find(p => p.id === produtoId) || null;
@@ -181,8 +198,8 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
         <td className="px-3 py-2 font-medium whitespace-nowrap max-w-[200px]">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">{elLabel}</span>
-            <div ref={dropRef} className="relative">
-              <button type="button" onClick={() => setDropAberto(a => !a)}
+            <div className="relative">
+              <button ref={btnRef} type="button" onClick={abrirDrop}
                 className="h-6 text-xs border border-input rounded px-2 bg-background flex items-center gap-1 w-40 hover:bg-muted/30">
                 <span className="truncate flex-1 text-left">
                   {produtoSelecionado ? produtoSelecionado.nome : <span className="text-muted-foreground">Escolher produto…</span>}
@@ -190,13 +207,20 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
                 <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
               </button>
               {dropAberto && (
-                <div className="absolute z-50 left-0 top-full mt-1 w-64 bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
+                <div ref={dropRef}
+                  style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999, minWidth: 360, maxWidth: 480 }}
+                  className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
                   <div className="p-2 border-b border-border">
-                    <input autoFocus type="text" placeholder="Buscar..."
+                    <input autoFocus type="text" placeholder={`Buscar produto${nutField ? ` com ${elLabel}` : ''}…`}
                       value={busca} onChange={e => setBusca(e.target.value)}
-                      className="w-full h-6 text-xs border border-input rounded px-2 bg-background" />
+                      className="w-full h-7 text-xs border border-input rounded px-2 bg-background" />
                   </div>
-                  <div className="max-h-40 overflow-y-auto">
+                  {semProdutosEspecificos && !busca && (
+                    <p className="px-3 py-1.5 text-[10px] text-amber-600 bg-amber-50 border-b border-amber-100 italic">
+                      Nenhum produto com {elLabel} cadastrado — exibindo todos
+                    </p>
+                  )}
+                  <div className="max-h-52 overflow-y-auto">
                     <button type="button" onClick={() => { setProdutoId(''); setDropAberto(false); setBusca(''); }}
                       className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/60">
                       — Nenhum
@@ -204,13 +228,16 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
                     {produtosFiltrados.map(p => (
                       <button key={p.id} type="button"
                         onClick={() => { setProdutoId(p.id); setDropAberto(false); setBusca(''); }}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 truncate">
-                        {p.nome}
-                        {p.fornecedor && <span className="text-muted-foreground ml-1">· {p.fornecedor}</span>}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60">
+                        <span className="font-medium">{p.nome}</span>
+                        {p.fornecedor && <span className="text-muted-foreground ml-1.5">· {p.fornecedor}</span>}
+                        {nutField && (parseFloat(p[nutField]) || 0) > 0 && (
+                          <span className="text-muted-foreground ml-1.5">· {elLabel} {parseFloat(p[nutField]).toFixed(1)}%</span>
+                        )}
                       </button>
                     ))}
                     {produtosFiltrados.length === 0 && (
-                      <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
+                      <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado para "{busca}"</p>
                     )}
                   </div>
                 </div>
