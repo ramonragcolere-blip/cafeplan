@@ -14,6 +14,7 @@ export const TODOS_ELEMENTOS_GRID = [
   { key: 'Zn', label: 'Zn',   tipo: 'class', temRec: false,  nutField: 'zn_pct' },
   { key: 'Cu', label: 'Cu',   tipo: 'class', temRec: false,  nutField: 'cu_pct' },
   { key: 'Mn', label: 'Mn',   tipo: 'class', temRec: false,  nutField: 'mn_pct' },
+  { key: 'Ca', label: 'Ca',   tipo: 'dose',  unit: 'kg/ha',  temRec: false,  nutField: 'ca_pct' },
   { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha',  temRec: false,  nutField: 'mg_pct' },
   { key: 'Fe', label: 'Fe',   tipo: 'class', temRec: false,  nutField: 'fe_pct' },
   { key: 'MO', label: 'M.O.', tipo: 'valor', temRec: false,  nutField: null },
