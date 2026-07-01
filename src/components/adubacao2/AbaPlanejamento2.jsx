@@ -37,17 +37,93 @@ function fmtR(v) {
 
 const KEY_PARA_LABEL = { n_pct: 'N', k2o_pct: 'K₂O', p2o5_pct: 'P₂O₅', b_pct: 'B' };
 
-/** Monta lista de linhas de produto a partir das sugestões do inteligente */
-function montarLinhasProdutos(todos, rec, trocas = {}) {
+/** Monta lista de linhas de produto.
+ *  Se produtoSalvo for passado, ele é fixado como Principal com doseSalva,
+ *  e os complementos são calculados pelos nutrientes residuais que o principal
+ *  não cobre suficientemente.
+ *  trocas = { [nutKey]: produtoId } — sobrescritas manuais do usuário no card expandido.
+ */
+function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null) {
   if (!rec || !todos.length) return [];
-  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
 
-  const principalId = sugestoes['n_pct']?.produtoId || null;
+  // ── Caso 1: produto salvo fixado como principal ─────────────────────────
+  if (produtoSalvo) {
+    const principal = todos.find(p => p.id === produtoSalvo.id) || produtoSalvo;
+    const doseKgHa = trocas['n_pct']
+      ? (() => {
+          // usuário trocou o principal; recalcula dose
+          const sub = todos.find(p => p.id === trocas['n_pct']);
+          if (!sub) return doseSalva;
+          const pct = parseFloat(sub.n_pct) || 0;
+          return pct > 0 && rec.N != null ? Math.round((rec.N / (pct / 100)) * 10) / 10 : doseSalva;
+        })()
+      : (doseSalva ?? (() => {
+          const pct = parseFloat(principal.n_pct) || 0;
+          return pct > 0 && rec.N != null ? Math.round((rec.N / (pct / 100)) * 10) / 10 : null;
+        })());
+
+    const prodPrincipal = trocas['n_pct'] ? (todos.find(p => p.id === trocas['n_pct']) || principal) : principal;
+
+    // Nutrientes fornecidos pelo principal
+    const fornecidoPelo = (prod, dose) => ({
+      N: (parseFloat(prod.n_pct)    || 0) / 100 * (dose || 0),
+      P: (parseFloat(prod.p2o5_pct) || 0) / 100 * (dose || 0),
+      K: (parseFloat(prod.k2o_pct)  || 0) / 100 * (dose || 0),
+      B: (parseFloat(prod.b_pct)    || 0) / 100 * (dose || 0),
+    });
+
+    const nutrientesPrincipal = [];
+    const cobertos = fornecidoPelo(prodPrincipal, doseKgHa);
+    const nutMap = { n_pct: 'N', p2o5_pct: 'P₂O₅', k2o_pct: 'K₂O', b_pct: 'B' };
+    if ((parseFloat(prodPrincipal.n_pct) || 0) > 0 && rec.N)    nutrientesPrincipal.push({ label: 'N',    fornecido: cobertos.N });
+    if ((parseFloat(prodPrincipal.p2o5_pct) || 0) > 0 && rec.P) nutrientesPrincipal.push({ label: 'P₂O₅', fornecido: cobertos.P });
+    if ((parseFloat(prodPrincipal.k2o_pct) || 0) > 0 && rec.K)  nutrientesPrincipal.push({ label: 'K₂O', fornecido: cobertos.K });
+    if ((parseFloat(prodPrincipal.b_pct) || 0) > 0 && rec.B)    nutrientesPrincipal.push({ label: 'B',    fornecido: cobertos.B });
+
+    const mapa = {};
+    mapa[prodPrincipal.id] = { produto: prodPrincipal, nutrientes: nutrientesPrincipal, ehPrincipal: true, nutKey: 'n_pct', doseKgHa };
+
+    // Complementos: recalcula rec residual (déficit não coberto pelo principal)
+    const recResidual = {
+      N: Math.max(0, (rec.N || 0) - cobertos.N),
+      P: Math.max(0, (rec.P || 0) - cobertos.P),
+      K: Math.max(0, (rec.K || 0) - cobertos.K),
+      B: Math.max(0, (rec.B || 0) - cobertos.B),
+    };
+    // Só busca complementos se houver déficit residual relevante (> 1 kg/ha)
+    const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
+    if (temResidual) {
+      const sugestoesResidual = sugerirProdutosInteligente(todos, { N: recResidual.N, P: recResidual.P, K: recResidual.K, B: recResidual.B });
+      for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
+        if (!sug?.produtoId) continue;
+        const prodId = trocas[nutKey] || sug.produtoId;
+        if (prodId === prodPrincipal.id) continue; // não duplicar
+        const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
+        if (!prod || prod.id === prodPrincipal.id) continue;
+        const pct = parseFloat(prod[nutKey]) || 0;
+        const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
+        const nutResidual = recResidual[nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo] || 0;
+        if (pct > 0 && nutResidual > 1) {
+          const doseComp = Math.round((nutResidual / (pct / 100)) * 10) / 10;
+          const forn = doseComp * (pct / 100);
+          if (!mapa[prod.id]) {
+            mapa[prod.id] = { produto: prod, nutrientes: [], ehPrincipal: false, nutKey, doseKgHa: doseComp };
+          }
+          mapa[prod.id].nutrientes.push({ label: nutSimbolo, fornecido: forn });
+        }
+      }
+    }
+
+    return Object.values(mapa);
+  }
+
+  // ── Caso 2: sem produto salvo — sugestão automática completa ────────────
+  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+  const principalId = trocas['n_pct'] || sugestoes['n_pct']?.produtoId || null;
 
   const mapa = {};
   for (const [nutKey, sug] of Object.entries(sugestoes)) {
     if (!sug?.produtoId) continue;
-    // Se há troca manual para este nutriente, usa o produto trocado
     const prodId = trocas[nutKey] || sug.produtoId;
     const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
     if (!prod) continue;
@@ -516,7 +592,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     setTrocas(prev => ({ ...prev, [nutKey]: produto.id }));
   }, []);
 
-  // Linhas de produtos automáticos: apenas N/P/K/B marcados
+  // Linhas de produtos: usa produto salvo como principal se disponível
   const linhasProdutos = useMemo(() => {
     if (!rec) return [];
     const recFiltrado = { ...rec };
@@ -524,8 +600,11 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['P']) delete recFiltrado.P;
     if (!marcados['K']) delete recFiltrado.K;
     if (!marcados['B']) delete recFiltrado.B;
-    return montarLinhasProdutos(todos, recFiltrado, trocas);
-  }, [todos, rec, marcados, trocas]);
+    // Produto salvo tem prioridade; trocas manuais do usuário sobrescrevem via trocas['n_pct']
+    const prodSalvo = resultado.produtoSugerido || null;
+    const doseSalva = resultado.doseProdutoHa || null;
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva);
+  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa]);
 
   // Elementos extras marcados (não-rec): Zn, Cu, Mn, Mg, Fe, MO
   const elementosExtrasMarcados = useMemo(() => {
