@@ -116,22 +116,37 @@ function AbaCompras2({ resultados, dosesEditadas, produtosEfetivos = {} }) {
     );
   }
 
-  // Agrega por produto efetivo (filtro/manual > salvo no banco > sugestão automática)
+  // Agrega por produto (principal + complementares)
   const mapa = {};
   resultados.forEach(r => {
     const efetivo = produtosEfetivos[r.talhao.id];
+    const area = r.talhao.area_ha || 0;
+    const sacas = r.mediaBienal != null ? r.mediaBienal * area : 0;
+
+    // Produto principal
     const produto = efetivo?.produto || r.produtoSugerido;
     const dose = efetivo?.doseKgHa ?? r.doseProdutoHa;
-    if (!produto) return;
-    const id = produto.id;
-    const area = r.talhao.area_ha || 0;
-    const doseTotal = dose != null ? dose * area : 0;
-    const sacas = r.mediaBienal != null ? r.mediaBienal * area : 0;
-    if (!mapa[id]) mapa[id] = { produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
-    mapa[id].talhoes.push(r.talhao.nome);
-    mapa[id].qtdTotal += doseTotal;
-    mapa[id].areaTotal += area;
-    mapa[id].sacasTotal += sacas;
+    if (produto) {
+      const id = produto.id;
+      const doseTotal = dose != null ? dose * area : 0;
+      if (!mapa[id]) mapa[id] = { produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
+      mapa[id].talhoes.push(r.talhao.nome);
+      mapa[id].qtdTotal += doseTotal;
+      mapa[id].areaTotal += area;
+      mapa[id].sacasTotal += sacas;
+    }
+
+    // Complementares salvos
+    const complementos = efetivo?.complementos || [];
+    for (const comp of complementos) {
+      if (!comp.produto?.id || !comp.doseKgHa) continue;
+      const id = comp.produto.id;
+      const doseTotal = comp.doseKgHa * area;
+      if (!mapa[id]) mapa[id] = { produto: comp.produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
+      if (!mapa[id].talhoes.includes(r.talhao.nome)) mapa[id].talhoes.push(r.talhao.nome);
+      mapa[id].qtdTotal += doseTotal;
+      mapa[id].areaTotal += area;
+    }
   });
 
   const linhas = Object.values(mapa);
@@ -895,6 +910,7 @@ export default function Adubacao2() {
             talhoes={talhoes}
             produtor={produtor}
             safra={safra}
+            registrosSalvos={registrosSalvos}
           />
         </div>
       )}

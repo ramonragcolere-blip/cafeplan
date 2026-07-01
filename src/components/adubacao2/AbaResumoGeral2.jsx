@@ -50,13 +50,14 @@ function formatQtd(kg) {
  * Props:
  *  - resultados: array igual ao de AbaPlanejamento2
  *  - todos: lista de fertilizantes+fontesSimples
- *  - produtosEfetivos: mapa { [talhaoId]: { produto, doseKgHa } }
+ *  - produtosEfetivos: mapa { [talhaoId]: { produto, doseKgHa, complementos, precos? } }
  *  - calagens: array de registros BaseRecomendacaoCalagem do produtor/safra
  *  - talhoes: lista de talhoes
  *  - produtor: objeto produtor
  *  - safra: string
+ *  - registrosSalvos: array de PlanejamentoAdubacao2 (contém detalhamento.precos)
  */
-export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra }) {
+export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra, registrosSalvos = [] }) {
 
   // Mapa de calagem por talhão
   const calagensMap = useMemo(() => {
@@ -65,7 +66,17 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     return m;
   }, [calagens]);
 
-  // Constrói grupos por talhão (adubação + calagem)
+  // Mapa de preços salvos por produto (de todos os registros)
+  const precosMap = useMemo(() => {
+    const m = {};
+    registrosSalvos.forEach(r => {
+      const precos = r.detalhamento?.precos || {};
+      Object.assign(m, precos);
+    });
+    return m;
+  }, [registrosSalvos]);
+
+  // Constrói grupos por talhão (adubação principal + complementares + calagem)
   const grupos = useMemo(() => {
     // Coleta todos os talhões relevantes (com rec OU com calagem)
     const talhaoIds = new Set([
@@ -83,13 +94,14 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
       const metros = getMetros(talhao);
       const linhas = [];
 
-      // Linha de adubação NPK (se há recomendação calculada)
+      // Produtos de adubação (principal + complementares)
       if (resultado?.rec) {
         const rec = resultado.rec;
         const efetivo = produtosEfetivos[talhaoId];
         const produtoSalvo = resultado.produtoSugerido || null;
         const doseSalva = resultado.doseProdutoHa || null;
 
+        // — Produto principal —
         let produtoPrincipal = efetivo?.produto || produtoSalvo;
         let dosePrincipal = efetivo?.doseKgHa ?? doseSalva;
 
@@ -110,7 +122,18 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
           const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
           const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
           const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-          linhas.push({ produtoNome: produtoPrincipal.nome, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['N/P/K'], isCalagem: false });
+          linhas.push({ produtoNome: produtoPrincipal.nome, produtoId: produtoPrincipal.id, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['Principal'], isCalagem: false });
+        }
+
+        // — Complementares salvos —
+        const complementos = efetivo?.complementos || [];
+        for (const comp of complementos) {
+          if (!comp.produto?.nome || !comp.doseKgHa) continue;
+          const totalKg = area > 0 ? Math.round(comp.doseKgHa * area) : null;
+          const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
+          const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+          const nutLabels = (comp.nutrientes || []).map(n => n.label).filter(Boolean);
+          linhas.push({ produtoNome: comp.produto.nome, produtoId: comp.produto.id, doseKgHa: comp.doseKgHa, totalKg, gPlanta, gMetro, nutLabels: nutLabels.length > 0 ? nutLabels : ['Complemento'], isCalagem: false });
         }
       }
 
@@ -120,7 +143,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
         const totalKg = area > 0 ? Math.round(calagem.dose_kg_ha * area) : calagem.dose_total_kg || null;
         const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
         const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-        linhas.push({ produtoNome: calagem.produto_nome, doseKgHa: calagem.dose_kg_ha, totalKg, gPlanta, gMetro, nutLabels: ['Calagem'], isCalagem: true });
+        linhas.push({ produtoNome: calagem.produto_nome, produtoId: null, doseKgHa: calagem.dose_kg_ha, totalKg, gPlanta, gMetro, nutLabels: ['Calagem'], isCalagem: true });
       }
 
       if (linhas.length === 0) return null;
@@ -137,7 +160,10 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     grupos.forEach(({ linhas }) => {
       linhas.forEach(l => {
         const key = normKey(l.produtoNome);
-        if (!map.has(key)) map.set(key, { produtoNome: l.produtoNome, totalKg: 0, preco: null });
+        if (!map.has(key)) {
+          const precoSalvo = l.produtoId ? parseFloat(precosMap[l.produtoId]) || null : null;
+          map.set(key, { produtoNome: l.produtoNome, totalKg: 0, preco: precoSalvo });
+        }
         map.get(key).totalKg += l.totalKg || 0;
       });
     });
@@ -147,7 +173,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
       if (oa !== ob) return oa - ob;
       return a.produtoNome.localeCompare(b.produtoNome, 'pt-BR');
     });
-  }, [grupos]);
+  }, [grupos, precosMap]);
 
   if (!produtor || !safra) return (
     <div className="text-center py-16 text-muted-foreground">
