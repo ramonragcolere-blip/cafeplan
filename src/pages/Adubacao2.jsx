@@ -550,7 +550,6 @@ export default function Adubacao2() {
         detalhamento: {
           rec: r.rec,
           mediaBienal: r.mediaBienal,
-          // Usa o produto efetivo (reflete filtro/troca manual) se disponível, senão usa o original
           produtoSugerido: (() => {
             const efetivo = produtosEfetivosRef.current[talhao.id];
             if (efetivo?.produto) return { id: efetivo.produto.id, nome: efetivo.produto.nome };
@@ -558,6 +557,10 @@ export default function Adubacao2() {
             return null;
           })(),
           doseProdutoHa: produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
+          // Complementos, trocas e marcados — persistência completa do planejamento
+          complementos: produtosEfetivosRef.current[talhao.id]?.complementos || [],
+          trocas: produtosEfetivosRef.current[talhao.id]?.trocas || {},
+          marcados: produtosEfetivosRef.current[talhao.id]?.marcados || null,
           precos,
           parcelamentos: parcelamentos[talhao.id] || {},
         },

@@ -1,49 +1,19 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, CheckCircle2, Clock, Filter, X, ChevronUp, RefreshCcw } from 'lucide-react';
-import { classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
+import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, Filter, X } from 'lucide-react';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
-
-// ── helpers ────────────────────────────────────────────────────────────────────
-
-const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-
-function calcMicros(analise) {
-  if (!analise) return {};
-  return {
-    Zn: analise.zinco != null ? classificarZn(analise.zinco) : null,
-    Cu: analise.cobre != null ? classificarCu(analise.cobre) : null,
-    Mn: analise.manganes != null ? classificarMn(analise.manganes) : null,
-  };
-}
-
-function classBadgeColor(classe) {
-  if (classe === 'Baixo')  return 'text-red-600 bg-red-50 border-red-200';
-  if (classe === 'Médio')  return 'text-amber-600 bg-amber-50 border-amber-200';
-  if (classe === 'Bom')    return 'text-blue-600 bg-blue-50 border-blue-200';
-  if (classe === 'Ótimo')  return 'text-green-600 bg-green-50 border-green-200';
-  return 'text-muted-foreground bg-muted border-border';
-}
-
-function fmt(v, dec = 0) {
-  if (v == null || isNaN(v)) return '—';
-  return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-}
-
-function fmtR(v) {
-  if (v == null || isNaN(v)) return '—';
-  return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import {
+  TODOS_ELEMENTOS_GRID, calcMicros, classBadgeColor, fmt, fmtR,
+  ResumoParcelamento, EditorParcelamento, DropdownTrocarProduto, StatusBadgePlan,
+} from '@/components/adubacao2/PainelTalhaoHelpers';
 
 const KEY_PARA_LABEL = { n_pct: 'N', k2o_pct: 'K₂O', p2o5_pct: 'P₂O₅', b_pct: 'B' };
 
 /** Monta lista de linhas de produto.
- *  Se produtoSalvo for passado, ele é fixado como Principal com doseSalva,
- *  e os complementos são calculados pelos nutrientes residuais que o principal
- *  não cobre suficientemente.
- *  trocas = { [nutKey]: produtoId } — sobrescritas manuais do usuário no card expandido.
+ *  complementosSalvos = [{ produto: {id,nome}, doseKgHa, nutKey }] — quando presente, pula cascata automática.
+ *  produtoSalvo fixado como Principal; trocas = { [nutKey]: produtoId } — sobrescritas manuais.
  */
-function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null) {
+function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null) {
   if (!rec || !todos.length) return [];
 
   // ── Caso 1: produto salvo fixado como principal ─────────────────────────
@@ -83,33 +53,52 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
     const mapa = {};
     mapa[prodPrincipal.id] = { produto: prodPrincipal, nutrientes: nutrientesPrincipal, ehPrincipal: true, nutKey: 'n_pct', doseKgHa };
 
-    // Complementos: recalcula rec residual (déficit não coberto pelo principal)
-    const recResidual = {
-      N: Math.max(0, (rec.N || 0) - cobertos.N),
-      P: Math.max(0, (rec.P || 0) - cobertos.P),
-      K: Math.max(0, (rec.K || 0) - cobertos.K),
-      B: Math.max(0, (rec.B || 0) - cobertos.B),
-    };
-    // Só busca complementos se houver déficit residual relevante (> 1 kg/ha)
-    const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
-    if (temResidual) {
-      const sugestoesResidual = sugerirProdutosInteligente(todos, { N: recResidual.N, P: recResidual.P, K: recResidual.K, B: recResidual.B });
-      for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
-        if (!sug?.produtoId) continue;
-        const prodId = trocas[nutKey] || sug.produtoId;
-        if (prodId === prodPrincipal.id) continue; // não duplicar
-        const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
-        if (!prod || prod.id === prodPrincipal.id) continue;
-        const pct = parseFloat(prod[nutKey]) || 0;
-        const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
-        const nutResidual = recResidual[nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo] || 0;
-        if (pct > 0 && nutResidual > 1) {
-          const doseComp = Math.round((nutResidual / (pct / 100)) * 10) / 10;
-          const forn = doseComp * (pct / 100);
-          if (!mapa[prod.id]) {
-            mapa[prod.id] = { produto: prod, nutrientes: [], ehPrincipal: false, nutKey, doseKgHa: doseComp };
+    // Complementos: usa salvos do banco se disponíveis, senão cascata automática
+    if (complementosSalvos && complementosSalvos.length > 0) {
+      // Restaura complementos exatamente como foram salvos
+      for (const comp of complementosSalvos) {
+        if (!comp.produto?.id || comp.produto.id === prodPrincipal.id) continue;
+        const prodComp = todos.find(p => p.id === comp.produto.id) || comp.produto;
+        // trocas pode sobrescrever um complemento salvo
+        const prodId = trocas[comp.nutKey] ? todos.find(p => p.id === trocas[comp.nutKey]) : prodComp;
+        const prodFinal = prodId || prodComp;
+        if (mapa[prodFinal.id]) continue;
+        mapa[prodFinal.id] = {
+          produto: prodFinal,
+          nutrientes: comp.nutrientes || [],
+          ehPrincipal: false,
+          nutKey: comp.nutKey,
+          doseKgHa: comp.doseKgHa,
+        };
+      }
+    } else {
+      // Cascata automática — rec residual
+      const recResidual = {
+        N: Math.max(0, (rec.N || 0) - cobertos.N),
+        P: Math.max(0, (rec.P || 0) - cobertos.P),
+        K: Math.max(0, (rec.K || 0) - cobertos.K),
+        B: Math.max(0, (rec.B || 0) - cobertos.B),
+      };
+      const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
+      if (temResidual) {
+        const sugestoesResidual = sugerirProdutosInteligente(todos, { N: recResidual.N, P: recResidual.P, K: recResidual.K, B: recResidual.B });
+        for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
+          if (!sug?.produtoId) continue;
+          const prodId = trocas[nutKey] || sug.produtoId;
+          if (prodId === prodPrincipal.id) continue;
+          const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
+          if (!prod || prod.id === prodPrincipal.id) continue;
+          const pct = parseFloat(prod[nutKey]) || 0;
+          const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
+          const nutResidual = recResidual[nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo] || 0;
+          if (pct > 0 && nutResidual > 1) {
+            const doseComp = Math.round((nutResidual / (pct / 100)) * 10) / 10;
+            const forn = doseComp * (pct / 100);
+            if (!mapa[prod.id]) {
+              mapa[prod.id] = { produto: prod, nutrientes: [], ehPrincipal: false, nutKey, doseKgHa: doseComp };
+            }
+            mapa[prod.id].nutrientes.push({ label: nutSimbolo, fornecido: forn });
           }
-          mapa[prod.id].nutrientes.push({ label: nutSimbolo, fornecido: forn });
         }
       }
     }
@@ -146,156 +135,7 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
   return Object.values(mapa);
 }
 
-// ── Editor de Parcelamento ─────────────────────────────────────────────────────
-
-function ResumoParcelamento({ parc }) {
-  if (!parc || parc.parcelas.length === 0) return <span className="text-muted-foreground text-xs">Nenhum</span>;
-  const partes = parc.parcelas.map((p) => {
-    const mesesStr = (p.meses || []).join('/');
-    return `${p.pct}% ${mesesStr}`;
-  });
-  return <span className="text-xs font-mono">{parc.parcelas.length}x · {partes.join(' · ')}</span>;
-}
-
-function EditorParcelamento({ parc, onChange, onAplicarTodos, onRecolher }) {
-  const [local, setLocal] = useState(() => parc || { parcelas: [{ pct: 100, meses: [] }] });
-
-  const setNumParcelas = (n) => {
-    setLocal(prev => {
-      const novas = Array.from({ length: n }, (_, i) => prev.parcelas[i] || { pct: Math.round(100 / n), meses: [] });
-      return { parcelas: novas };
-    });
-  };
-
-  const setPct = (i, val) => {
-    setLocal(prev => {
-      const p = [...prev.parcelas];
-      p[i] = { ...p[i], pct: val };
-      return { parcelas: p };
-    });
-  };
-
-  const toggleMes = (i, mes) => {
-    setLocal(prev => {
-      const p = [...prev.parcelas];
-      const ms = p[i].meses || [];
-      p[i] = { ...p[i], meses: ms.includes(mes) ? ms.filter(m => m !== mes) : [...ms, mes] };
-      return { parcelas: p };
-    });
-  };
-
-  const salvar = () => onChange(local);
-
-  return (
-    <div className="mt-2 p-3 bg-muted/20 border border-border rounded-lg space-y-3">
-      {/* CORREÇÃO 3: botão Recolher no canto superior direito */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Parcelas:</span>
-          {[1,2,3,4,5].map(n => (
-            <button key={n} type="button"
-              onClick={() => setNumParcelas(n)}
-              className={`w-7 h-7 text-xs rounded border transition-colors ${local.parcelas.length === n ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/60'}`}>
-              {n}x
-            </button>
-          ))}
-        </div>
-        {onRecolher && (
-          <button type="button" onClick={onRecolher}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1 hover:bg-muted/40 transition-colors">
-            <ChevronUp className="w-3 h-3" /> Recolher
-          </button>
-        )}
-      </div>
-
-      {local.parcelas.map((p, i) => (
-        <div key={i} className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground w-16">Parcela {i+1}:</span>
-            <input type="number" min="0" max="100" value={p.pct}
-              onChange={e => setPct(i, Number(e.target.value))}
-              className="w-16 h-6 text-xs border border-input rounded px-2 text-right bg-background tabular-nums" />
-            <span className="text-xs text-muted-foreground">%</span>
-          </div>
-          <div className="flex flex-wrap gap-1 ml-16">
-            {MESES.map(m => (
-              <button key={m} type="button"
-                onClick={() => toggleMes(i, m)}
-                className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${(p.meses||[]).includes(m) ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/60'}`}>
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div className="flex gap-2 pt-1">
-        <Button size="sm" className="text-xs h-7" onClick={salvar}>Aplicar</Button>
-        {onAplicarTodos && (
-          <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => { salvar(); onAplicarTodos(local); }}>
-            Aplicar para todos os talhões com este produto
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Dropdown de troca de produto (CORREÇÃO 2) ──────────────────────────────────
-
-function DropdownTrocarProduto({ todos, onTrocar }) {
-  const [aberto, setAberto] = useState(false);
-  const [busca, setBusca] = useState('');
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!aberto) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [aberto]);
-
-  const produtosFiltrados = useMemo(() => {
-    const q = busca.toLowerCase();
-    return todos
-      .filter(p => !q || (p.nome || '').toLowerCase().includes(q))
-      .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
-  }, [todos, busca]);
-
-  return (
-    <div ref={ref} className="relative inline-block">
-      <button type="button" onClick={() => setAberto(a => !a)}
-        className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary border border-dashed border-muted-foreground/30 hover:border-primary rounded px-1.5 py-0.5 transition-colors">
-        <RefreshCcw className="w-2.5 h-2.5" /> Trocar
-      </button>
-      {aberto && (
-        <div className="absolute z-50 left-0 top-full mt-1 w-64 bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
-          <div className="p-2 border-b border-border">
-            <input
-              autoFocus
-              type="text"
-              placeholder="Buscar produto..."
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              className="w-full h-7 text-xs border border-input rounded px-2 bg-background"
-            />
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {produtosFiltrados.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
-            ) : produtosFiltrados.map(p => (
-              <button key={p.id} type="button"
-                onClick={() => { onTrocar(p); setAberto(false); setBusca(''); }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 truncate">
-                {p.nome}
-                {p.fornecedor && <span className="text-muted-foreground ml-1">· {p.fornecedor}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// ── Editor de Parcelamento / Dropdown de troca — importados de PainelTalhaoHelpers ──
 
 // ── Linha manual para elementos extras marcados ───────────────────────────────
 
@@ -542,57 +382,39 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
 
 // ── Painel expandido de um talhão ─────────────────────────────────────────────
 
-const TODOS_ELEMENTOS_GRID = [
-  { key: 'N',  label: 'N',    tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'n_pct' },
-  { key: 'P',  label: 'P₂O₅', tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'p2o5_pct' },
-  { key: 'K',  label: 'K₂O',  tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'k2o_pct' },
-  { key: 'B',  label: 'B',    tipo: 'dose',  unit: 'kg/ha',  temRec: true,  nutField: 'b_pct' },
-  { key: 'Zn', label: 'Zn',   tipo: 'class', temRec: false,  nutField: 'zn_pct' },
-  { key: 'Cu', label: 'Cu',   tipo: 'class', temRec: false,  nutField: 'cu_pct' },
-  { key: 'Mn', label: 'Mn',   tipo: 'class', temRec: false,  nutField: 'mn_pct' },
-  { key: 'Mg', label: 'Mg',   tipo: 'dose',  unit: 'kg/ha',  temRec: false,  nutField: 'mg_pct' },
-  { key: 'Fe', label: 'Fe',   tipo: 'class', temRec: false,  nutField: 'fe_pct' },
-  { key: 'MO', label: 'M.O.', tipo: 'valor', temRec: false,  nutField: null },
-];
-
-function StatusBadgePlan({ rec }) {
-  if (!rec) return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-      <Clock className="w-3 h-3" /> Pendente
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">
-      <CheckCircle2 className="w-3 h-3" /> Calculado
-    </span>
-  );
-}
-
-function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar }) {
+function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, onMarcadosChange, onTrocasChange }) {
   const { talhao, rec, mediaBienal, analise, analise2040 } = resultado;
   const micros = calcMicros(analise);
   const area = talhao.area_ha || 0;
 
-  // CORREÇÃO 1: checkbox por elemento
-  // Elementos com déficit (temRec=true) começam marcados. Extras começam desmarcados.
+  // Marcados: restaura do banco se disponível, senão padrão (temRec = marcado)
   const [marcados, setMarcados] = useState(() => {
+    if (marcadosIniciais && Object.keys(marcadosIniciais).length > 0) return marcadosIniciais;
     const init = {};
     TODOS_ELEMENTOS_GRID.forEach(el => { init[el.key] = el.temRec; });
     return init;
   });
 
-  // CORREÇÃO 2: trocas manuais de produto por nutriente { [nutKey]: produtoId }
-  const [trocas, setTrocas] = useState({});
+  // Trocas: restaura do banco se disponível
+  const [trocas, setTrocas] = useState(() => trocasIniciais || {});
 
   const toggleMarcado = (key) => {
-    setMarcados(prev => ({ ...prev, [key]: !prev[key] }));
+    setMarcados(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      onMarcadosChange?.(next);
+      return next;
+    });
   };
 
   const handleTrocarProduto = useCallback((nutKey, produto) => {
-    setTrocas(prev => ({ ...prev, [nutKey]: produto.id }));
-  }, []);
+    setTrocas(prev => {
+      const next = { ...prev, [nutKey]: produto.id };
+      onTrocasChange?.(next);
+      return next;
+    });
+  }, [onTrocasChange]);
 
-  // Linhas de produtos: usa produto salvo como principal se disponível
+  // Linhas de produtos: produto salvo como principal; complementos salvos pulam cascata automática
   const linhasProdutos = useMemo(() => {
     if (!rec) return [];
     const recFiltrado = { ...rec };
@@ -600,11 +422,10 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['P']) delete recFiltrado.P;
     if (!marcados['K']) delete recFiltrado.K;
     if (!marcados['B']) delete recFiltrado.B;
-    // Produto salvo tem prioridade; trocas manuais do usuário sobrescrevem via trocas['n_pct']
     const prodSalvo = resultado.produtoSugerido || null;
     const doseSalva = resultado.doseProdutoHa || null;
-    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva);
-  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa]);
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, complementosSalvos || null);
+  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, complementosSalvos]);
 
   // Elementos extras marcados (não-rec): Zn, Cu, Mn, Mg, Fe, MO
   const elementosExtrasMarcados = useMemo(() => {
@@ -966,6 +787,9 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
   const [filtro, setFiltro] = useState({ fornecedores: [], produtoId: '' });
+  // Estado de trocas e marcados por talhão — persistidos no banco
+  const [trocasPorTalhao, setTrocasPorTalhao] = useState({});
+  const [marcadosPorTalhao, setMarcadosPorTalhao] = useState({});
 
   const toggleExpand = (id) => setExpandidos(prev => {
     const next = new Set(prev);
@@ -990,7 +814,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     });
   }, [todos, filtro]);
 
-  // Sincroniza quando o pai restaura preços/parcelamentos do banco
+  // Sincroniza quando o pai restaura preços/parcelamentos/trocas/marcados do banco
   useEffect(() => {
     if (precosIniciais && Object.keys(precosIniciais).length > 0) {
       setPrecos(prev => Object.keys(prev).length === 0 ? precosIniciais : prev);
@@ -1001,51 +825,24 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       setParcelamentos(prev => Object.keys(prev).length === 0 ? parcelamentosIniciais : prev);
     }
   }, [parcelamentosIniciais]);
+  // Restaura trocas e marcados dos registros salvos
+  useEffect(() => {
+    if (!registrosSalvos || registrosSalvos.length === 0) return;
+    const trocasAgg = {};
+    const marcadosAgg = {};
+    registrosSalvos.forEach(r => {
+      if (r.detalhamento?.trocas) trocasAgg[r.talhao_id] = r.detalhamento.trocas;
+      if (r.detalhamento?.marcados) marcadosAgg[r.talhao_id] = r.detalhamento.marcados;
+    });
+    if (Object.keys(trocasAgg).length > 0) setTrocasPorTalhao(prev => Object.keys(prev).length === 0 ? trocasAgg : prev);
+    if (Object.keys(marcadosAgg).length > 0) setMarcadosPorTalhao(prev => Object.keys(prev).length === 0 ? marcadosAgg : prev);
+  }, [registrosSalvos]);
 
   // Notifica pai quando preços ou parcelamentos mudam
   useEffect(() => { onPrecosChange?.(precos); }, [precos]);
   useEffect(() => { onParcelamentosChange?.(parcelamentos); }, [parcelamentos]);
 
-  // Notifica pai com mapa de produto efetivo por talhão.
-  // CORREÇÃO 2: se o talhão tem registro salvo no banco mas o produto ainda não resolveu
-  // (timing), não propaga fallback automático — aguarda resolução.
-  useEffect(() => {
-    if (!onProdutosEfetivosChange || !resultados) return;
 
-    // Conjunto de talhões com registro salvo (que podem ter produto ainda null por timing)
-    const idsSalvos = new Set((registrosSalvos || []).map(r => r.talhao_id));
-
-    // Se algum talhão com registro salvo ainda não tem produto resolvido em resultados,
-    // abortar a notificação — o pai vai re-disparar o efeito quando todos carregar.
-    const pendente = resultados.some(r =>
-      r.rec && idsSalvos.has(r.talhao.id) && r.temRegistroSalvo && !r.produtoSugerido && r.doseProdutoHa == null
-    );
-    if (pendente && todos.length === 0) return;
-
-    const mapa = {};
-    resultados.forEach(r => {
-      if (!r.rec) return;
-      // Produto salvo tem prioridade absoluta
-      if (r.produtoSugerido) {
-        mapa[r.talhao.id] = { produto: r.produtoSugerido, doseKgHa: r.doseProdutoHa };
-        return;
-      }
-      // Fallback automático apenas para talhões sem registro salvo
-      if (idsSalvos.has(r.talhao.id)) return;
-      if (!todosFiltered.length) return;
-      const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
-      const sugN = sugestoes['n_pct'];
-      if (sugN?.produtoId) {
-        const prod = todosFiltered.find(p => p.id === sugN.produtoId);
-        if (prod) {
-          const pctN = parseFloat(prod.n_pct) || 0;
-          const dose = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
-          mapa[r.talhao.id] = { produto: prod, doseKgHa: dose };
-        }
-      }
-    });
-    onProdutosEfetivosChange(mapa);
-  }, [todosFiltered, resultados, registrosSalvos, todos.length]);
 
   const handlePrecoChange = useCallback((prodId, val) => {
     setPrecos(prev => ({ ...prev, [prodId]: val }));
@@ -1067,6 +864,77 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       return next;
     });
   }, [resultados]);
+
+  const handleTrocasChange = useCallback((talhaoId, trocas) => {
+    setTrocasPorTalhao(prev => ({ ...prev, [talhaoId]: trocas }));
+  }, []);
+
+  const handleMarcadosChange = useCallback((talhaoId, marcados) => {
+    setMarcadosPorTalhao(prev => ({ ...prev, [talhaoId]: marcados }));
+  }, []);
+
+  // Expõe trocas, marcados e complementos calculados para o pai usar no handleSalvarTudo
+  useEffect(() => {
+    if (!onProdutosEfetivosChange || !resultados) return;
+    // Reusa lógica existente mas também agrega complementos
+    const idsSalvos = new Set((registrosSalvos || []).map(r => r.talhao_id));
+    const pendente = resultados.some(r =>
+      r.rec && idsSalvos.has(r.talhao.id) && r.temRegistroSalvo && !r.produtoSugerido && r.doseProdutoHa == null
+    );
+    if (pendente && todos.length === 0) return;
+
+    const mapa = {};
+    resultados.forEach(r => {
+      if (!r.rec) return;
+      const trocas = trocasPorTalhao[r.talhao.id] || {};
+      const marcados = marcadosPorTalhao[r.talhao.id] || null;
+      const recFiltrado = { ...r.rec };
+      if (marcados) {
+        if (!marcados['N']) delete recFiltrado.N;
+        if (!marcados['P']) delete recFiltrado.P;
+        if (!marcados['K']) delete recFiltrado.K;
+        if (!marcados['B']) delete recFiltrado.B;
+      }
+
+      let produto = r.produtoSugerido || null;
+      let doseKgHa = r.doseProdutoHa || null;
+
+      if (!produto && !idsSalvos.has(r.talhao.id) && todosFiltered.length > 0) {
+        const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: recFiltrado.N, P: recFiltrado.P, K: recFiltrado.K, B: recFiltrado.B });
+        const sugN = sugestoes['n_pct'];
+        if (sugN?.produtoId) {
+          const prod = todosFiltered.find(p => p.id === sugN.produtoId);
+          if (prod) {
+            produto = prod;
+            const pctN = parseFloat(prod.n_pct) || 0;
+            doseKgHa = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
+          }
+        }
+      }
+      if (!produto && idsSalvos.has(r.talhao.id)) return;
+
+      // Calcula complementos para persistir
+      const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
+      const linhas = montarLinhasProdutos(todosFiltered, recFiltrado, trocas, produto, doseKgHa, compsSalvos);
+      const complementos = linhas.filter(l => !l.ehPrincipal).map(l => ({
+        produto: { id: l.produto.id, nome: l.produto.nome },
+        doseKgHa: l.doseKgHa,
+        nutKey: l.nutKey,
+        nutrientes: l.nutrientes,
+      }));
+
+      if (produto) {
+        mapa[r.talhao.id] = {
+          produto,
+          doseKgHa,
+          complementos,
+          trocas,
+          marcados: marcados || (() => { const d = {}; TODOS_ELEMENTOS_GRID.forEach(el => { d[el.key] = el.temRec; }); return d; })(),
+        };
+      }
+    });
+    onProdutosEfetivosChange(mapa);
+  }, [todosFiltered, resultados, registrosSalvos, todos.length, trocasPorTalhao, marcadosPorTalhao]);
 
   const metricas = useMemo(() => {
     if (!resultados || resultados.length === 0) return null;
@@ -1275,6 +1143,11 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                             onParcelamentoChange={(prodId, parc) => handleParcelamentoChange(r.talhao.id, prodId, parc)}
                             onAplicarParcTodos={(prodId, parc) => handleAplicarParcTodos(prodId, parc)}
                             onFechar={() => toggleExpand(r.talhao.id)}
+                            marcadosIniciais={marcadosPorTalhao[r.talhao.id] || null}
+                            trocasIniciais={trocasPorTalhao[r.talhao.id] || null}
+                            complementosSalvos={(registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null}
+                            onMarcadosChange={(m) => handleMarcadosChange(r.talhao.id, m)}
+                            onTrocasChange={(t) => handleTrocasChange(r.talhao.id, t)}
                           />
                         </td>
                       </tr>
