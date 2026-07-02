@@ -1,0 +1,72 @@
+{
+  "name": "CronogramaFoliar",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string"
+    },
+    "safra": {
+      "type": "string"
+    },
+    "titulo": {
+      "type": "string",
+      "description": "Nome da aplica\u00e7\u00e3o ex: P\u00f3s-colheita 1"
+    },
+    "objetivos": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Lista de objetivos: Nutri\u00e7\u00e3o, Ferrugem, etc."
+    },
+    "fase_lavoura": {
+      "type": "string"
+    },
+    "epoca": {
+      "type": "string",
+      "description": "\u00c9poca/data limite ex: P\u00f3s-colheita, Jan/Fev"
+    },
+    "data_limite": {
+      "type": "string",
+      "format": "date"
+    },
+    "equipamento": {
+      "type": "string"
+    },
+    "volume_calda_ha": {
+      "type": "number",
+      "description": "Volume de calda em L/ha"
+    },
+    "talhao_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "IDs dos talh\u00f5es inclu\u00eddos"
+    },
+    "produtos": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "[{produto_id, produto_nome, dose, unidade, tipo_formulacao, grupo, preco}]"
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planejado",
+        "em_execucao",
+        "concluido",
+        "cancelado"
+      ],
+      "default": "planejado"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra"
+  ]
+}

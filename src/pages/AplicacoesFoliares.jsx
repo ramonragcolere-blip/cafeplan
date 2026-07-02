@@ -189,11 +189,7 @@ export default function AplicacoesFoliares() {
                 produtor={produtor}
                 safra={safra}
                 talhoes={talhoes}
-                aplicacoes={aplicacoes}
                 insumos={insumos}
-                onSaveAplicacao={handleSaveAplicacao}
-                onRemoverAplicacao={handleRemoverAplicacao}
-                saving={isPlanSaving}
               />
             )}
             {abaAtiva === 'pdf' && (
