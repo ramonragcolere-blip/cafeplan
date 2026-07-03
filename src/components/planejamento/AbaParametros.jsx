@@ -33,14 +33,16 @@ export default function AbaParametros() {
   useEffect(() => {
     const map = {};
     PARAMS_DEFAULT.forEach(p => { map[p.chave] = p.valor; });
-    savedParams.forEach(p => { map[p.chave] = p.valor; });
+    const list = Array.isArray(savedParams) ? savedParams : [];
+    list.forEach(p => { map[p.chave] = p.valor; });
     setParams(map);
   }, [savedParams]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       for (const def of PARAMS_DEFAULT) {
-        const existing = savedParams.find(p => p.chave === def.chave);
+        const list = Array.isArray(savedParams) ? savedParams : [];
+        const existing = list.find(p => p.chave === def.chave);
         const data = { chave: def.chave, label: def.label, valor: Number(params[def.chave]) || 0, unidade: def.unidade };
         if (existing) await base44.entities.ParametrosPlanejamento.update(existing.id, data);
         else await base44.entities.ParametrosPlanejamento.create(data);
