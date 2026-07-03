@@ -886,17 +886,24 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   }, [todos, filtro]);
 
   // Sincroniza quando o pai restaura preços/parcelamentos/trocas/marcados do banco
+  // Merge por chave: só preenche chaves ainda ausentes no estado local
   useEffect(() => {
-    if (precosIniciais && Object.keys(precosIniciais).length > 0) {
-      setPrecos(prev => Object.keys(prev).length === 0 ? precosIniciais : prev);
-    }
+    if (!precosIniciais || Object.keys(precosIniciais).length === 0) return;
+    setPrecos(prev => {
+      const merged = { ...precosIniciais };
+      Object.keys(prev).forEach(k => { merged[k] = prev[k]; }); // local sobrescreve salvo
+      return merged;
+    });
   }, [precosIniciais]);
   useEffect(() => {
-    if (parcelamentosIniciais && Object.keys(parcelamentosIniciais).length > 0) {
-      setParcelamentos(prev => Object.keys(prev).length === 0 ? parcelamentosIniciais : prev);
-    }
+    if (!parcelamentosIniciais || Object.keys(parcelamentosIniciais).length === 0) return;
+    setParcelamentos(prev => {
+      const merged = { ...parcelamentosIniciais };
+      Object.keys(prev).forEach(k => { merged[k] = prev[k]; }); // local sobrescreve salvo
+      return merged;
+    });
   }, [parcelamentosIniciais]);
-  // Restaura trocas e marcados dos registros salvos
+  // Restaura trocas e marcados dos registros salvos — merge por talhão
   useEffect(() => {
     if (!registrosSalvos || registrosSalvos.length === 0) return;
     const trocasAgg = {};
@@ -905,8 +912,20 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       if (r.detalhamento?.trocas) trocasAgg[r.talhao_id] = r.detalhamento.trocas;
       if (r.detalhamento?.marcados) marcadosAgg[r.talhao_id] = r.detalhamento.marcados;
     });
-    if (Object.keys(trocasAgg).length > 0) setTrocasPorTalhao(prev => Object.keys(prev).length === 0 ? trocasAgg : prev);
-    if (Object.keys(marcadosAgg).length > 0) setMarcadosPorTalhao(prev => Object.keys(prev).length === 0 ? marcadosAgg : prev);
+    if (Object.keys(trocasAgg).length > 0) {
+      setTrocasPorTalhao(prev => {
+        const merged = { ...trocasAgg };
+        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        return merged;
+      });
+    }
+    if (Object.keys(marcadosAgg).length > 0) {
+      setMarcadosPorTalhao(prev => {
+        const merged = { ...marcadosAgg };
+        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        return merged;
+      });
+    }
   }, [registrosSalvos]);
 
   // Notifica pai quando preços ou parcelamentos mudam

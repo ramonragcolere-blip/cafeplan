@@ -276,9 +276,15 @@ export default function Adubacao2() {
   const [produtividadeLocal, setProdutividadeLocal] = useState({});
   const [analises2040Local, setAnalises2040Local] = useState({});
 
+  // Ref para garantir que a restauração completa roda apenas uma vez por produtor+safra
+  const restauradoRef = useRef('');
+
   // Sincroniza estado local quando dados do banco chegam
   useEffect(() => {
     if (registrosSalvos.length === 0 || talhoes.length === 0) return;
+
+    const chave = `${produtor?.id}|${safra}`;
+    const jáRestaurou = restauradoRef.current === chave;
 
     const prodMap = {};
     const a2040Map = {};
@@ -297,80 +303,101 @@ export default function Adubacao2() {
       }
     });
 
-    setProdutividadeLocal(prodMap);
-    setAnalises2040Local(a2040Map);
+    setAnalises2040Local(prev => {
+      const merged = { ...prev };
+      Object.entries(a2040Map).forEach(([k, v]) => { if (!(k in merged)) merged[k] = v; });
+      return merged;
+    });
 
-    if (Object.keys(precosAgg).length > 0) {
-      setPrecosExterno(precosAgg);
-      precosRef.current = precosAgg;
-    }
-    if (Object.keys(parcelamentosAgg).length > 0) {
-      setParcelamentosExterno(parcelamentosAgg);
-      parcelamentosRef.current = parcelamentosAgg;
-    }
+    if (!jáRestaurou) {
+      // Primeira restauração: sobrescreve produtividade somente se o usuário não digitou nada ainda
+      setProdutividadeLocal(prev => {
+        const merged = { ...prev };
+        Object.entries(prodMap).forEach(([k, v]) => { if (!(k in merged)) merged[k] = v; });
+        return merged;
+      });
 
-    // Reconstrói resultadosCalculo a partir dos dados salvos
-    const resultadosRestaurados = talhoes.map(talhao => {
-      const registro = registrosSalvos.find(r => r.talhao_id === talhao.id);
-      if (!registro?.detalhamento?.rec) {
+      if (Object.keys(precosAgg).length > 0) {
+        setPrecosExterno(precosAgg);
+        precosRef.current = precosAgg;
+      }
+      if (Object.keys(parcelamentosAgg).length > 0) {
+        setParcelamentosExterno(parcelamentosAgg);
+        parcelamentosRef.current = parcelamentosAgg;
+      }
+
+      // Reconstrói resultadosCalculo a partir dos dados salvos
+      const resultadosRestaurados = talhoes.map(talhao => {
+        const registro = registrosSalvos.find(r => r.talhao_id === talhao.id);
+        if (!registro?.detalhamento?.rec) {
+          const locProd = prodMap[talhao.id] || {};
+          const s1 = parseFloat(locProd.safra1);
+          const s2 = parseFloat(locProd.safra2);
+          let mediaBienal = null;
+          if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
+          else if (!isNaN(s1)) mediaBienal = s1;
+          else if (!isNaN(s2)) mediaBienal = s2;
+          const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
+          return { talhao, mediaBienal, analise, analise2040: a2040Map[talhao.id] || null, rec: null, produtoSugerido: null, doseProdutoHa: null, temRegistroSalvo: !!registro };
+        }
+        const det = registro.detalhamento;
         const locProd = prodMap[talhao.id] || {};
         const s1 = parseFloat(locProd.safra1);
         const s2 = parseFloat(locProd.safra2);
-        let mediaBienal = null;
-        if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
-        else if (!isNaN(s1)) mediaBienal = s1;
-        else if (!isNaN(s2)) mediaBienal = s2;
-        const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
-        // temRegistroSalvo: informa ao filho que este talhão tem registro no banco (mas sem planejamento ainda)
-        return { talhao, mediaBienal, analise, analise2040: a2040Map[talhao.id] || null, rec: null, produtoSugerido: null, doseProdutoHa: null, temRegistroSalvo: !!registro };
-      }
-      const det = registro.detalhamento;
-      const locProd = prodMap[talhao.id] || {};
-      const s1 = parseFloat(locProd.safra1);
-      const s2 = parseFloat(locProd.safra2);
-      let mediaBienal = det.mediaBienal ?? null;
-      if (mediaBienal == null) {
-        if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
-        else if (!isNaN(s1)) mediaBienal = s1;
-        else if (!isNaN(s2)) mediaBienal = s2;
-      }
-      // CORREÇÃO 1: produto salvo é fonte primária — usar objeto do banco diretamente.
-      // todos.find() enriquece com dados do catálogo, mas nunca é condição para o produto existir.
-      let produtoSugerido = det.produtoSugerido ? { ...det.produtoSugerido } : null;
-      if (produtoSugerido && todos.length > 0) {
-        const prodCatalogo = todos.find(p => p.id === produtoSugerido.id);
-        if (prodCatalogo) produtoSugerido = prodCatalogo;
-      }
-      const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
-      return {
-        talhao,
-        mediaBienal,
-        analise,
-        analise2040: a2040Map[talhao.id] || null,
-        rec: det.rec || null,
-        produtoSugerido,
-        doseProdutoHa: det.doseProdutoHa ?? null,
-        temRegistroSalvo: true,
-      };
-    });
-
-    // Só restaura se houver ao menos um resultado com rec salvo
-    if (resultadosRestaurados.some(r => r.rec != null)) {
-      setResultadosCalculo(resultadosRestaurados);
-
-      // Restaura mapa de produtos efetivos — usa o objeto do banco como fonte
-      const prodEfetivosMap = {};
-      resultadosRestaurados.forEach(r => {
-        if (r.produtoSugerido && r.doseProdutoHa != null) {
-          prodEfetivosMap[r.talhao.id] = { produto: r.produtoSugerido, doseKgHa: r.doseProdutoHa };
+        let mediaBienal = det.mediaBienal ?? null;
+        if (mediaBienal == null) {
+          if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
+          else if (!isNaN(s1)) mediaBienal = s1;
+          else if (!isNaN(s2)) mediaBienal = s2;
         }
+        let produtoSugerido = det.produtoSugerido ? { ...det.produtoSugerido } : null;
+        if (produtoSugerido && todos.length > 0) {
+          const prodCatalogo = todos.find(p => p.id === produtoSugerido.id);
+          if (prodCatalogo) produtoSugerido = prodCatalogo;
+        }
+        const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
+        return {
+          talhao,
+          mediaBienal,
+          analise,
+          analise2040: a2040Map[talhao.id] || null,
+          rec: det.rec || null,
+          produtoSugerido,
+          doseProdutoHa: det.doseProdutoHa ?? null,
+          temRegistroSalvo: true,
+        };
       });
-      if (Object.keys(prodEfetivosMap).length > 0) {
-        produtosEfetivosRef.current = prodEfetivosMap;
-        setProdutosEfetivosExterno(prodEfetivosMap);
+
+      if (resultadosRestaurados.some(r => r.rec != null)) {
+        setResultadosCalculo(resultadosRestaurados);
+
+        const prodEfetivosMap = {};
+        resultadosRestaurados.forEach(r => {
+          if (r.produtoSugerido && r.doseProdutoHa != null) {
+            prodEfetivosMap[r.talhao.id] = { produto: r.produtoSugerido, doseKgHa: r.doseProdutoHa };
+          }
+        });
+        if (Object.keys(prodEfetivosMap).length > 0) {
+          produtosEfetivosRef.current = prodEfetivosMap;
+          setProdutosEfetivosExterno(prodEfetivosMap);
+        }
+      }
+
+      restauradoRef.current = chave;
+    } else {
+      // Re-execuções posteriores: só enriquece produtoSugerido com dados do catálogo, sem resetar estado
+      if (todos.length > 0) {
+        setResultadosCalculo(prev => {
+          if (!prev) return prev;
+          return prev.map(r => {
+            if (!r.produtoSugerido) return r;
+            const prodCatalogo = todos.find(p => p.id === r.produtoSugerido.id);
+            return prodCatalogo ? { ...r, produtoSugerido: prodCatalogo } : r;
+          });
+        });
       }
     }
-  }, [registrosSalvos.length, talhoes.length, todos, todasAnalises.length, produtor?.id, safra]);
+  }, [registrosSalvos.length, talhoes.length, todasAnalises.length, produtor?.id, safra]);
 
   const setProd = useCallback((talhaoId, campo, valor) => {
     setProdutividadeLocal(prev => ({ ...prev, [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor } }));
@@ -628,6 +655,7 @@ export default function Adubacao2() {
 
   // Ao trocar produtor/safra, limpa resultados
   const handleChangeProdutorSafra = useCallback((field, value) => {
+    restauradoRef.current = '';
     precosRef.current = {};
     parcelamentosRef.current = {};
     produtosEfetivosRef.current = {};
