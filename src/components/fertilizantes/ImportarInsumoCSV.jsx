@@ -6,8 +6,6 @@ import { base44 } from '@/api/base44Client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/use-toast';
 import { Upload, Loader2, CheckCircle2, AlertCircle, FileText, RefreshCw } from 'lucide-react';
-import Papa from 'papaparse';
-
 const CSV_COLUNAS = [
   'nome', 'ingrediente_ativo', 'fornecedor', 'grupo',
   'dose_viveiro', 'dose_plantio', 'dose_1ano_recepa', 'unidade_costal',
@@ -16,13 +14,39 @@ const CSV_COLUNAS = [
 ];
 
 function parseCSV(texto) {
-  const result = Papa.parse(texto, {
-    header: true,
-    skipEmptyLines: true,
-    transformHeader: h => h.trim().toLowerCase(),
-  });
-  const rows = (result.data || []).filter(r => r.nome && r.nome.trim());
-  const parseErrors = result.errors || [];
+  const parseErrors = [];
+  const linhas = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < texto.length; i++) {
+    const ch = texto[i];
+    if (ch === '"') { inQuotes = !inQuotes; current += ch; }
+    else if (ch === '\n' && !inQuotes) { linhas.push(current.replace(/\r$/, '')); current = ''; }
+    else { current += ch; }
+  }
+  if (current.trim()) linhas.push(current);
+  if (linhas.length < 2) return { rows: [], parseErrors };
+
+  const cabecalho = linhas[0].split(',').map(c => c.trim().replace(/^"|"$/g, '').toLowerCase());
+
+  const rows = [];
+  for (let li = 1; li < linhas.length; li++) {
+    const linha = linhas[li];
+    if (!linha.trim()) continue;
+    const cols = [];
+    let cel = '';
+    let inQ = false;
+    for (let i = 0; i < linha.length; i++) {
+      const ch = linha[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cel.trim()); cel = ''; }
+      else { cel += ch; }
+    }
+    cols.push(cel.trim());
+    const obj = {};
+    cabecalho.forEach((col, idx) => { obj[col] = (cols[idx] || '').replace(/^"|"$/g, '').trim(); });
+    if (obj.nome) rows.push(obj);
+  }
   return { rows, parseErrors };
 }
 
