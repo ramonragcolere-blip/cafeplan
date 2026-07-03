@@ -5,8 +5,10 @@ const NUT_KEY = {
   Zn: 'zn_pct', Mn: 'mn_pct', Cu: 'cu_pct', Mg: 'mg_pct'
 };
 
-export function sugerirProdutosInteligente(todos, rec) {
+export function sugerirProdutosInteligente(todos, rec, recOriginal) {
   if (!todos.length || !rec) return {};
+  // recOriginal: rec sem filtro de marcados — usado apenas no veto tóxico
+  const recTox = recOriginal || rec;
   const saldo = {};
   for (const [s, key] of Object.entries(NUT_KEY)) {
     const v = rec[s];
@@ -37,8 +39,8 @@ export function sugerirProdutosInteligente(todos, rec) {
         const pctTox = parseFloat(prod[NUT_KEY[tox]]) || 0;
         if (pctTox === 0) continue;
         const fornece = dose * (pctTox / 100);
-        const recTox = rec[tox] || 0;
-        if (fornece > (recTox > 0 ? recTox : 0.001)) { toxico = true; break; }
+        const limTox = recTox[tox] || 0;
+        if (fornece > (limTox > 0 ? limTox : 0.001)) { toxico = true; break; }
       }
       if (toxico) continue;
       if (score > melhorScore || (score === melhorScore && dose < melhorDose)) {

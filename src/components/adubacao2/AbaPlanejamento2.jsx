@@ -13,7 +13,8 @@ const KEY_PARA_LABEL = { n_pct: 'N', k2o_pct: 'K₂O', p2o5_pct: 'P₂O₅', b_p
  *  complementosSalvos = [{ produto: {id,nome}, doseKgHa, nutKey }] — quando presente, pula cascata automática.
  *  produtoSalvo fixado como Principal; trocas = { [nutKey]: produtoId } — sobrescritas manuais.
  */
-function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null) {
+function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null) {
+  const _recOrig = recOriginal || rec;
   if (!rec || !todos.length) return [];
 
   // ── Caso 1: produto salvo fixado como principal ─────────────────────────
@@ -59,7 +60,6 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
       for (const comp of complementosSalvos) {
         if (!comp.produto?.id || comp.produto.id === prodPrincipal.id) continue;
         const prodComp = todos.find(p => p.id === comp.produto.id) || comp.produto;
-        // trocas pode sobrescrever um complemento salvo
         const prodId = trocas[comp.nutKey] ? todos.find(p => p.id === trocas[comp.nutKey]) : prodComp;
         const prodFinal = prodId || prodComp;
         if (mapa[prodFinal.id]) continue;
@@ -71,6 +71,48 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
           doseKgHa: comp.doseKgHa,
         };
       }
+
+      // Após restaurar os salvos, calcula residual para nutrientes ainda não cobertos
+      const fornecidoTotal = { N: 0, P: 0, K: 0, B: 0 };
+      Object.values(mapa).forEach(l => {
+        const d = l.doseKgHa || 0;
+        const prod = l.produto;
+        fornecidoTotal.N += d * ((parseFloat(prod.n_pct)    || 0) / 100);
+        fornecidoTotal.P += d * ((parseFloat(prod.p2o5_pct) || 0) / 100);
+        fornecidoTotal.K += d * ((parseFloat(prod.k2o_pct)  || 0) / 100);
+        fornecidoTotal.B += d * ((parseFloat(prod.b_pct)    || 0) / 100);
+      });
+      const recResidual = {
+        N: Math.max(0, (rec.N || 0) - fornecidoTotal.N),
+        P: Math.max(0, (rec.P || 0) - fornecidoTotal.P),
+        K: Math.max(0, (rec.K || 0) - fornecidoTotal.K),
+        B: Math.max(0, (rec.B || 0) - fornecidoTotal.B),
+      };
+      const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
+      if (temResidual) {
+        const sugestoesResidual = sugerirProdutosInteligente(todos, recResidual, _recOrig);
+        for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
+          if (!sug?.produtoId) continue;
+          const prodId = trocas[nutKey] || sug.produtoId;
+          const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
+          if (!prod || mapa[prod.id]) continue;
+          const pct = parseFloat(prod[nutKey]) || 0;
+          const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
+          const nutKey2 = nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo;
+          const nutResidual = recResidual[nutKey2] || 0;
+          if (pct > 0 && nutResidual > 1) {
+            const doseComp = Math.round((nutResidual / (pct / 100)) * 10) / 10;
+            const forn = doseComp * (pct / 100);
+            mapa[prod.id] = {
+              produto: prod,
+              nutrientes: [{ label: nutSimbolo, fornecido: forn }],
+              ehPrincipal: false,
+              nutKey,
+              doseKgHa: doseComp,
+            };
+          }
+        }
+      }
     } else {
       // Cascata automática — rec residual
       const recResidual = {
@@ -81,7 +123,7 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
       };
       const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
       if (temResidual) {
-        const sugestoesResidual = sugerirProdutosInteligente(todos, { N: recResidual.N, P: recResidual.P, K: recResidual.K, B: recResidual.B });
+        const sugestoesResidual = sugerirProdutosInteligente(todos, { N: recResidual.N, P: recResidual.P, K: recResidual.K, B: recResidual.B }, rec);
         for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
           if (!sug?.produtoId) continue;
           const prodId = trocas[nutKey] || sug.produtoId;
@@ -107,7 +149,7 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
   }
 
   // ── Caso 2: sem produto salvo — sugestão automática completa ────────────
-  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, rec);
   const principalId = trocas['n_pct'] || sugestoes['n_pct']?.produtoId || null;
 
   const mapa = {};
@@ -927,7 +969,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       let doseKgHa = r.doseProdutoHa || null;
 
       if (!produto && !idsSalvos.has(r.talhao.id) && todosFiltered.length > 0) {
-        const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: recFiltrado.N, P: recFiltrado.P, K: recFiltrado.K, B: recFiltrado.B });
+        const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: recFiltrado.N, P: recFiltrado.P, K: recFiltrado.K, B: recFiltrado.B }, r.rec);
         const sugN = sugestoes['n_pct'];
         if (sugN?.produtoId) {
           const prod = todosFiltered.find(p => p.id === sugN.produtoId);
@@ -937,12 +979,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
             doseKgHa = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
           }
         }
-      }
-      if (!produto && idsSalvos.has(r.talhao.id)) return;
+        }
+        if (!produto && idsSalvos.has(r.talhao.id)) return;
 
-      // Calcula complementos para persistir
-      const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
-      const linhas = montarLinhasProdutos(todosFiltered, recFiltrado, trocas, produto, doseKgHa, compsSalvos);
+        // Calcula complementos para persistir
+        const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
+        const linhas = montarLinhasProdutos(todosFiltered, recFiltrado, trocas, produto, doseKgHa, compsSalvos, r.rec);
       const complementos = linhas.filter(l => !l.ehPrincipal).map(l => ({
         produto: { id: l.produto.id, nome: l.produto.nome },
         doseKgHa: l.doseKgHa,
