@@ -209,8 +209,10 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
   const produtosDoNutriente = useMemo(() => {
     const sorted = [...todos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
     if (!nutField) return sorted;
+    // Produtos com teor ficam no topo; os demais ficam abaixo mas aparecem sempre
     const comNutriente = sorted.filter(p => (parseFloat(p[nutField]) || 0) > 0);
-    return comNutriente.length > 0 ? comNutriente : sorted;
+    const semNutriente = sorted.filter(p => (parseFloat(p[nutField]) || 0) === 0);
+    return [...comNutriente, ...semNutriente];
   }, [todos, nutField]);
 
   const semProdutosEspecificos = useMemo(() => {

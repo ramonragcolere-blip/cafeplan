@@ -220,8 +220,12 @@ export default function Adubacao2() {
   const produtor = produtores.find(p => p.id === produtorId) || null;
   const talhoes = useMemo(() => todosTalhoes.filter(t => t.codigo_produtor === produtor?.codigo), [todosTalhoes, produtor]);
   const analises = useMemo(() => todasAnalises.filter(a => a.safra === safra && talhoes.some(t => t.id === a.talhao_id)), [todasAnalises, safra, talhoes]);
+  const GRUPOS_DEFENSIVO = /herbicida|inseticida|fungicida|acaricida|nematicida|adjuvante|bactericida|glifosato|glufosinato|mancozebe|limpador|detector/i;
+
   const todos = useMemo(() => [
-    ...fertilizantes.map(f => ({ ...f, _tipo: 'formulado' })),
+    ...fertilizantes
+      .filter(f => !f.grupo || !GRUPOS_DEFENSIVO.test(f.grupo))
+      .map(f => ({ ...f, _tipo: 'formulado' })),
     ...fontesSimples.map(f => ({ ...f, _tipo: 'fonte' })),
   ], [fertilizantes, fontesSimples]);
 
