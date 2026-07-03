@@ -6,6 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/use-toast';
 import { Upload, Loader2, CheckCircle2, AlertCircle, FileText, RefreshCw } from 'lucide-react';
+import Papa from 'papaparse';
 
 const CSV_COLUNAS = [
   'nome', 'ingrediente_ativo', 'fornecedor', 'grupo',
@@ -15,28 +16,19 @@ const CSV_COLUNAS = [
 ];
 
 function parseCSV(texto) {
-  const linhas = texto.trim().split(/\r?\n/);
-  if (linhas.length < 2) return [];
-  const cabecalho = linhas[0].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-  return linhas.slice(1).map(linha => {
-    const cols = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < linha.length; i++) {
-      const ch = linha[i];
-      if (ch === '"') { inQuotes = !inQuotes; }
-      else if (ch === ',' && !inQuotes) { cols.push(current.trim()); current = ''; }
-      else { current += ch; }
-    }
-    cols.push(current.trim());
-    const obj = {};
-    cabecalho.forEach((col, idx) => { obj[col] = (cols[idx] || '').replace(/^"|"$/g, '').trim(); });
-    return obj;
-  }).filter(r => r.nome);
+  const result = Papa.parse(texto, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: h => h.trim().toLowerCase(),
+  });
+  const rows = (result.data || []).filter(r => r.nome && r.nome.trim());
+  const parseErrors = result.errors || [];
+  return { rows, parseErrors };
 }
 
 export default function ImportarInsumoCSV({ open, onOpenChange, produtosExistentes = [], onImportado }) {
   const [preview, setPreview] = useState([]);
+  const [parseErrors, setParseErrors] = useState([]);
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState(null);
@@ -55,7 +47,9 @@ export default function ImportarInsumoCSV({ open, onOpenChange, produtosExistent
     setResultado(null);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setPreview(parseCSV(ev.target.result));
+      const { rows, parseErrors: errs } = parseCSV(ev.target.result);
+      setPreview(rows);
+      setParseErrors(errs);
     };
     reader.readAsText(file, 'UTF-8');
   };
@@ -98,6 +92,7 @@ export default function ImportarInsumoCSV({ open, onOpenChange, produtosExistent
 
   const handleClose = () => {
     setPreview([]);
+    setParseErrors([]);
     setFileName('');
     setResultado(null);
     onOpenChange(false);
@@ -132,6 +127,12 @@ export default function ImportarInsumoCSV({ open, onOpenChange, produtosExistent
           {/* Preview */}
           {preview.length > 0 && !resultado && (
             <div className="space-y-2">
+              {parseErrors.length > 0 && (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {parseErrors.length} linha(s) ignorada(s) por formato inválido: {parseErrors.map(e => e.message).join('; ')}
+                </div>
+              )}
               <div className="flex gap-4 text-sm flex-wrap">
                 {novos.length > 0 && (
                   <span className="flex items-center gap-1.5 text-green-700"><CheckCircle2 className="w-4 h-4" />{novos.length} novo(s)</span>
