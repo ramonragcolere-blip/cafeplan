@@ -9,8 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, Upload } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import ImportarProdutoresTalhoesCSV from '@/components/produtores/ImportarProdutoresTalhoesCSV';
 
 const emptyTalhao = {
   codigo_produtor: null, nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
@@ -32,6 +33,7 @@ export default function Talhoes() {
   const [search, setSearch] = useState('');
   const [filterProdutor, setFilterProdutor] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState(emptyTalhao);
   const [editingId, setEditingId] = useState(null);
   const queryClient = useQueryClient();
@@ -117,9 +119,14 @@ export default function Talhoes() {
           <h1 className="text-3xl font-bold tracking-tight">Talhões</h1>
           <p className="text-muted-foreground mt-1">Gerencie os talhões de cada produtor</p>
         </div>
-        <Button onClick={() => { setForm(emptyTalhao); setEditingId(null); setDialogOpen(true); }} className="gap-2">
-          <Plus className="w-4 h-4" /> Novo Talhão
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2">
+            <Upload className="w-4 h-4" /> Importar Planilha
+          </Button>
+          <Button onClick={() => { setForm(emptyTalhao); setEditingId(null); setDialogOpen(true); }} className="gap-2">
+            <Plus className="w-4 h-4" /> Novo Talhão
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -184,6 +191,14 @@ export default function Talhoes() {
           </Table>
         </div>
       </div>
+
+      <ImportarProdutoresTalhoesCSV
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        produtoresExistentes={produtores}
+        talhoesExistentes={talhoes}
+        onImportado={() => { queryClient.invalidateQueries({ queryKey: ['talhoes'] }); queryClient.invalidateQueries({ queryKey: ['produtores'] }); }}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
