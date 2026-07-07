@@ -184,7 +184,12 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
 
 function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, value, onChange }) {
   const produtoId = value?.produtoId || '';
-  const doseManual = value?.doseKgHa != null ? value.doseKgHa : '';
+  const [doseManual, setDoseManual] = useState(value?.doseKgHa != null ? value.doseKgHa : '');
+
+  // Sincroniza se o valor vier do banco (carga inicial)
+  useEffect(() => {
+    setDoseManual(value?.doseKgHa != null ? value.doseKgHa : '');
+  }, [value?.doseKgHa]);
 
   const handleProdutoChange = (id) => onChange({ produtoId: id, doseKgHa: doseManual });
   const handleDoseChange = (dose) => onChange({ produtoId: produtoId, doseKgHa: dose });
@@ -304,7 +309,10 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
         </td>
         <td className="px-3 py-2 text-right">
           <input type="number" min="0" step="0.1" value={doseManual}
-            onChange={e => handleDoseChange(e.target.value)} placeholder="—"
+            onChange={e => setDoseManual(e.target.value)}
+            onBlur={e => handleDoseChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleDoseChange(e.target.value); }}
+            placeholder="—"
             className="w-20 h-6 text-xs text-right border border-input rounded px-2 bg-background tabular-nums" />
         </td>
         <td className="px-3 py-2 tabular-nums text-right text-xs">{totalKg != null ? fmt(totalKg, 1) : '—'}</td>
@@ -1075,7 +1083,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         }
       });
 
-      if (produto) {
+      if (produto || complementos.length > 0) {
         mapa[r.talhao.id] = {
           produto,
           doseKgHa,
