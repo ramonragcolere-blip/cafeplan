@@ -1059,6 +1059,14 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         // Calcula complementos para persistir
         const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
         const linhas = montarLinhasProdutos(todosFiltered, recFiltrado, trocas, produto, doseKgHa, compsSalvos, r.rec);
+
+        // Sobrescreve produto/dose com a linha principal calculada (captura trocas manuais)
+        const linhaPrincipalCalculada = linhas.find(l => l.ehPrincipal);
+        if (linhaPrincipalCalculada) {
+          produto = linhaPrincipalCalculada.produto;
+          doseKgHa = linhaPrincipalCalculada.doseKgHa;
+        }
+
       const complementos = linhas.filter(l => !l.ehPrincipal).map(l => ({
         produto: { id: l.produto.id, nome: l.produto.nome },
         doseKgHa: l.doseKgHa,
