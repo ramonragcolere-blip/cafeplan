@@ -58,6 +58,7 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
     if (complementosSalvos && complementosSalvos.length > 0) {
       // Restaura complementos exatamente como foram salvos
       for (const comp of complementosSalvos) {
+        if (comp.isManualExtra) continue; // extras manuais são gerenciados separadamente
         if (!comp.produto?.id || comp.produto.id === prodPrincipal.id) continue;
         const prodComp = todos.find(p => p.id === comp.produto.id) || comp.produto;
         const prodId = trocas[comp.nutKey] ? todos.find(p => p.id === trocas[comp.nutKey]) : prodComp;
@@ -181,9 +182,13 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
 
 // ── Linha manual para elementos extras marcados ───────────────────────────────
 
-function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos }) {
-  const [produtoId, setProdutoId] = useState('');
-  const [doseManual, setDoseManual] = useState('');
+function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, value, onChange }) {
+  const produtoId = value?.produtoId || '';
+  const doseManual = value?.doseKgHa != null ? value.doseKgHa : '';
+
+  const handleProdutoChange = (id) => onChange({ produtoId: id, doseKgHa: doseManual });
+  const handleDoseChange = (dose) => onChange({ produtoId: produtoId, doseKgHa: dose });
+
   const [busca, setBusca] = useState('');
   const [dropAberto, setDropAberto] = useState(false);
   const dropRef = useRef(null);
@@ -265,13 +270,13 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
                     </p>
                   )}
                   <div className="max-h-52 overflow-y-auto">
-                    <button type="button" onClick={() => { setProdutoId(''); setDropAberto(false); setBusca(''); }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/60">
+                    <button type="button" onClick={() => { handleProdutoChange(''); setDropAberto(false); setBusca(''); }}
+                     className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/60">
                       — Nenhum
                     </button>
                     {produtosFiltrados.map(p => (
                       <button key={p.id} type="button"
-                        onClick={() => { setProdutoId(p.id); setDropAberto(false); setBusca(''); }}
+                        onClick={() => { handleProdutoChange(p.id); setDropAberto(false); setBusca(''); }}
                         className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60">
                         <span className="font-medium">{p.nome}</span>
                         {p.fornecedor && <span className="text-muted-foreground ml-1.5">· {p.fornecedor}</span>}
@@ -299,7 +304,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
         </td>
         <td className="px-3 py-2 text-right">
           <input type="number" min="0" step="0.1" value={doseManual}
-            onChange={e => setDoseManual(e.target.value)} placeholder="—"
+            onChange={e => handleDoseChange(e.target.value)} placeholder="—"
             className="w-20 h-6 text-xs text-right border border-input rounded px-2 bg-background tabular-nums" />
         </td>
         <td className="px-3 py-2 tabular-nums text-right text-xs">{totalKg != null ? fmt(totalKg, 1) : '—'}</td>
@@ -340,7 +345,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
 // ── Tabela de Produtos do Talhão ───────────────────────────────────────────────
 
-function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras }) {
+function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange }) {
   const [expandidoProd, setExpandidoProd] = useState(null);
 
   const semLinhas = (!linhas || linhas.length === 0) && (!elementosExtras || elementosExtras.length === 0);
@@ -443,6 +448,8 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
               parcelamentos={parcelamentos}
               onParcelamentoChange={onParcelamentoChange}
               onAplicarParcTodos={onAplicarParcTodos}
+              value={extrasManuais?.[el.key]}
+              onChange={(data) => onExtraChange(el.key, data)}
             />
           ))}
         </tbody>
@@ -453,7 +460,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
 
 // ── Painel expandido de um talhão ─────────────────────────────────────────────
 
-function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, onMarcadosChange, onTrocasChange }) {
+function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, onMarcadosChange, onTrocasChange, onExtrasChange }) {
   const { talhao, rec, mediaBienal, analise, analise2040 } = resultado;
   const micros = calcMicros(analise);
   const area = talhao.area_ha || 0;
@@ -468,6 +475,37 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
 
   // Trocas: restaura do banco se disponível
   const [trocas, setTrocas] = useState(() => trocasIniciais || {});
+
+  // Extras manuais: restaura do banco se disponível
+  const [extrasManuais, setExtrasManuais] = useState(() => {
+    const init = {};
+    (complementosSalvos || []).forEach(c => {
+      if (c.isManualExtra && c.produto?.id) {
+        init[c.nutKey] = { produtoId: c.produto.id, doseKgHa: c.doseKgHa };
+      }
+    });
+    return init;
+  });
+
+  // Garante que checkboxes dos extras salvos fiquem marcados ao carregar
+  useEffect(() => {
+    const keys = Object.keys(extrasManuais);
+    if (keys.length === 0) return;
+    setMarcados(prev => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach(k => { if (!next[k]) { next[k] = true; changed = true; } });
+      return changed ? next : prev;
+    });
+  }, [extrasManuais]);
+
+  const handleExtraChange = useCallback((key, data) => {
+    setExtrasManuais(prev => {
+      const next = { ...prev, [key]: data };
+      onExtrasChange?.(next);
+      return next;
+    });
+  }, [onExtrasChange]);
 
   const toggleMarcado = (key) => {
     setMarcados(prev => {
@@ -671,6 +709,8 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
             todos={todosSemFiltro}
             onTrocarProduto={handleTrocarProduto}
             elementosExtras={elementosExtrasMarcados}
+            extrasManuais={extrasManuais}
+            onExtraChange={handleExtraChange}
           />
         </div>
       )}
@@ -858,9 +898,14 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
   const [filtro, setFiltro] = useState({ fornecedores: [], produtoId: '' });
-  // Estado de trocas e marcados por talhão — persistidos no banco
+  // Estado de trocas, marcados e extras manuais por talhão — persistidos no banco
   const [trocasPorTalhao, setTrocasPorTalhao] = useState({});
   const [marcadosPorTalhao, setMarcadosPorTalhao] = useState({});
+  const [extrasPorTalhao, setExtrasPorTalhao] = useState({});
+
+  const handleExtrasChange = useCallback((talhaoId, extras) => {
+    setExtrasPorTalhao(prev => ({ ...prev, [talhaoId]: extras }));
+  }, []);
 
   const toggleExpand = (id) => setExpandidos(prev => {
     const next = new Set(prev);
@@ -1013,6 +1058,23 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         nutrientes: l.nutrientes,
       }));
 
+      // Inclui extras manuais (Zn, Cu, Mn, etc.) nos complementos para persistência
+      const extrasT = extrasPorTalhao[r.talhao.id] || {};
+      Object.entries(extrasT).forEach(([key, data]) => {
+        if (data?.produtoId && data?.doseKgHa) {
+          const prod = todosFiltered.find(p => p.id === data.produtoId) || todos.find(p => p.id === data.produtoId);
+          if (prod && !complementos.some(c => c.produto.id === prod.id)) {
+            complementos.push({
+              produto: { id: prod.id, nome: prod.nome },
+              doseKgHa: parseFloat(data.doseKgHa),
+              nutKey: key,
+              nutrientes: [],
+              isManualExtra: true,
+            });
+          }
+        }
+      });
+
       if (produto) {
         mapa[r.talhao.id] = {
           produto,
@@ -1024,7 +1086,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       }
     });
     onProdutosEfetivosChange(mapa);
-  }, [todosFiltered, resultados, registrosSalvos, todos.length, trocasPorTalhao, marcadosPorTalhao]);
+  }, [todosFiltered, resultados, registrosSalvos, todos.length, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao]);
 
   const metricas = useMemo(() => {
     if (!resultados || resultados.length === 0) return null;
@@ -1238,6 +1300,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                             complementosSalvos={(registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null}
                             onMarcadosChange={(m) => handleMarcadosChange(r.talhao.id, m)}
                             onTrocasChange={(t) => handleTrocasChange(r.talhao.id, t)}
+                            onExtrasChange={(e) => handleExtrasChange(r.talhao.id, e)}
                           />
                         </td>
                       </tr>
