@@ -77,15 +77,15 @@ export default function MapaTalhoes() {
   };
 
   const setupTerrain = useCallback((map) => {
-    if (!map.getSource('mapbox-dem')) {
-      map.addSource('mapbox-dem', {
+    if (!map.getSource('terrain-dem')) {
+      map.addSource('terrain-dem', {
         type: 'raster-dem',
         url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
         tileSize: 512,
         maxzoom: 14,
       });
     }
-    map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+    map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 });
   }, []);
 
   const onMapLoad = useCallback(() => {
@@ -279,6 +279,7 @@ export default function MapaTalhoes() {
               <Layer
                 id="slope-heatmap"
                 type="raster"
+                source="mapbox-dem"
                 paint={{
                   'raster-color': [
                     'interpolate', ['linear'], ['slope'],
@@ -289,7 +290,8 @@ export default function MapaTalhoes() {
                     20, '#ef4444',
                     30, '#991b1b',
                   ],
-                  'raster-opacity': 0.7,
+                  'raster-color-range': [0, 90],
+                  'raster-opacity': 0.65,
                 }}
               />
             </Source>
