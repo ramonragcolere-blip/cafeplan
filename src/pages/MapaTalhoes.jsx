@@ -27,6 +27,7 @@ export default function MapaTalhoes() {
   const [produtorId, setProdutorId] = useState('');
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [estilo, setEstilo] = useState('satelite');
+  const [showSlope, setShowSlope] = useState(false);
   const [desenhando, setDesenhando] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [geojsonPendente, setGeojsonPendente] = useState(null);
@@ -209,14 +210,14 @@ export default function MapaTalhoes() {
         <div className="ml-auto flex items-center bg-muted rounded-lg p-0.5 gap-0.5">
           <button
             type="button"
-            onClick={() => setEstilo('satelite')}
+            onClick={() => { setEstilo('satelite'); setShowSlope(false); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${estilo === 'satelite' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Satellite className="w-3.5 h-3.5" /> Satélite
           </button>
           <button
             type="button"
-            onClick={() => setEstilo('declividade')}
+            onClick={() => { setEstilo('declividade'); setShowSlope(true); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${estilo === 'declividade' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Mountain className="w-3.5 h-3.5" /> Declividade
@@ -274,12 +275,12 @@ export default function MapaTalhoes() {
           <ScaleControl position="bottom-right" />
 
           {/* Camada slope heatmap — visível apenas no modo declividade */}
-          {estilo === 'declividade' && (
-            <Source id="mapbox-dem" type="raster-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={512} maxzoom={14}>
+          {showSlope && (
+            <Source id="slope-source" type="raster-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={512} maxzoom={14}>
               <Layer
-                id="slope-heatmap"
+                id="slope-heatmap-layer"
                 type="raster"
-                source="mapbox-dem"
+                source="slope-source"
                 paint={{
                   'raster-color': [
                     'interpolate', ['linear'], ['slope'],
@@ -290,6 +291,7 @@ export default function MapaTalhoes() {
                     20, '#ef4444',
                     30, '#991b1b',
                   ],
+                  'raster-color-mix': [0, 0, 0, 0],
                   'raster-color-range': [0, 90],
                   'raster-opacity': 0.65,
                 }}
