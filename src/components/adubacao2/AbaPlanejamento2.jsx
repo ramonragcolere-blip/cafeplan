@@ -901,7 +901,7 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos }) {
+export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos, precosNotasMap }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
@@ -980,6 +980,22 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       });
     }
   }, [registrosSalvos]);
+
+  // Preenche preços das notas fiscais para produtos sem preço manual
+  useEffect(() => {
+    if (!precosNotasMap || Object.keys(precosNotasMap).length === 0) return;
+    setPrecos(prev => {
+      const next = { ...prev };
+      let changed = false;
+      Object.entries(precosNotasMap).forEach(([prodId, media]) => {
+        if (!next[prodId] && next[prodId] !== 0) {
+          next[prodId] = String(media);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [precosNotasMap]);
 
   // Notifica pai quando preços ou parcelamentos mudam
   useEffect(() => { onPrecosChange?.(precos); }, [precos]);

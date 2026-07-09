@@ -235,6 +235,35 @@ export default function Adubacao2() {
     queryFn: () => base44.entities.BaseRecomendacaoCalagem.list(),
   });
 
+  // Query itens de notas fiscais do produtor (para pré-preencher preços)
+  const { data: itensNotas = [] } = useQuery({
+    queryKey: ['itens_nota_fiscal_produtor', produtorId],
+    queryFn: () => base44.entities.BaseItensNotaFiscal.filter({ produtor_id: produtorId }),
+    enabled: !!produtorId,
+  });
+
+  // Mapa de preço médio por produto_id_sugerido vindo das notas fiscais
+  const precosNotasMap = useMemo(() => {
+    const mapa = {}; // { [produto_id]: { soma: number, count: number } }
+    itensNotas.forEach(item => {
+      if (!item.produto_id_sugerido || item.preco_unitario == null) return;
+      const preco = parseFloat(item.preco_unitario);
+      if (isNaN(preco) || preco <= 0) return;
+      // Converte SC (saco 60kg) para R$/kg; KG/L usa direto
+      const un = (item.unidade_medida || '').toUpperCase().trim();
+      let precoKg = preco;
+      if (un === 'SC' || un === 'SAC' || un === 'SACO') precoKg = preco / 60;
+      if (!mapa[item.produto_id_sugerido]) mapa[item.produto_id_sugerido] = { soma: 0, count: 0 };
+      mapa[item.produto_id_sugerido].soma += precoKg;
+      mapa[item.produto_id_sugerido].count += 1;
+    });
+    const resultado = {};
+    Object.entries(mapa).forEach(([id, { soma, count }]) => {
+      resultado[id] = Math.round((soma / count) * 100) / 100;
+    });
+    return resultado;
+  }, [itensNotas]);
+
   // Registros de calagem para produtor+safra
   const calagensProdutor = useMemo(() =>
     calagensDb.filter(c => c.codigo_produtor === produtor?.codigo && c.safra === safra),
@@ -910,6 +939,7 @@ export default function Adubacao2() {
           precosIniciais={precosExterno}
           parcelamentosIniciais={parcelamentosExterno}
           registrosSalvos={registrosSalvos}
+          precosNotasMap={precosNotasMap}
         />
       )}
 
