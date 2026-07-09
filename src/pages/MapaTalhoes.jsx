@@ -32,10 +32,8 @@ export default function MapaTalhoes() {
   const [salvando, setSalvando] = useState(false);
   const [popupInfo, setPopupInfo] = useState(null);
 
-  // Estilo dinâmico: Satélite ou Outdoors (Topográfico com cores de declividade)
-  const currentStyle = showSlope 
-    ? 'mapbox://styles/mapbox/outdoors-v12' 
-    : 'mapbox://styles/mapbox/satellite-streets-v12';
+  // Sempre mantemos o satélite como base, mas adicionamos sombra e 3D na declividade
+  const currentStyle = 'mapbox://styles/mapbox/satellite-streets-v12';
 
   const { data: produtores = [] } = useQuery({
     queryKey: ['produtores'],
@@ -82,7 +80,6 @@ export default function MapaTalhoes() {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    // Inicializa o DrawControl se ainda não existir
     if (!drawRef.current) {
       const draw = new MapboxDraw({ displayControlsDefault: false });
       map.addControl(draw, 'top-left');
@@ -237,8 +234,8 @@ export default function MapaTalhoes() {
           onLoad={onMapLoad}
           style={{ width: '100%', height: '100%' }}
           attributionControl={true}
-          // Relevo 3D ativo em ambos os modos
-          terrain={{ source: 'mapbox-dem', exaggeration: 1.5 }}
+          // Relevo 3D: aumenta o exagero quando a declividade está ligada
+          terrain={{ source: 'mapbox-dem', exaggeration: showSlope ? 2.5 : 1.0 }}
           onClick={(e) => {
             const map = mapRef.current?.getMap();
             if (!map) return;
@@ -254,7 +251,7 @@ export default function MapaTalhoes() {
           <NavigationControl position="top-right" visualizePitch={true} />
           <ScaleControl position="bottom-right" />
 
-          {/* Fonte de dados para o Relevo 3D (Terrain) */}
+          {/* Fonte de dados do Terreno */}
           <Source
             id="mapbox-dem"
             type="raster-dem"
@@ -262,6 +259,20 @@ export default function MapaTalhoes() {
             tileSize={512}
             maxzoom={14}
           />
+
+          {/* Camada de Sombreamento (Hillshade) - Visível apenas no modo declividade */}
+          {showSlope && (
+            <Layer
+              id="hillshade-layer"
+              type="hillshade"
+              source="mapbox-dem"
+              paint={{
+                'hillshade-shadow-color': '#1a1a1a', // Sombra escura para áreas íngremes
+                'hillshade-highlight-color': '#ffffff', // Luz para áreas planas
+                'hillshade-exaggeration': 1.5
+              }}
+            />
+          )}
 
           {/* Camadas de talhões mapeados */}
           {geojsonTalhoes.features.length > 0 && (
