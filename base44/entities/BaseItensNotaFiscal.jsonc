@@ -1,0 +1,43 @@
+{
+  "name": "BaseItensNotaFiscal",
+  "type": "object",
+  "properties": {
+    "nota_fiscal_id": {
+      "type": "string",
+      "description": "ID da nota fiscal"
+    },
+    "produtor_id": {
+      "type": "string",
+      "description": "ID do produtor"
+    },
+    "produto_nome": {
+      "type": "string",
+      "description": "Nome do produto na nota"
+    },
+    "produto_id_sugerido": {
+      "type": "string",
+      "description": "ID do produto na base de fertilizantes (opcional)"
+    },
+    "quantidade": {
+      "type": "number",
+      "description": "Quantidade comprada"
+    },
+    "unidade_medida": {
+      "type": "string",
+      "description": "Unidade de medida (KG, L, SC...)"
+    },
+    "preco_unitario": {
+      "type": "number",
+      "description": "Pre\u00e7o unit\u00e1rio"
+    },
+    "preco_total": {
+      "type": "number",
+      "description": "Pre\u00e7o total do item"
+    }
+  },
+  "required": [
+    "nota_fiscal_id",
+    "produtor_id",
+    "produto_nome"
+  ]
+}

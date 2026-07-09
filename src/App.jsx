@@ -19,6 +19,7 @@ import AplicacoesFoliares from './pages/AplicacoesFoliares';
 import Calendario from './pages/Calendario';
 import Adubacao2 from './pages/Adubacao2';
 import Planejamento from './pages/Planejamento';
+import NotasFiscais from './pages/NotasFiscais';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -58,6 +59,7 @@ const AuthenticatedApp = () => {
         <Route path="/calendario" element={<Calendario />} />
         <Route path="/adubacao2" element={<Adubacao2 />} />
         <Route path="/planejamento" element={<Planejamento />} />
+        <Route path="/notas-fiscais" element={<NotasFiscais />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

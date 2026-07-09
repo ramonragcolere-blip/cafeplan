@@ -1,0 +1,39 @@
+{
+  "name": "BaseNotasFiscais",
+  "type": "object",
+  "properties": {
+    "produtor_id": {
+      "type": "string",
+      "description": "ID do produtor"
+    },
+    "numero_nota": {
+      "type": "string",
+      "description": "N\u00famero da nota fiscal"
+    },
+    "fornecedor_nome": {
+      "type": "string",
+      "description": "Nome do fornecedor"
+    },
+    "fornecedor_cnpj": {
+      "type": "string",
+      "description": "CNPJ do fornecedor"
+    },
+    "data_emissao": {
+      "type": "string",
+      "format": "date",
+      "description": "Data de emiss\u00e3o"
+    },
+    "valor_total": {
+      "type": "number",
+      "description": "Valor total da nota"
+    },
+    "arquivo_url": {
+      "type": "string",
+      "description": "URL do arquivo XML/PDF"
+    }
+  },
+  "required": [
+    "produtor_id",
+    "numero_nota"
+  ]
+}
