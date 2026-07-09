@@ -285,7 +285,7 @@ export default function MapaTalhoes() {
                 source="slope-dem-source"
                 paint={{
                   'raster-color': [
-                    'interpolate', ['linear'], ['slope'],
+                    'interpolate', ['linear'], ['raster-dem', 'slope'],
                     0,  '#22c55e',
                     5,  '#84cc16',
                     10, '#eab308',
