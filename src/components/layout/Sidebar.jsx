@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, TreePine, UserCheck, ClipboardList,
-  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind, CalendarDays, BarChart3 } from
+  Menu, X, Leaf, Settings2, Sprout, FlaskConical, ChevronDown, ChevronRight, Wind, CalendarDays, BarChart3, Receipt } from
 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -24,7 +24,8 @@ const bottomItems = [
 { path: '/adubacao2', label: 'Adubação 2.0', icon: Sprout },
 { path: '/planejamento', label: 'Planejamento', icon: BarChart3 },
 { path: '/foliar', label: 'Aplicações Foliares', icon: Wind },
-{ path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical }];
+{ path: '/fertilizantes', label: 'Base de Insumos', icon: FlaskConical },
+{ path: '/notas-fiscais', label: 'Notas Fiscais', icon: Receipt }];
 
 
 function NavLink({ path, label, icon: Icon, indent, onClick, isActive }) {
