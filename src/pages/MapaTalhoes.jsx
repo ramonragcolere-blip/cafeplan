@@ -1,8 +1,8 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Map, { NavigationControl, ScaleControl, Source, Layer, Popup } from 'react-map-gl';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { Pencil, Mountain, Satellite } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, Pencil, Mountain, Satellite } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -32,8 +32,8 @@ export default function MapaTalhoes() {
   const [salvando, setSalvando] = useState(false);
   const [popupInfo, setPopupInfo] = useState(null);
 
-  const currentStyle = showSlope
-    ? 'mapbox://styles/mapbox/outdoors-v12'
+  const currentStyle = showSlope 
+    ? 'mapbox://styles/mapbox/outdoors-v12' 
     : 'mapbox://styles/mapbox/satellite-streets-v12';
 
   const { data: produtores = [] } = useQuery({
@@ -120,84 +120,108 @@ export default function MapaTalhoes() {
       await base44.entities.Talhao.create({
         nome: novoTalhao.nome.trim(),
         produtor_id: novoTalhao.produtor_id || undefined,
-        codigo_produtor: produtor?.codigo || undefined,
+        codigo_produtor: produtor?.codigo || '',
         geojson_poligono: JSON.stringify(geojsonPendente),
       });
+      drawRef.current?.deleteAll();
+      setDesenhando(false);
+      setModalAberto(false);
+      setGeojsonPendente(null);
       queryClient.invalidateQueries({ queryKey: ['talhoes_mapa'] });
-      toast({ title: 'Talhão salvo com sucesso!' });
-      handleModalClose();
-    } catch (err) {
-      toast({ title: 'Erro ao salvar talhão', description: err.message, variant: 'destructive' });
+      queryClient.invalidateQueries({ queryKey: ['talhoes'] });
+      toast({ title: 'Talhão salvo!', description: `"${novoTalhao.nome}" adicionado ao mapa.` });
+    } catch {
+      toast({ title: 'Erro ao salvar', variant: 'destructive' });
     } finally {
       setSalvando(false);
     }
   };
 
   const handleModalClose = () => {
+    drawRef.current?.deleteAll();
+    setDesenhando(false);
     setModalAberto(false);
     setGeojsonPendente(null);
-    setDesenhando(false);
-    if (drawRef.current) {
-      drawRef.current.deleteAll();
-      drawRef.current.changeMode('simple_select');
-    }
   };
 
-  const handleMapClick = useCallback((e) => {
-    const features = e.features || [];
-    const talhaoFeature = features.find(f => f.layer?.id === 'talhoes-fill');
-    if (talhaoFeature) {
-      setPopupInfo({
-        longitude: e.lngLat.lng,
-        latitude: e.lngLat.lat,
-        nome: talhaoFeature.properties.nome,
-      });
-    } else {
-      setPopupInfo(null);
-    }
-  }, []);
+  if (!MAPBOX_TOKEN) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[60vh]">
+        <div className="bg-card border border-border rounded-xl p-8 max-w-md text-center space-y-3">
+          <MapIcon className="w-10 h-10 text-muted-foreground mx-auto" />
+          <h2 className="text-lg font-semibold">Token do Mapbox não configurado</h2>
+          <p className="text-sm text-muted-foreground">
+            Adicione <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">VITE_MAPBOX_TOKEN</code> nas variáveis de ambiente.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Barra de controles */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-border flex-wrap">
-        <select
-          value={produtorId}
-          onChange={(e) => handleProdutorChange(e.target.value)}
-          className="h-9 pl-3 pr-8 text-sm border border-input rounded-lg bg-background min-w-[200px]"
-        >
-          <option value="">Todos os produtores</option>
-          {produtores.map((p) => (
-            <option key={p.id} value={p.id}>{p.nome || p.codigo}</option>
-          ))}
-        </select>
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 0px)' }}>
+      <div className="bg-card border-b border-border px-5 py-3 flex flex-wrap items-center gap-3 shrink-0 z-10">
+        <div className="flex items-center gap-2">
+          <MapIcon className="w-5 h-5 text-primary" />
+          <h1 className="text-base font-bold text-foreground">Mapa de Talhões</h1>
+        </div>
 
-        <Button
-          variant={showSlope ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setShowSlope(prev => !prev)}
-          className="gap-2"
-        >
-          <Mountain className="w-4 h-4" />
-          {showSlope ? 'Topográfico' : 'Satélite'}
-        </Button>
+        <div className="relative">
+          <select
+            value={produtorId}
+            onChange={(e) => handleProdutorChange(e.target.value)}
+            className="h-9 pl-3 pr-8 text-sm border border-input rounded-lg bg-background appearance-none cursor-pointer min-w-[220px]"
+          >
+            <option value="">Todos os produtores</option>
+            {produtores.map((p) => (
+              <option key={p.id} value={p.id}>{p.nome || p.codigo || p.id}</option>
+            ))}
+          </select>
+          <ChevronDown className="w-4 h-4 absolute right-2 top-2.5 text-muted-foreground pointer-events-none" />
+        </div>
 
-        <Button
-          variant={desenhando ? 'destructive' : 'outline'}
-          size="sm"
-          onClick={toggleDesenho}
-          className="gap-2"
-        >
-          <Pencil className="w-4 h-4" />
-          {desenhando ? 'Cancelar desenho' : 'Desenhar talhão'}
-        </Button>
-
-        <span className="text-xs text-muted-foreground ml-auto">
-          {talhoesComPoligono.length} talhão(ões) mapeado(s)
+        <span className="text-xs text-muted-foreground">
+          {talhoesFiltrados.length} talhão{talhoesFiltrados.length !== 1 ? 'es' : ''}
+          {talhoesComPoligono.length > 0 && ` · ${talhoesComPoligono.length} mapeado${talhoesComPoligono.length !== 1 ? 's' : ''}`}
         </span>
+
+        <div className="ml-auto flex items-center bg-muted rounded-lg p-0.5 gap-0.5">
+          <button
+            type="button"
+            onClick={() => setShowSlope(false)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${!showSlope ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Satellite className="w-3.5 h-3.5" /> Satélite
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSlope(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${showSlope ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Mountain className="w-3.5 h-3.5" /> Declividade
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={toggleDesenho}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            desenhando
+              ? 'bg-destructive text-destructive-foreground border-destructive'
+              : 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
+          }`}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          {desenhando ? 'Cancelar Desenho' : 'Desenhar Talhão'}
+        </button>
       </div>
 
-      {/* Mapa */}
+      {desenhando && (
+        <div className="bg-amber-50 border-b border-amber-200 px-5 py-2 text-xs text-amber-800 shrink-0">
+          Clique no mapa para adicionar pontos do polígono. Clique no primeiro ponto para fechar o polígono.
+        </div>
+      )}
+
       <div className="flex-1 relative">
         <Map
           ref={mapRef}
@@ -205,46 +229,33 @@ export default function MapaTalhoes() {
           onMove={(evt) => setViewState(evt.viewState)}
           mapStyle={currentStyle}
           mapboxAccessToken={MAPBOX_TOKEN}
-          style={{ width: '100%', height: '100%' }}
           onLoad={onMapLoad}
-          onClick={handleMapClick}
-          interactiveLayerIds={['talhoes-fill']}
+          style={{ width: '100%', height: '100%' }}
+          attributionControl={true}
+          terrain={{ source: 'mapbox-dem', exaggeration: showSlope ? 2.5 : 1.0 }}
+          onClick={(e) => {
+            const map = mapRef.current?.getMap();
+            if (!map) return;
+            const features = map.queryRenderedFeatures(e.point, { layers: ['talhoes-fill'] });
+            if (features.length > 0) {
+              const f = features[0];
+              setPopupInfo({ nome: f.properties.nome, longitude: e.lngLat.lng, latitude: e.lngLat.lat });
+            } else {
+              setPopupInfo(null);
+            }
+          }}
         >
-          <NavigationControl position="top-right" />
+          <NavigationControl position="top-right" visualizePitch={true} />
           <ScaleControl position="bottom-right" />
 
-          {/* Camada slope — visível apenas no modo declividade */}
-          {showSlope && (
-            <Source
-              id="slope-dem-source"
-              type="raster-dem"
-              url="mapbox://mapbox.mapbox-terrain-dem-v1"
-              tileSize={512}
-              maxzoom={14}
-            >
-              <Layer
-                id="slope-heatmap-layer"
-                type="raster"
-                source="slope-dem-source"
-                paint={{
-                  'raster-color': [
-                    'interpolate', ['linear'], ['raster-dem', 'slope'],
-                    0,  '#22c55e',
-                    5,  '#84cc16',
-                    10, '#eab308',
-                    15, '#f97316',
-                    20, '#ef4444',
-                    30, '#991b1b',
-                  ],
-                  'raster-color-mix': [0, 0, 0, 0],
-                  'raster-color-range': [0, 90],
-                  'raster-opacity': 0.65,
-                }}
-              />
-            </Source>
-          )}
+          <Source
+            id="mapbox-dem"
+            type="raster-dem"
+            url="mapbox://mapbox.mapbox-terrain-dem-v1"
+            tileSize={512}
+            maxzoom={14}
+          />
 
-          {/* Camadas de talhões mapeados */}
           {geojsonTalhoes.features.length > 0 && (
             <Source id="talhoes-source" type="geojson" data={geojsonTalhoes}>
               <Layer
@@ -260,7 +271,6 @@ export default function MapaTalhoes() {
             </Source>
           )}
 
-          {/* Popup ao clicar num talhão */}
           {popupInfo && (
             <Popup
               longitude={popupInfo.longitude}
@@ -274,7 +284,6 @@ export default function MapaTalhoes() {
           )}
         </Map>
 
-        {/* Legenda talhões */}
         {talhoesComPoligono.length > 0 && (
           <div className="absolute bottom-10 left-4 bg-black/70 backdrop-blur-sm text-white rounded-xl px-4 py-3 text-xs max-w-[220px] space-y-1">
             <p className="font-semibold text-white/90 mb-1">Talhões Mapeados</p>
@@ -292,7 +301,6 @@ export default function MapaTalhoes() {
         )}
       </div>
 
-      {/* Modal salvar talhão desenhado */}
       <Dialog open={modalAberto} onOpenChange={(v) => { if (!v) handleModalClose(); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
