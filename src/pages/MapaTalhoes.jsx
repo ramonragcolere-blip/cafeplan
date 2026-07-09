@@ -16,10 +16,7 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoicmFtb25yb2
 
 const INITIAL_VIEW = { longitude: -45.9, latitude: -21.5, zoom: 6, pitch: 0, bearing: 0 };
 
-const MAP_STYLES = {
-  satelite: 'mapbox://styles/mapbox/satellite-streets-v12',
-  declividade: 'mapbox://styles/mapbox/outdoors-v12',
-};
+const MAP_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
 
 export default function MapaTalhoes() {
   const mapRef = useRef(null);
@@ -89,24 +86,7 @@ export default function MapaTalhoes() {
       });
     }
     map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
-
-    // Hillshade para modo declividade
-    if (!map.getLayer('hillshade-layer')) {
-      map.addLayer({
-        id: 'hillshade-layer',
-        type: 'hillshade',
-        source: 'mapbox-dem',
-        layout: { visibility: estilo === 'declividade' ? 'visible' : 'none' },
-        paint: {
-          'hillshade-shadow-color': '#473B24',
-          'hillshade-highlight-color': '#FFFAFF',
-          'hillshade-accent-color': '#665C4F',
-          'hillshade-illumination-direction': 335,
-          'hillshade-exaggeration': 0.7,
-        },
-      });
-    }
-  }, [estilo]);
+  }, []);
 
   const onMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
@@ -127,17 +107,7 @@ export default function MapaTalhoes() {
     });
   }, [setupTerrain]);
 
-  // Atualiza visibilidade da camada hillshade ao trocar estilo
-  useEffect(() => {
-    const map = mapRef.current?.getMap();
-    if (!map || !map.isStyleLoaded()) return;
-    const layer = map.getLayer('hillshade-layer');
-    if (layer) {
-      map.setLayoutProperty('hillshade-layer', 'visibility', estilo === 'declividade' ? 'visible' : 'none');
-    }
-  }, [estilo]);
-
-  // Re-adiciona terrain e hillshade após mudança de estilo (mapa recria layers)
+  // Re-adiciona terrain após mudança de estilo (mapa recria layers)
   const onStyleLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (!map) return;
@@ -281,7 +251,7 @@ export default function MapaTalhoes() {
           ref={mapRef}
           {...viewState}
           onMove={(evt) => setViewState(evt.viewState)}
-          mapStyle={MAP_STYLES[estilo]}
+          mapStyle={MAP_STYLE}
           mapboxAccessToken={MAPBOX_TOKEN}
           onLoad={onMapLoad}
           onStyleData={onStyleLoad}
@@ -302,6 +272,28 @@ export default function MapaTalhoes() {
         >
           <NavigationControl position="top-right" visualizePitch={true} />
           <ScaleControl position="bottom-right" />
+
+          {/* Camada slope heatmap — visível apenas no modo declividade */}
+          {estilo === 'declividade' && (
+            <Source id="mapbox-dem" type="raster-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={512} maxzoom={14}>
+              <Layer
+                id="slope-heatmap"
+                type="raster"
+                paint={{
+                  'raster-color': [
+                    'interpolate', ['linear'], ['slope'],
+                    0,  '#22c55e',
+                    5,  '#84cc16',
+                    10, '#eab308',
+                    15, '#f97316',
+                    20, '#ef4444',
+                    30, '#991b1b',
+                  ],
+                  'raster-opacity': 0.7,
+                }}
+              />
+            </Source>
+          )}
 
           {/* Camadas de talhões mapeados */}
           {geojsonTalhoes.features.length > 0 && (
