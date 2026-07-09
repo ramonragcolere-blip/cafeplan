@@ -78,22 +78,9 @@ export default function MapaTalhoes() {
     }
   };
 
-  const setupTerrain = useCallback((map) => {
-    if (!map.getSource('terrain-dem')) {
-      map.addSource('terrain-dem', {
-        type: 'raster-dem',
-        url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
-        tileSize: 512,
-        maxzoom: 14,
-      });
-    }
-    map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 });
-  }, []);
-
   const onMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (!map) return;
-    setupTerrain(map);
 
     // Inicializa o DrawControl
     const draw = new MapboxDraw({ displayControlsDefault: false });
@@ -107,14 +94,7 @@ export default function MapaTalhoes() {
       setNovoTalhao({ nome: '', produtor_id: '' });
       setModalAberto(true);
     });
-  }, [setupTerrain]);
-
-  // Re-adiciona terrain após mudança de estilo (mapa recria layers)
-  const onStyleLoad = useCallback(() => {
-    const map = mapRef.current?.getMap();
-    if (!map) return;
-    setupTerrain(map);
-  }, [setupTerrain]);
+  }, []);
 
   const toggleDesenho = () => {
     const draw = drawRef.current;
@@ -257,7 +237,6 @@ export default function MapaTalhoes() {
           mapStyle={MAP_STYLE}
           mapboxAccessToken={MAPBOX_TOKEN}
           onLoad={onMapLoad}
-          onStyleData={onStyleLoad}
           style={{ width: '100%', height: '100%' }}
           attributionControl={true}
           onClick={(e) => {
