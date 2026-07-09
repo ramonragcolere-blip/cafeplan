@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Map, { NavigationControl, ScaleControl, Source, Layer, Popup } from 'react-map-gl';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { Map as MapIcon, ChevronDown, Pencil, Mountain, Satellite } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, Pencil, Mountain, Satellite, Spline } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -24,7 +24,7 @@ export default function MapaTalhoes() {
 
   const [produtorId, setProdutorId] = useState('');
   const [viewState, setViewState] = useState(INITIAL_VIEW);
-  const [showSlope, setShowSlope] = useState(false);
+  const [mapMode, setMapMode] = useState('satelite'); // 'satelite', 'curvas', 'declividade'
   const [desenhando, setDesenhando] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [geojsonPendente, setGeojsonPendente] = useState(null);
@@ -32,9 +32,15 @@ export default function MapaTalhoes() {
   const [salvando, setSalvando] = useState(false);
   const [popupInfo, setPopupInfo] = useState(null);
 
-  const currentStyle = showSlope 
+  // Define o estilo do mapa baseado no modo escolhido
+  const currentStyle = mapMode === 'declividade' 
     ? 'mapbox://styles/mapbox/outdoors-v12' 
     : 'mapbox://styles/mapbox/satellite-streets-v12';
+
+  // Exibe as curvas de nível apenas no modo 'curvas'
+  const showContours = mapMode === 'curvas';
+  // Aumenta o relevo 3D quando não está no modo satélite puro
+  const terrainExaggeration = mapMode === 'satelite' ? 1.0 : 1.5;
 
   const { data: produtores = [] } = useQuery({
     queryKey: ['produtores'],
@@ -140,11 +146,12 @@ export default function MapaTalhoes() {
   const handleExcluirTalhao = async (id) => {
     try {
       await base44.entities.Talhao.delete(id);
-      queryClient.invalidateQueries({ queryKey: ['talhoes_mapa'] });
+      toast({ title: 'Talhão excluído!' });
       setPopupInfo(null);
-      toast({ title: 'Talhão excluído com sucesso!' });
-    } catch (err) {
-      toast({ title: 'Erro ao excluir talhão', description: err.message, variant: 'destructive' });
+      queryClient.invalidateQueries({ queryKey: ['talhoes_mapa'] });
+      queryClient.invalidateQueries({ queryKey: ['talhoes'] });
+    } catch {
+      toast({ title: 'Erro ao excluir', variant: 'destructive' });
     }
   };
 
@@ -196,18 +203,26 @@ export default function MapaTalhoes() {
           {talhoesComPoligono.length > 0 && ` · ${talhoesComPoligono.length} mapeado${talhoesComPoligono.length !== 1 ? 's' : ''}`}
         </span>
 
+        {/* Seleção de 3 modos de visualização */}
         <div className="ml-auto flex items-center bg-muted rounded-lg p-0.5 gap-0.5">
           <button
             type="button"
-            onClick={() => setShowSlope(false)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${!showSlope ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setMapMode('satelite')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mapMode === 'satelite' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Satellite className="w-3.5 h-3.5" /> Satélite
           </button>
           <button
             type="button"
-            onClick={() => setShowSlope(true)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${showSlope ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setMapMode('curvas')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mapMode === 'curvas' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Spline className="w-3.5 h-3.5" /> Curvas
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapMode('declividade')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mapMode === 'declividade' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Mountain className="w-3.5 h-3.5" /> Declividade
           </button>
@@ -243,7 +258,8 @@ export default function MapaTalhoes() {
           onLoad={onMapLoad}
           style={{ width: '100%', height: '100%' }}
           attributionControl={true}
-          terrain={{ source: 'mapbox-dem', exaggeration: showSlope ? 2.5 : 1.0 }}
+          // Relevo 3D controlado pelo modo
+          terrain={{ source: 'mapbox-dem', exaggeration: terrainExaggeration }}
           onClick={(e) => {
             const map = mapRef.current?.getMap();
             if (!map) return;
@@ -259,6 +275,7 @@ export default function MapaTalhoes() {
           <NavigationControl position="top-right" visualizePitch={true} />
           <ScaleControl position="bottom-right" />
 
+          {/* Fonte de dados do Terreno para o Relevo 3D */}
           <Source
             id="mapbox-dem"
             type="raster-dem"
@@ -267,6 +284,23 @@ export default function MapaTalhoes() {
             maxzoom={14}
           />
 
+          {/* Curvas de Nível (Contorno) - Aparecem apenas no modo Curvas */}
+          {showContours && (
+            <Source id="terrain-contours" type="vector" url="mapbox://mapbox.mapbox-terrain-v2">
+              <Layer
+                id="contours-line"
+                type="line"
+                source-layer="contour"
+                paint={{
+                  'line-color': '#facc15', // Amarelo
+                  'line-width': ['match', ['get', 'index'], 1, 1.5, 0.5],
+                  'line-opacity': 0.8
+                }}
+              />
+            </Source>
+          )}
+
+          {/* Camadas de talhões mapeados */}
           {geojsonTalhoes.features.length > 0 && (
             <Source id="talhoes-source" type="geojson" data={geojsonTalhoes}>
               <Layer
@@ -290,13 +324,15 @@ export default function MapaTalhoes() {
               onClose={() => setPopupInfo(null)}
               closeButton={true}
             >
-              <p className="text-sm font-semibold px-1 pt-0.5 pb-2">{popupInfo.nome}</p>
-              <button
-                onClick={() => handleExcluirTalhao(popupInfo.id)}
-                className="w-full text-xs bg-red-500 hover:bg-red-600 text-white rounded px-2 py-1 font-medium transition-colors"
-              >
-                Excluir Talhão
-              </button>
+              <div className="p-1">
+                <p className="text-sm font-semibold">{popupInfo.nome}</p>
+                <button 
+                  onClick={() => handleExcluirTalhao(popupInfo.id)}
+                  className="mt-1 text-xs text-red-600 hover:text-red-800 font-medium"
+                >
+                  Excluir Talhão
+                </button>
+              </div>
             </Popup>
           )}
         </Map>
@@ -338,23 +374,5 @@ export default function MapaTalhoes() {
               <select
                 value={novoTalhao.produtor_id}
                 onChange={(e) => setNovoTalhao((prev) => ({ ...prev, produtor_id: e.target.value }))}
-                className="w-full h-9 pl-3 pr-3 text-sm border border-input rounded-lg bg-background"
-              >
-                <option value="">Selecione o produtor…</option>
-                {produtores.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nome || p.codigo}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={handleModalClose}>Cancelar</Button>
-            <Button size="sm" onClick={handleSalvarTalhao} disabled={salvando}>
-              {salvando ? 'Salvando…' : 'Salvar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+                className="w-full h-9 pl-3 pr-3 text
+              
