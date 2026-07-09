@@ -137,6 +137,17 @@ export default function MapaTalhoes() {
     }
   };
 
+  const handleExcluirTalhao = async (id) => {
+    try {
+      await base44.entities.Talhao.delete(id);
+      queryClient.invalidateQueries({ queryKey: ['talhoes_mapa'] });
+      setPopupInfo(null);
+      toast({ title: 'Talhão excluído com sucesso!' });
+    } catch (err) {
+      toast({ title: 'Erro ao excluir talhão', description: err.message, variant: 'destructive' });
+    }
+  };
+
   const handleModalClose = () => {
     drawRef.current?.deleteAll();
     setDesenhando(false);
@@ -239,7 +250,7 @@ export default function MapaTalhoes() {
             const features = map.queryRenderedFeatures(e.point, { layers: ['talhoes-fill'] });
             if (features.length > 0) {
               const f = features[0];
-              setPopupInfo({ nome: f.properties.nome, longitude: e.lngLat.lng, latitude: e.lngLat.lat });
+              setPopupInfo({ id: f.properties.id, nome: f.properties.nome, longitude: e.lngLat.lng, latitude: e.lngLat.lat });
             } else {
               setPopupInfo(null);
             }
@@ -279,7 +290,13 @@ export default function MapaTalhoes() {
               onClose={() => setPopupInfo(null)}
               closeButton={true}
             >
-              <p className="text-sm font-semibold px-1 py-0.5">{popupInfo.nome}</p>
+              <p className="text-sm font-semibold px-1 pt-0.5 pb-2">{popupInfo.nome}</p>
+              <button
+                onClick={() => handleExcluirTalhao(popupInfo.id)}
+                className="w-full text-xs bg-red-500 hover:bg-red-600 text-white rounded px-2 py-1 font-medium transition-colors"
+              >
+                Excluir Talhão
+              </button>
             </Popup>
           )}
         </Map>
