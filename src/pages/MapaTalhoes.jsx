@@ -16,8 +16,6 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoicmFtb25yb2
 
 const INITIAL_VIEW = { longitude: -45.9, latitude: -21.5, zoom: 6, pitch: 0, bearing: 0 };
 
-const MAP_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
-
 export default function MapaTalhoes() {
   const mapRef = useRef(null);
   const drawRef = useRef(null);
@@ -26,15 +24,18 @@ export default function MapaTalhoes() {
 
   const [produtorId, setProdutorId] = useState('');
   const [viewState, setViewState] = useState(INITIAL_VIEW);
-  const [estilo, setEstilo] = useState('satelite');
-  const [showSlope, setShowSlope] = useState(false);
-  console.log("Slope ativo:", showSlope);
+  const [showSlope, setShowSlope] = useState(false); // false = Satélite, true = Declividade
   const [desenhando, setDesenhando] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [geojsonPendente, setGeojsonPendente] = useState(null);
   const [novoTalhao, setNovoTalhao] = useState({ nome: '', produtor_id: '' });
   const [salvando, setSalvando] = useState(false);
-  const [popupInfo, setPopupInfo] = useState(null); // { nome, longitude, latitude }
+  const [popupInfo, setPopupInfo] = useState(null);
+
+  // Estilo dinâmico: Satélite ou Outdoors (Topográfico com cores de declividade)
+  const currentStyle = showSlope 
+    ? 'mapbox://styles/mapbox/outdoors-v12' 
+    : 'mapbox://styles/mapbox/satellite-streets-v12';
 
   const { data: produtores = [] } = useQuery({
     queryKey: ['produtores'],
@@ -52,7 +53,6 @@ export default function MapaTalhoes() {
 
   const talhoesComPoligono = talhoesFiltrados.filter((t) => t.geojson_poligono);
 
-  // GeoJSON combinado de todos os talhões com polígono
   const geojsonTalhoes = {
     type: 'FeatureCollection',
     features: talhoesComPoligono.map((t) => {
@@ -82,18 +82,20 @@ export default function MapaTalhoes() {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    // Inicializa o DrawControl
-    const draw = new MapboxDraw({ displayControlsDefault: false });
-    map.addControl(draw, 'top-left');
-    drawRef.current = draw;
+    // Inicializa o DrawControl se ainda não existir
+    if (!drawRef.current) {
+      const draw = new MapboxDraw({ displayControlsDefault: false });
+      map.addControl(draw, 'top-left');
+      drawRef.current = draw;
 
-    map.on('draw.create', (e) => {
-      const feature = e.features[0];
-      if (!feature) return;
-      setGeojsonPendente(feature.geometry);
-      setNovoTalhao({ nome: '', produtor_id: '' });
-      setModalAberto(true);
-    });
+      map.on('draw.create', (e) => {
+        const feature = e.features[0];
+        if (!feature) return;
+        setGeojsonPendente(feature.geometry);
+        setNovoTalhao({ nome: '', produtor_id: '' });
+        setModalAberto(true);
+      });
+    }
   }, []);
 
   const toggleDesenho = () => {
@@ -167,7 +169,6 @@ export default function MapaTalhoes() {
           <h1 className="text-base font-bold text-foreground">Mapa de Talhões</h1>
         </div>
 
-        {/* Seletor produtor */}
         <div className="relative">
           <select
             value={produtorId}
@@ -191,22 +192,20 @@ export default function MapaTalhoes() {
         <div className="ml-auto flex items-center bg-muted rounded-lg p-0.5 gap-0.5">
           <button
             type="button"
-            onClick={() => { setEstilo('satelite'); setShowSlope(false); }}
-
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${estilo === 'satelite' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setShowSlope(false)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${!showSlope ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Satellite className="w-3.5 h-3.5" /> Satélite
           </button>
           <button
             type="button"
-            onClick={() => setShowSlope(prev => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${estilo === 'declividade' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setShowSlope(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${showSlope ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Mountain className="w-3.5 h-3.5" /> Declividade
           </button>
         </div>
 
-        {/* Botão desenhar */}
         <button
           type="button"
           onClick={toggleDesenho}
@@ -221,7 +220,6 @@ export default function MapaTalhoes() {
         </button>
       </div>
 
-      {/* Instrução de desenho */}
       {desenhando && (
         <div className="bg-amber-50 border-b border-amber-200 px-5 py-2 text-xs text-amber-800 shrink-0">
           Clique no mapa para adicionar pontos do polígono. Clique no primeiro ponto para fechar o polígono.
@@ -234,13 +232,14 @@ export default function MapaTalhoes() {
           ref={mapRef}
           {...viewState}
           onMove={(evt) => setViewState(evt.viewState)}
-          mapStyle={MAP_STYLE}
+          mapStyle={currentStyle}
           mapboxAccessToken={MAPBOX_TOKEN}
           onLoad={onMapLoad}
           style={{ width: '100%', height: '100%' }}
           attributionControl={true}
+          // Relevo 3D ativo em ambos os modos
+          terrain={{ source: 'mapbox-dem', exaggeration: 1.5 }}
           onClick={(e) => {
-            // Verifica clique em polígono de talhão
             const map = mapRef.current?.getMap();
             if (!map) return;
             const features = map.queryRenderedFeatures(e.point, { layers: ['talhoes-fill'] });
@@ -255,30 +254,14 @@ export default function MapaTalhoes() {
           <NavigationControl position="top-right" visualizePitch={true} />
           <ScaleControl position="bottom-right" />
 
-          {/* Camada slope heatmap — visível apenas no modo declividade */}
-          {showSlope && (
-            <Source id="slope-dem-source" type="raster-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={512} maxzoom={14}>
-              <Layer
-                id="slope-heatmap-layer"
-                type="raster"
-                source="slope-dem-source"
-                paint={{
-                  'raster-color': [
-                    'interpolate', ['linear'], ['raster-dem', 'slope'],
-                    0,  '#22c55e',
-                    5,  '#84cc16',
-                    10, '#eab308',
-                    15, '#f97316',
-                    20, '#ef4444',
-                    30, '#991b1b',
-                  ],
-                  'raster-color-mix': [0, 0, 0, 0],
-                  'raster-color-range': [0, 90],
-                  'raster-opacity': 0.65,
-                }}
-              />
-            </Source>
-          )}
+          {/* Fonte de dados para o Relevo 3D (Terrain) */}
+          <Source
+            id="mapbox-dem"
+            type="raster-dem"
+            url="mapbox://mapbox.mapbox-terrain-dem-v1"
+            tileSize={512}
+            maxzoom={14}
+          />
 
           {/* Camadas de talhões mapeados */}
           {geojsonTalhoes.features.length > 0 && (
@@ -296,7 +279,6 @@ export default function MapaTalhoes() {
             </Source>
           )}
 
-          {/* Popup ao clicar num talhão */}
           {popupInfo && (
             <Popup
               longitude={popupInfo.longitude}
@@ -310,7 +292,6 @@ export default function MapaTalhoes() {
           )}
         </Map>
 
-        {/* Legenda talhões */}
         {talhoesComPoligono.length > 0 && (
           <div className="absolute bottom-10 left-4 bg-black/70 backdrop-blur-sm text-white rounded-xl px-4 py-3 text-xs max-w-[220px] space-y-1">
             <p className="font-semibold text-white/90 mb-1">Talhões Mapeados</p>
@@ -328,7 +309,6 @@ export default function MapaTalhoes() {
         )}
       </div>
 
-      {/* Modal salvar talhão desenhado */}
       <Dialog open={modalAberto} onOpenChange={(v) => { if (!v) handleModalClose(); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
