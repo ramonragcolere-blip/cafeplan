@@ -63,7 +63,7 @@
     },
     "seq_colheita": {
       "type": "number",
-      "description": "Sequ\u00eancia de colheita (define a ordem e datas)"
+      "description": "Sequ\u00eancia de colheita"
     },
     "preco_por_medida": {
       "type": "number",
@@ -130,6 +130,14 @@
     },
     "observacoes": {
       "type": "string"
+    },
+    "geojson_poligono": {
+      "type": "string",
+      "description": "GeoJSON do pol\u00edgono do talh\u00e3o (coordenadas lat/lng)"
+    },
+    "centro_mapa": {
+      "type": "string",
+      "description": "Centro do talh\u00e3o no mapa: JSON com {lat, lng}"
     }
   },
   "required": [
