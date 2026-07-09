@@ -28,6 +28,7 @@ export default function MapaTalhoes() {
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [estilo, setEstilo] = useState('satelite');
   const [showSlope, setShowSlope] = useState(false);
+  console.log("Slope ativo:", showSlope);
   const [desenhando, setDesenhando] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [geojsonPendente, setGeojsonPendente] = useState(null);
@@ -211,13 +212,14 @@ export default function MapaTalhoes() {
           <button
             type="button"
             onClick={() => { setEstilo('satelite'); setShowSlope(false); }}
+
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${estilo === 'satelite' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Satellite className="w-3.5 h-3.5" /> Satélite
           </button>
           <button
             type="button"
-            onClick={() => { setEstilo('declividade'); setShowSlope(true); }}
+            onClick={() => setShowSlope(prev => !prev)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${estilo === 'declividade' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Mountain className="w-3.5 h-3.5" /> Declividade
@@ -276,11 +278,11 @@ export default function MapaTalhoes() {
 
           {/* Camada slope heatmap — visível apenas no modo declividade */}
           {showSlope && (
-            <Source id="slope-source" type="raster-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={512} maxzoom={14}>
+            <Source id="slope-dem-source" type="raster-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={512} maxzoom={14}>
               <Layer
                 id="slope-heatmap-layer"
                 type="raster"
-                source="slope-source"
+                source="slope-dem-source"
                 paint={{
                   'raster-color': [
                     'interpolate', ['linear'], ['slope'],
