@@ -66,6 +66,10 @@ function getCorGrupo(nomeArquivo, arquivosUnicos) {
   return idx >= 0 ? CORES_GRUPO[idx % CORES_GRUPO.length] : '';
 }
 
+function getErrorMessage(error) {
+  return error?.message || String(error || 'Erro desconhecido');
+}
+
 const buildPrompt = (textoPDF) => `
 Extraia os dados desta análise de solo e retorne APENAS um objeto JSON válido, sem texto adicional, sem markdown.
 
@@ -385,7 +389,7 @@ function EtapaResumo({ resultados, onClose }) {
       </div>
       <div className="border border-border rounded-xl overflow-hidden">
         {resultados.map((r, i) => (
-          <div key={r.talhao.id} className={`flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
+          <div key={r.talhao.id} className={`flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
             {r.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">{r.talhao.nome}</p>
@@ -394,6 +398,11 @@ function EtapaResumo({ resultados, onClose }) {
             <span className={`text-xs font-medium ${r.status === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
               {r.status === 'ok' ? 'Sucesso' : 'Erro'}
             </span>
+            {r.status === 'erro' && r.erro && (
+              <p className="basis-full pl-7 text-xs text-red-600 break-words">
+                {r.erro}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -435,7 +444,9 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
             json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
           });
           if (extracao?.status === 'success' && extracao?.output?.texto_completo) textoPDF = extracao.output.texto_completo;
-        } catch (_) {}
+        } catch (error) {
+          console.warn('Não foi possível extrair texto completo do PDF; tentando leitura pelo LLM.', error);
+        }
         const resposta = await base44.integrations.Core.InvokeLLM({
           prompt: buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.'),
           file_urls: [file_url],
@@ -451,7 +462,9 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
           const { laboratorio: _l, ...brutos } = parsed;
           dadosExtraidos = converterUnidades(brutos, laboratorio);
         }
-      } catch (_) {}
+      } catch (error) {
+        console.error('Erro ao processar PDF de análise de solo 0-20 cm.', error);
+      }
       cacheExtracao[par.arquivo.name] = { dados: dadosExtraidos, laboratorio };
       processados++;
       setProgresso(processados);
@@ -475,10 +488,10 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
     const res = [];
     for (const item of itens) {
       try {
-        await onImportarAnalise([{ talhao: item.talhao, dados: { ...item.dados, laboratorio_origem: item.laboratorio }, laboratorio: item.laboratorio }]);
+        await onImportarAnalise(item.talhao, item.dados);
         res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'ok' });
-      } catch {
-        res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'erro' });
+      } catch (error) {
+        res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'erro', erro: getErrorMessage(error) });
       }
     }
     setResultados(res);

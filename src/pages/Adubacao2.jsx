@@ -31,6 +31,105 @@ const ABAS = [
   { id: 'resumo',       label: 'Resumo Geral' },
 ];
 
+const ANALISE_SOLO_NUMERIC_FIELDS = new Set([
+  'area_ha',
+  'num_plantas',
+  'plantas_por_ha',
+  'metros_lineares',
+  'ph',
+  'materia_organica',
+  'fosforo',
+  'potassio',
+  'calcio',
+  'magnesio',
+  'enxofre',
+  'boro',
+  'zinco',
+  'cobre',
+  'manganes',
+  'ferro',
+  'ctc',
+  'saturacao_bases',
+]);
+
+const ANALISE_SOLO_STRING_FIELDS = new Set([
+  'codigo_produtor',
+  'talhao_id',
+  'talhao_nome',
+  'safra',
+  'data_analise',
+  'espacamento',
+  'observacoes',
+]);
+
+const ANALISE_SOLO_ALLOWED_FIELDS = new Set([
+  ...ANALISE_SOLO_NUMERIC_FIELDS,
+  ...ANALISE_SOLO_STRING_FIELDS,
+]);
+
+function parseAnaliseSoloNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const normalized = trimmed
+    .replace(/\s/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeAnaliseSoloDate(value) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const ddmmyyyy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    const [, day, month, year] = ddmmyyyy;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  return undefined;
+}
+
+function sanitizeAnaliseSoloPayload(input = {}) {
+  return Object.entries(input).reduce((payload, [key, value]) => {
+    if (!ANALISE_SOLO_ALLOWED_FIELDS.has(key)) return payload;
+    if (value == null) return payload;
+
+    if (ANALISE_SOLO_NUMERIC_FIELDS.has(key)) {
+      const numberValue = parseAnaliseSoloNumber(value);
+      if (numberValue !== undefined) payload[key] = numberValue;
+      return payload;
+    }
+
+    if (key === 'data_analise') {
+      const dateValue = normalizeAnaliseSoloDate(value);
+      if (dateValue) payload[key] = dateValue;
+      return payload;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) payload[key] = trimmed;
+      return payload;
+    }
+
+    payload[key] = value;
+    return payload;
+  }, {});
+}
+
+function getErrorMessage(error) {
+  return error?.response?.data?.message
+    || error?.response?.data?.error
+    || error?.message
+    || String(error || 'Erro desconhecido');
+}
+
 // ── Status badge ─────────────────────────────────────────────────────────────
 // PROBLEMA 4: "agrupada" só quando o usuário agrupou explicitamente.
 function getStatus(talhao, analises, agrupamentosExplicitos) {
@@ -448,32 +547,27 @@ export default function Adubacao2() {
     setProdutividadeLocal(prev => ({ ...prev, [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor } }));
   }, []);
 
-  const handleImportarAnalise = async (talhao, dados) => {
-    const existente = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
-    const payload = { codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra, ...dados };
-    if (existente) await updateAnalise.mutateAsync({ id: existente.id, d: payload });
-    else await createAnalise.mutateAsync(payload);
-  };
+  const handleImportarAnalise = async (talhao, dados = {}) => {
+    if (!produtor?.codigo) throw new Error('Produtor não selecionado.');
+    if (!talhao?.id) throw new Error('Talhão inválido para importação.');
 
-  const handleImportarAgrupado = async (itensList) => {
-    // itensList: [{ talhao, dados, laboratorio }]
-    let sucesso = 0;
-    let falha = 0;
-    for (const item of itensList) {
-      try {
-        await handleImportarAnalise(item.talhao, item.dados);
-        sucesso++;
-      } catch {
-        falha++;
-      }
-    }
-    // Invalida queries para atualizar status
-    queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] });
-    toast({
-      title: falha === 0 ? 'Importação concluída!' : 'Importação parcial',
-      description: `${sucesso} talhão(ões) importado(s) com sucesso${falha > 0 ? `, ${falha} com erro` : ''}.`,
-      variant: falha > 0 && sucesso === 0 ? 'destructive' : 'default',
+    const existente = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
+    const payload = sanitizeAnaliseSoloPayload({
+      ...dados,
+      codigo_produtor: produtor.codigo,
+      talhao_id: talhao.id,
+      talhao_nome: talhao.nome,
+      safra,
     });
+
+    try {
+      if (existente) await updateAnalise.mutateAsync({ id: existente.id, d: payload });
+      else await createAnalise.mutateAsync(payload);
+      await queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] });
+      return { status: 'ok', operacao: existente ? 'atualizada' : 'criada' };
+    } catch (error) {
+      throw new Error(getErrorMessage(error));
+    }
   };
 
   const handleFecharModalAgrupado020 = () => {
@@ -965,7 +1059,7 @@ export default function Adubacao2() {
       {modalAgrupado020 && (
         <ImportarAgrupado020
           talhoes={talhoes.filter(t => selecionados.includes(t.id))}
-          onImportarAnalise={handleImportarAgrupado}
+          onImportarAnalise={handleImportarAnalise}
           onClose={handleFecharModalAgrupado020}
         />
       )}
