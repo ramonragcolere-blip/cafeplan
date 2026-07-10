@@ -88,19 +88,19 @@ export default function EquipamentosFazenda({ codigoProdutor }) {
 
   const { data: baseTratores = [] } = useQuery({
     queryKey: ['base_tratores'],
-    queryFn: () => base44.entities.BaseTratores.list().catch(() => []),
+    queryFn: () => base44.entities.BaseTratores.list(undefined, 5000).catch(() => []),
   });
   const { data: baseSecadoresDB = [] } = useQuery({
     queryKey: ['base_secadores_db'],
-    queryFn: () => base44.entities.BaseSecadores.list().catch(() => []),
+    queryFn: () => base44.entities.BaseSecadores.list(undefined, 5000).catch(() => []),
   });
   const { data: baseLavadoresDB = [] } = useQuery({
     queryKey: ['base_lavadores_db'],
-    queryFn: () => base44.entities.BaseLavadores.list().catch(() => []),
+    queryFn: () => base44.entities.BaseLavadores.list(undefined, 5000).catch(() => []),
   });
   const { data: baseDespolpadoresDB = [] } = useQuery({
     queryKey: ['base_despolpadores_db'],
-    queryFn: () => base44.entities.BaseDespolpadores.list().catch(() => []),
+    queryFn: () => base44.entities.BaseDespolpadores.list(undefined, 5000).catch(() => []),
   });
 
   useEffect(() => {

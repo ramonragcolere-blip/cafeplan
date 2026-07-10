@@ -21,13 +21,13 @@ export default function AbaParametros() {
   const [params, setParams] = useState({});
 
   const { data: tratores = [], isLoading: loadTrat } = useQuery({
-    queryKey: ['base_tratores'], queryFn: () => base44.entities.BaseTratores.list(),
+    queryKey: ['base_tratores'], queryFn: () => base44.entities.BaseTratores.list(undefined, 5000),
   });
   const { data: secadores = [], isLoading: loadSec } = useQuery({
-    queryKey: ['base_secadores'], queryFn: () => base44.entities.BaseSecadores.list(),
+    queryKey: ['base_secadores'], queryFn: () => base44.entities.BaseSecadores.list(undefined, 5000),
   });
   const { data: savedParams = [] } = useQuery({
-    queryKey: ['params_plan'], queryFn: () => base44.entities.ParametrosPlanejamento.list(),
+    queryKey: ['params_plan'], queryFn: () => base44.entities.ParametrosPlanejamento.list(undefined, 5000),
   });
 
   useEffect(() => {

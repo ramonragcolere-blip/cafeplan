@@ -2,7 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Sprout, ChevronDown, ChevronUp, Leaf } from 'lucide-react';
 import { useState } from 'react';
-import { FAIXAS, NUTRIENTES_KEYS, classificar, CLASS_BADGE, CLASS_LABEL, GRUPOS_RECOMENDACAO } from './FoliarNutrienteUtils';
+import { FAIXAS, NUTRIENTES_KEYS, classificar, CLASS_BADGE, CLASS_LABEL } from './FoliarNutrienteUtils';
 
 // Nutriente → grupo(s) de produto sugerido
 const NUTRIENTE_GRUPO = {

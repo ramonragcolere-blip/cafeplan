@@ -8,6 +8,7 @@ import AdubacaoSection from '@/components/dashboard/AdubacaoSection';
 import AlertasSection from '@/components/dashboard/AlertasSection';
 import ResumoProdutorSection from '@/components/dashboard/ResumoProdutorSection';
 import CustosPlanejadosSection from '@/components/dashboard/CustosPlanejadosSection';
+import { normalizarPlanosAdubacao, normalizarAplicacoesFoliares } from '@/lib/integracaoPlanejamentos';
 
 function ProdutorAutocomplete({ produtores, value, onChange }) {
   const [query, setQuery] = useState('');
@@ -79,12 +80,17 @@ function ProdutorAutocomplete({ produtores, value, onChange }) {
 export default function Dashboard() {
   const [produtorFiltro, setProdutorFiltro] = useState('');
 
-  const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
-  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
-  const { data: lancamentos = [] } = useQuery({ queryKey: ['lancamentos'], queryFn: () => base44.entities.Lancamento.list() });
-  const { data: analises = [] } = useQuery({ queryKey: ['analises_solo'], queryFn: () => base44.entities.AnaliseSolo.list() });
-  const { data: planos = [] } = useQuery({ queryKey: ['base_planejamento'], queryFn: () => base44.entities.BasePlanejamentoAdubacao.list() });
-  const { data: aplicacoesFoliares = [] } = useQuery({ queryKey: ['aplicacoes_foliares'], queryFn: () => base44.entities.AplicacaoFoliar.list() });
+  const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
+  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000) });
+  const { data: lancamentos = [] } = useQuery({ queryKey: ['lancamentos', 'dashboard'], queryFn: () => base44.entities.Lancamento.list('-data', 5000) });
+  const { data: analises = [] } = useQuery({ queryKey: ['analises_solo', 'completo'], queryFn: () => base44.entities.AnaliseSolo.list(undefined, 5000) });
+  const { data: planosLegados = [] } = useQuery({ queryKey: ['base_planejamento', 'completo'], queryFn: () => base44.entities.BasePlanejamentoAdubacao.list(undefined, 5000) });
+  const { data: planosAdubacao2 = [] } = useQuery({ queryKey: ['planejamento_adubacao2', 'dashboard'], queryFn: () => base44.entities.PlanejamentoAdubacao2.list(undefined, 5000) });
+  const { data: aplicacoesLegadas = [] } = useQuery({ queryKey: ['aplicacoes_foliares', 'completo'], queryFn: () => base44.entities.AplicacaoFoliar.list(undefined, 5000) });
+  const { data: cronogramasFoliares = [] } = useQuery({ queryKey: ['cronograma_foliar', 'dashboard'], queryFn: () => base44.entities.CronogramaFoliar.list(undefined, 5000) });
+
+  const planos = useMemo(() => normalizarPlanosAdubacao(planosLegados, planosAdubacao2), [planosLegados, planosAdubacao2]);
+  const aplicacoesFoliares = useMemo(() => normalizarAplicacoesFoliares(aplicacoesLegadas, cronogramasFoliares, talhoes), [aplicacoesLegadas, cronogramasFoliares, talhoes]);
 
   const produtorAtivo = produtorFiltro ? produtores.find(p => p.codigo === produtorFiltro) : null;
 

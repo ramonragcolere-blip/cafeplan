@@ -18,8 +18,8 @@ export default function BaseFertilizantes() {
   const [editingFert, setEditingFert] = useState(null);
 
   const { data: fertilizantes = [], isLoading: loadingFert } = useQuery({
-    queryKey: ['fertilizantes'],
-    queryFn: () => base44.entities.FertilizanteFormulado.list(),
+    queryKey: ['fertilizantes', 'catalogo-completo'],
+    queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000),
   });
 
   const fertCreate = useMutation({
@@ -33,8 +33,8 @@ export default function BaseFertilizantes() {
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
   const fertDelete = useMutation({
-    mutationFn: id => base44.entities.FertilizanteFormulado.delete(id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fertilizantes'] }); toast({ title: 'Produto removido.' }); },
+    mutationFn: id => base44.entities.FertilizanteFormulado.update(id, { ativo: false }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fertilizantes'] }); toast({ title: 'Produto inativado.' }); },
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
@@ -43,8 +43,8 @@ export default function BaseFertilizantes() {
   const [editingFonte, setEditingFonte] = useState(null);
 
   const { data: fontesSimples = [], isLoading: loadingFontes } = useQuery({
-    queryKey: ['fontes_simples'],
-    queryFn: () => base44.entities.FonteSimples.list(),
+    queryKey: ['fontes_simples', 'catalogo-completo'],
+    queryFn: () => base44.entities.FonteSimples.list(undefined, 5000),
   });
 
   const fonteCreate = useMutation({
@@ -58,8 +58,8 @@ export default function BaseFertilizantes() {
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
   const fonteDelete = useMutation({
-    mutationFn: id => base44.entities.FonteSimples.delete(id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fontes_simples'] }); toast({ title: 'Fonte removida.' }); },
+    mutationFn: id => base44.entities.FonteSimples.update(id, { ativo: false }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fontes_simples'] }); toast({ title: 'Fonte inativada.' }); },
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
@@ -134,7 +134,7 @@ function GuiaUso() {
       <div className="space-y-3 text-muted-foreground">
         <p><strong className="text-foreground">Fertilizantes e Formulados:</strong> produtos comerciais prontos — formulados NPK, organominerais, produtos como Ciclus, Aspire, Kmag, etc. Cada produto possui composição nutricional em %, que é usada para calcular doses automaticamente.</p>
         <p><strong className="text-foreground">Fontes Simples:</strong> matérias-primas nutricionais puras — ureia, MAP, KCl, sulfato de amônio, ácido bórico, etc. Ideal para quem formula misturas personalizadas.</p>
-        <p><strong className="text-foreground">Integração com Adubação:</strong> No módulo <em>Adubação do Cafeeiro</em>, ao registrar uma aplicação, você pode selecionar um produto desta base. O sistema calculará automaticamente a dose de produto necessária com base no nutriente recomendado e na composição do produto escolhido.</p>
+        <p><strong className="text-foreground">Integração com Adubação:</strong> No módulo <em>Adubação 2.0</em>, ao registrar uma aplicação, você pode selecionar um produto desta base. O sistema calculará automaticamente a dose de produto necessária com base no nutriente recomendado e na composição do produto escolhido.</p>
         <p><strong className="text-foreground">Cálculo automático:</strong> Se a recomendação é 200 kg/ha de K₂O e o produto tem 60% de K₂O, o sistema sugere ~333 kg/ha de produto.</p>
       </div>
     </div>

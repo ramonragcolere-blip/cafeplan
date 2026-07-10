@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Sprout, Leaf, Bug, Flower2, Coffee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { calcularCustoAdubacaoHa, calcularCustoProdutoFoliarHa } from '@/lib/integracaoPlanejamentos';
 
 const fmt = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -8,20 +9,18 @@ const fmt = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL
 function calcCustoAdubacao(plano, talhoes) {
   const talhao = talhoes.find(t => t.id === plano.talhao_id);
   const area = talhao?.area_ha || 0;
-  const preco = parseFloat(String(plano.preco || '').replace(',', '.')) || 0;
-  const dose = parseFloat(String(plano.dose_rec_manual || '').replace(',', '.')) || 0;
-  if (!area || !preco || !dose) return null;
-  return dose * area * preco;
+  const custoHa = calcularCustoAdubacaoHa(plano);
+  if (!area || !custoHa) return null;
+  return area * custoHa;
 }
 
 // Calcula custo de um produto foliar: dose × área × preço
 function calcCustoFoliar(produto, aplic, talhoes) {
   const talhao = talhoes.find(t => t.id === aplic.talhao_id);
   const area = talhao?.area_ha || 0;
-  const preco = parseFloat(String(produto.preco || '').replace(',', '.')) || 0;
-  const dose = parseFloat(String(produto.dose || '').replace(',', '.')) || 0;
-  if (!area || !preco || !dose) return null;
-  return dose * area * preco;
+  const custoHa = calcularCustoProdutoFoliarHa(produto);
+  if (!area || !custoHa) return null;
+  return area * custoHa;
 }
 
 function SecaoDetalhe({ icone: Icone, titulo, cor, itens, subtotal }) {

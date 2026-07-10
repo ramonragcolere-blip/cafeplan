@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { calcularCustoAdubacaoHa } from '@/lib/integracaoPlanejamentos';
 
 const fmt = (v, dec = 0) => v != null ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : '—';
 const fmtR = (v, dec = 0) => v != null ? `R$ ${fmt(v, dec)}` : '—';
@@ -22,11 +23,7 @@ export default function AbaVisaoGeral({ talhoes, produtor, safra, planejamentosA
   const rows = useMemo(() => talhoes.map(t => {
     // Custo adubação: somar custo total dos planejamentos de adubação do talhão
     const planAdub = planejamentosAdubacao.filter(p => p.talhao_id === t.id);
-    let custoAdubRha = 0;
-    planAdub.forEach(p => {
-      const det = p.detalhamento || {};
-      Object.values(det).forEach(d => { if (d?.custo_rha) custoAdubRha += Number(d.custo_rha) || 0; });
-    });
+    const custoAdubRha = planAdub.reduce((soma, plano) => soma + calcularCustoAdubacaoHa(plano), 0);
 
     // Custo operações
     const ops = operacoes.filter(o => o.talhao_id === t.id);

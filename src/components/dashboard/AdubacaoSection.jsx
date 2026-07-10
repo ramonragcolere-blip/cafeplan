@@ -1,9 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Clock } from 'lucide-react';
-import { format, addDays } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
-const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
 function mesAtualIndex() { return new Date().getMonth(); } // 0-based
 
@@ -33,7 +31,7 @@ export default function AdubacaoSection({ talhoes, planos, filtroProdutorCodigo 
   const mesProximo = (mesAtual + 1) % 12;
   const proximasAdubacoes = planosFiltrados.filter(p => {
     if (!p.meses) return false;
-    const mesesFlat = p.meses.flat().map(m => MESES.indexOf(m));
+    const mesesFlat = p.meses.flat().map(m => MESES.indexOf(String(m || '').toUpperCase()));
     return mesesFlat.some(m => m === mesAtual || m === mesProximo);
   });
 

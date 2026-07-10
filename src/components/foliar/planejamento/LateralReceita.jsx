@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { X, Plus, Trash2, Save } from 'lucide-react';
-import { GRUPOS_PLANEJAMENTO } from '@/components/foliar/FoliarNutrienteUtils';
+import { filtrarInsumosPlanejamentoFoliar } from '@/lib/planejamentoFoliar';
 
 const OBJETIVOS = ['Nutrição', 'Ferrugem', 'Cercosporiose', 'Bicho-mineiro', 'Ácaro', 'Bacteriose', 'Pós-colheita', 'Pré-florada', 'Outro'];
 const EQUIPAMENTOS = ['Bomba costal', 'Atomizador', 'Drone', 'Canhão'];
@@ -28,11 +28,7 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
   const [addOpen, setAddOpen] = useState(false);
 
   const insumosFiltrados = useMemo(() => {
-    const base = insumos.filter(p => GRUPOS_PLANEJAMENTO.includes(p.grupo) && p.ativo !== false);
-    if (!busca.trim()) return base.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
-    const q = busca.toLowerCase();
-    return base.filter(p => (p.nome || '').toLowerCase().includes(q) || (p.grupo || '').toLowerCase().includes(q))
-      .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    return filtrarInsumosPlanejamentoFoliar(insumos, busca);
   }, [insumos, busca]);
 
   const toggleObjetivo = (obj) => {
@@ -165,13 +161,21 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
               <Select value={produtoSel} onValueChange={handleSelectProduto}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione o produto" /></SelectTrigger>
                 <SelectContent className="max-h-56">
+                  {insumosFiltrados.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado.</div>
+                  )}
                   {insumosFiltrados.map(p => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.nome}{p.tipo_formulacao ? ` (${p.tipo_formulacao})` : ''}
+                      {p.nome}
+                      {p.grupo ? ` — ${p.grupo}` : ''}
+                      {p.tipo_formulacao ? ` (${p.tipo_formulacao})` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {insumosFiltrados.length} produto(s) ativo(s) disponível(is). A busca considera nome, grupo, fornecedor e ingrediente ativo.
+              </p>
               <div className="flex gap-2">
                 <div className="flex-1">
                   <Label className="text-[10px] text-muted-foreground mb-0.5 block">Dose</Label>

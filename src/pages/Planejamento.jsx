@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,6 +7,7 @@ import AbaVisaoGeral from '@/components/planejamento/AbaVisaoGeral';
 import AbaOperacoes from '@/components/planejamento/AbaOperacoes';
 import AbaPosColheita from '@/components/planejamento/AbaPosColheita';
 import AbaParametros from '@/components/planejamento/AbaParametros';
+import { normalizarPlanosAdubacao } from '@/lib/integracaoPlanejamentos';
 
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 
@@ -15,8 +16,8 @@ export default function Planejamento() {
   const [safraSel, setSafraSel] = useState('2025/2026');
 
   const { data: produtores = [] } = useQuery({
-    queryKey: ['produtores'],
-    queryFn: () => base44.entities.Produtor.list(),
+    queryKey: ['produtores', 'completo'],
+    queryFn: () => base44.entities.Produtor.list(undefined, 5000),
   });
 
   const { data: talhoes = [] } = useQuery({
@@ -31,11 +32,16 @@ export default function Planejamento() {
     enabled: !!produtorSel,
   });
 
-  const { data: planejamentosAdubacao = [] } = useQuery({
-    queryKey: ['planejamentosAdubacao2', produtorSel, safraSel],
-    queryFn: () => base44.entities.BasePlanejamentoAdubacao.filter({ codigo_produtor: produtorSel, safra: safraSel }),
+  const { data: registrosAdubacao2 = [] } = useQuery({
+    queryKey: ['planejamento_adubacao2', 'planejamento', produtorSel, safraSel],
+    queryFn: () => base44.entities.PlanejamentoAdubacao2.filter({ codigo_produtor: produtorSel, safra: safraSel }),
     enabled: !!produtorSel && !!safraSel,
   });
+
+  const planejamentosAdubacao = useMemo(
+    () => normalizarPlanosAdubacao([], registrosAdubacao2),
+    [registrosAdubacao2],
+  );
 
   const produtor = produtores.find(p => p.codigo === produtorSel) || null;
   const equip = equipamentos[0] || null;

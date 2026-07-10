@@ -7,6 +7,7 @@ import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-reac
 function parseXMLNFe(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('XML inválido ou corrompido.');
   const ns = 'http://www.portalfiscal.inf.br/nfe';
 
   const get = (parent, tag) => {
@@ -124,35 +125,59 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
 
   const handleSalvar = async () => {
     setEtapa('salvando');
+    setErro('');
+    let notaCriada = null;
     try {
-      const nota = await base44.entities.BaseNotasFiscais.create({
+      const numeroNota = String(dados?.numero || '').trim();
+      if (!produtorId) throw new Error('Selecione o produtor.');
+      if (!numeroNota) throw new Error('O número da nota não foi identificado. Confira o arquivo antes de salvar.');
+
+      const existentes = await base44.entities.BaseNotasFiscais.filter({
         produtor_id: produtorId,
-        numero_nota: dados.numero || '',
+        numero_nota: numeroNota,
+      });
+      const cnpj = String(dados?.fornecedor_cnpj || '').replace(/\D/g, '');
+      const duplicada = (existentes || []).some(nota => {
+        const cnpjExistente = String(nota.fornecedor_cnpj || '').replace(/\D/g, '');
+        return !cnpj || !cnpjExistente || cnpj === cnpjExistente;
+      });
+      if (duplicada) throw new Error(`A nota ${numeroNota} já foi importada para este produtor.`);
+
+      notaCriada = await base44.entities.BaseNotasFiscais.create({
+        produtor_id: produtorId,
+        numero_nota: numeroNota,
         fornecedor_nome: dados.fornecedor_nome || '',
         fornecedor_cnpj: dados.fornecedor_cnpj || '',
         data_emissao: dados.data_emissao || null,
-        valor_total: dados.valor_total || 0,
+        valor_total: Number(dados.valor_total) || 0,
         arquivo_url: dados.arquivo_url || '',
       });
 
-      const itensPayload = (dados.itens || []).map(it => ({
-        nota_fiscal_id: nota.id,
-        produtor_id: produtorId,
-        produto_nome: it.produto_nome || '',
-        quantidade: it.quantidade || 0,
-        unidade_medida: (it.unidade_medida || '').toUpperCase(),
-        preco_unitario: it.preco_unitario || 0,
-        preco_total: it.preco_total || 0,
-      }));
+      const itensPayload = (dados.itens || [])
+        .filter(it => String(it.produto_nome || '').trim())
+        .map(it => ({
+          nota_fiscal_id: notaCriada.id,
+          produtor_id: produtorId,
+          produto_nome: String(it.produto_nome || '').trim(),
+          quantidade: Number(it.quantidade) || 0,
+          unidade_medida: String(it.unidade_medida || '').toUpperCase(),
+          preco_unitario: Number(it.preco_unitario) || 0,
+          preco_total: Number(it.preco_total) || 0,
+        }));
 
-      if (itensPayload.length > 0) {
-        await base44.entities.BaseItensNotaFiscal.bulkCreate(itensPayload);
-      }
+      if (itensPayload.length > 0) await base44.entities.BaseItensNotaFiscal.bulkCreate(itensPayload);
 
       setEtapa('sucesso');
       onImportado?.();
     } catch (e) {
-      setErro('Erro ao salvar: ' + e.message);
+      if (notaCriada?.id) {
+        try {
+          await base44.entities.BaseNotasFiscais.delete(notaCriada.id);
+        } catch {
+          // Se a compensação falhar, o erro original continua visível para conferência manual.
+        }
+      }
+      setErro('Erro ao salvar: ' + (e?.message || String(e)));
       setEtapa('revisao');
     }
   };
