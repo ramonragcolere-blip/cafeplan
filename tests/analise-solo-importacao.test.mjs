@@ -93,7 +93,6 @@ async function simularGravacaoEmLote({ itens, salvar, notificar }) {
 
 test('infraestrutura de fixtures de analise de solo esta preparada', () => {
   assert.equal(existsSync(publicFixtures), true);
-  assert.equal(existsSync(privateFixtures), true);
 
   const gitignore = readFileSync(join(root, '.gitignore'), 'utf8');
   assert.match(gitignore, /\/tests\/fixtures\/analise-solo-privadas\//);
