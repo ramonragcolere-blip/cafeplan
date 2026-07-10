@@ -1,0 +1,10 @@
+[project]
+name = "CafePlan"
+
+[agents]
+max_parallel = 5
+max_depth = 1
+
+[delegation]
+max_parallel_agents = 5
+max_agent_depth = 1
