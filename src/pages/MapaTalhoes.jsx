@@ -374,5 +374,23 @@ export default function MapaTalhoes() {
               <select
                 value={novoTalhao.produtor_id}
                 onChange={(e) => setNovoTalhao((prev) => ({ ...prev, produtor_id: e.target.value }))}
-                className="w-full h-9 pl-3 pr-3 text
-              
+                className="w-full h-9 pl-3 pr-3 text-sm border border-input rounded-lg bg-background"
+              >
+                <option value="">Selecione o produtor…</option>
+                {produtores.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nome || p.codigo}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={handleModalClose}>Cancelar</Button>
+            <Button size="sm" onClick={handleSalvarTalhao} disabled={salvando}>
+              {salvando ? 'Salvando…' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
