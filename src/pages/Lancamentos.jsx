@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import LancamentoEmLote from '@/components/lancamentos/LancamentoEmLote';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function Lancamentos() {
   const [search, setSearch] = useState('');
@@ -24,32 +25,65 @@ export default function Lancamentos() {
   const [editingId, setEditingId] = useState(null);
   const [savingLote, setSavingLote] = useState(false);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: lancamentos = [], isLoading } = useQuery({
-    queryKey: ['lancamentos'],
-    queryFn: () => base44.entities.Lancamento.list('-data', 500),
+    queryKey: ['lancamentos', 'listagem', 5000],
+    queryFn: () => base44.entities.Lancamento.list('-data', 5000),
   });
-  const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
-  const { data: safristas = [] } = useQuery({ queryKey: ['safristas'], queryFn: () => base44.entities.Safrista.list() });
-  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
+  const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
+  const { data: safristas = [] } = useQuery({ queryKey: ['safristas', 'completo'], queryFn: () => base44.entities.Safrista.list(undefined, 5000) });
+  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000) });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Lancamento.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); setDialogOpen(false); }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      setDialogOpen(false);
+      toast({ title: 'Lançamento atualizado.' });
+    },
+    onError: err => toast({ title: 'Erro ao atualizar', description: String(err?.message || err), variant: 'destructive' }),
   });
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.Lancamento.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); setDialogOpen(false); }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      setDialogOpen(false);
+      toast({ title: 'Lançamento salvo.' });
+    },
+    onError: err => toast({ title: 'Erro ao salvar', description: String(err?.message || err), variant: 'destructive' }),
   });
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.Lancamento.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lancamentos'] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      toast({ title: 'Lançamento excluído.' });
+    },
+    onError: err => toast({ title: 'Erro ao excluir', description: String(err?.message || err), variant: 'destructive' }),
   });
 
   const handleSaveIndividual = () => {
+    if (!form.codigo_produtor || !form.data || !form.safrista || !form.talhao) {
+      toast({ title: 'Preencha os campos obrigatórios', description: 'Produtor, data, safrista e talhão são obrigatórios.', variant: 'destructive' });
+      return;
+    }
     const med = Number(form.medidas_colhidas) || 0;
     const val = Number(form.valor_medida) || 0;
-    const data = { ...form, medidas_colhidas: med, valor_medida: val, valor_total: med * val };
+    if (med <= 0) {
+      toast({ title: 'Quantidade inválida', description: 'Informe uma quantidade de medidas maior que zero.', variant: 'destructive' });
+      return;
+    }
+    const data = {
+      codigo_produtor: form.codigo_produtor,
+      data: form.data,
+      safrista: form.safrista,
+      talhao: form.talhao,
+      tipo_colheita: form.tipo_colheita,
+      medidas_colhidas: med,
+      valor_medida: val,
+      valor_total: med * val,
+      observacoes: form.observacoes || '',
+    };
     if (editingId) updateMutation.mutate({ id: editingId, data });
     else createMutation.mutate(data);
   };
@@ -58,11 +92,14 @@ export default function Lancamentos() {
     if (!registros.length) return;
     setSavingLote(true);
     try {
-      for (const r of registros) {
-        await base44.entities.Lancamento.create({ ...r, codigo_produtor: produtorSelecionado });
-      }
+      await base44.entities.Lancamento.bulkCreate(
+        registros.map(r => ({ ...r, codigo_produtor: produtorSelecionado })),
+      );
       queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
       onReset?.();
+      toast({ title: `${registros.length} lançamento(s) salvo(s).` });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar o lote', description: String(err?.message || err), variant: 'destructive' });
     } finally {
       setSavingLote(false);
     }
@@ -82,7 +119,8 @@ export default function Lancamentos() {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    try { return format(new Date(d), 'dd/MM/yyyy'); } catch { return d; }
+    const match = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : d;
   };
 
   const totalMedidas = filtered.reduce((s, l) => s + (l.medidas_colhidas || 0), 0);
@@ -210,7 +248,11 @@ export default function Lancamentos() {
                           <Button variant="ghost" size="icon" onClick={() => { setForm({ ...l }); setEditingId(l.id); setDialogOpen(true); }}>
                             <Pencil className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(l.id)}>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            if (window.confirm('Excluir este lançamento? Esta ação não pode ser desfeita.')) {
+                              deleteMutation.mutate(l.id);
+                            }
+                          }}>
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>

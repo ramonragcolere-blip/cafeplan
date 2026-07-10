@@ -49,7 +49,7 @@ function TalhaoRow({ t, planejamentoRow, onSave, saving, index }) {
   const handleSave = () => {
     onSave(t.id, {
       litros_por_pe: form.litros_por_pe !== '' ? Number(form.litros_por_pe) : null,
-      pct_colher: Number(form.pct_colher) || 1,
+      pct_colher: form.pct_colher !== '' && form.pct_colher != null ? Number(form.pct_colher) : 1,
       seq_colheita: form.seq_colheita !== '' ? Number(form.seq_colheita) : null,
       metodo_colheita: form.metodo_colheita,
       preco_por_medida: form.preco_por_medida !== '' ? Number(form.preco_por_medida) : null,

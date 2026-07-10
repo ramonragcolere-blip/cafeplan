@@ -22,8 +22,11 @@ function TalhaoPos({ talhao, equip, params, codigoProdutor, safra, saved }) {
   });
 
   useEffect(() => {
-    if (saved) setForm({ ...form, ...saved });
-  }, [saved?.id]);
+    if (saved) setForm(current => ({ ...current, ...saved }));
+  }, [saved]);
+
+  const lavadorNome = [equip?.lavador_marca, equip?.lavador_modelo].filter(Boolean).join(' ');
+  const secadorNome = [equip?.secador_marca, equip?.secador_modelo].filter(Boolean).join(' ');
 
   const tarifa = form.secagem_tarifa_tipo === 'Verde'
     ? (toN(params?.tarifa_verde) || toN(equip?.tarifa_energia_cemig) || 0.8)
@@ -95,7 +98,7 @@ function TalhaoPos({ talhao, equip, params, codigoProdutor, safra, saved }) {
         {/* Lavagem */}
         <div className="border border-border rounded-xl p-3 space-y-2">
           <p className="font-medium text-xs text-primary">💧 Lavagem</p>
-          {equip?.lavador_marca_modelo && <p className="text-xs text-muted-foreground">Lavador: {equip.lavador_marca_modelo}</p>}
+          {lavadorNome && <p className="text-xs text-muted-foreground">Lavador: {lavadorNome}</p>}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {inp('lavagem_horas', 'Horas de operação', 'h')}
             {inp('lavagem_kwh', 'Consumo kWh total', 'kWh')}
@@ -106,7 +109,7 @@ function TalhaoPos({ talhao, equip, params, codigoProdutor, safra, saved }) {
         {/* Secagem */}
         <div className="border border-border rounded-xl p-3 space-y-2">
           <p className="font-medium text-xs text-primary">🔥 Secagem</p>
-          {equip?.secador_marca_modelo && <p className="text-xs text-muted-foreground">Secador: {equip.secador_marca_modelo} — {cap_sec} sc/batelada — {kwh_saca_sec} kWh/saca</p>}
+          {secadorNome && <p className="text-xs text-muted-foreground">Secador: {secadorNome} — {cap_sec} sc/batelada — {kwh_saca_sec} kWh/saca</p>}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
               <Label className="text-xs text-muted-foreground">Nº bateladas (calc.)</Label>
@@ -158,11 +161,11 @@ function TalhaoPos({ talhao, equip, params, codigoProdutor, safra, saved }) {
   );
 }
 
-export default function AbaPosColheita({ talhoes, produtor, equip, safra, codigoProdutor }) {
+export default function AbaPosColheita({ talhoes, produtor: _produtor, equip, safra, codigoProdutor }) {
   const { data: params = {} } = useQuery({
     queryKey: ['params_plan'],
     queryFn: async () => {
-      const list = await base44.entities.ParametrosPlanejamento.list();
+      const list = await base44.entities.ParametrosPlanejamento.list(undefined, 5000);
       const map = {};
       list.forEach(p => { map[p.chave] = p.valor; });
       return map;

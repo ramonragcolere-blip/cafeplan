@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -23,7 +24,15 @@ import NotasFiscais from './pages/NotasFiscais';
 import MapaTalhoes from './pages/MapaTalhoes';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isAuthenticated, authChecked, isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+
+  const deveRedirecionar =
+    authError?.type === 'auth_required' ||
+    (authChecked && !isAuthenticated && !isLoadingAuth && !isLoadingPublicSettings);
+
+  useEffect(() => {
+    if (deveRedirecionar) navigateToLogin();
+  }, [deveRedirecionar, navigateToLogin]);
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -39,10 +48,24 @@ const AuthenticatedApp = () => {
   if (authError) {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
-    } else if (authError.type === 'auth_required') {
-      navigateToLogin();
+    }
+    if (authError.type === 'auth_required') {
       return null;
     }
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-background p-6">
+        <div className="max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold">Não foi possível validar o acesso</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Recarregue a página quando a conexão estiver disponível. Nenhum módulo foi aberto sem a validação da sessão.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authChecked && !isAuthenticated) {
+    return null;
   }
 
   return (

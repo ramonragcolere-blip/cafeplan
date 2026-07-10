@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, RefreshCcw } from 'lucide-react';
+import { ChevronUp, RefreshCcw } from 'lucide-react';
 import { classificarZn, classificarCu, classificarMn } from '@/lib/tabelasNutricionais';
 import { CheckCircle2, Clock } from 'lucide-react';
 

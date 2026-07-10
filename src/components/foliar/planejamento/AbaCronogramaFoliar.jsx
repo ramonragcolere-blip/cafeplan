@@ -3,14 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { Plus, Leaf, Calendar, MapPin, DollarSign, AlertCircle, BarChart2 } from 'lucide-react';
+import { Plus, Leaf, Calendar, MapPin, DollarSign, AlertCircle } from 'lucide-react';
 import CardAplicacao from './CardAplicacao';
 import LateralReceita from './LateralReceita';
 import LateralTalhoes from './LateralTalhoes';
+import { limparPayloadCronogramaFoliar } from '@/lib/planejamentoFoliar';
 
 const OBJETIVOS_FILTRO = ['Todos', 'Nutrição', 'Ferrugem', 'Cercosporiose', 'Bicho-mineiro', 'Ácaro', 'Bacteriose', 'Pós-colheita', 'Pré-florada', 'Outro'];
-const EPOCAS_SUGESTAO = ['Pós-colheita', 'Pré-florada', 'Pós-florada', 'Janeiro/Fevereiro', 'Março/Abril', 'Novembro/Dezembro'];
-
 function gerarTituloSugerido(aplicacoes) {
   const prefixos = ['Pós-colheita', 'Proteção', 'Nutrição', 'Controle', 'Pré-florada'];
   const contagens = {};
@@ -38,7 +37,7 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
   // Query de cronogramas
   const { data: cronogramas = [] } = useQuery({
     queryKey: ['cronograma_foliar'],
-    queryFn: () => base44.entities.CronogramaFoliar.list(),
+    queryFn: () => base44.entities.CronogramaFoliar.list(undefined, 5000),
   });
 
   const createMutation = useMutation({
@@ -54,6 +53,7 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
   const deleteMutation = useMutation({
     mutationFn: id => base44.entities.CronogramaFoliar.delete(id),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['cronograma_foliar'] }); toast({ title: 'Aplicação excluída.' }); },
+    onError: err => toast({ title: 'Erro ao excluir', description: String(err?.message || err), variant: 'destructive' }),
   });
 
   const talhoesProdutor = useMemo(() =>
@@ -111,7 +111,7 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
   const handleSalvarReceita = useCallback(async (id, dados) => {
     const existente = aplicacoesProdutor.find(a => a.id === id);
     if (!existente) return;
-    await updateMutation.mutateAsync({ id, d: { ...existente, ...dados } });
+    await updateMutation.mutateAsync({ id, d: limparPayloadCronogramaFoliar({ ...existente, ...dados }) });
     toast({ title: 'Receita salva!' });
     setLateralReceita(null);
   }, [aplicacoesProdutor]);
@@ -119,19 +119,18 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
   const handleSalvarTalhoes = useCallback(async (id, talhaoIds) => {
     const existente = aplicacoesProdutor.find(a => a.id === id);
     if (!existente) return;
-    await updateMutation.mutateAsync({ id, d: { ...existente, talhao_ids: talhaoIds } });
+    await updateMutation.mutateAsync({ id, d: limparPayloadCronogramaFoliar({ ...existente, talhao_ids: talhaoIds }) });
     toast({ title: 'Talhões atualizados!' });
     setLateralTalhoes(null);
   }, [aplicacoesProdutor]);
 
   const handleDuplicar = useCallback((aplic) => {
-    const n = gerarTituloSugerido(aplicacoesProdutor);
-    createMutation.mutate({
+    const titulo = `${aplic.titulo || gerarTituloSugerido(aplicacoesProdutor)} (cópia)`;
+    createMutation.mutate(limparPayloadCronogramaFoliar({
       ...aplic,
-      id: undefined,
-      titulo: `${aplic.titulo} (cópia)`,
+      titulo,
       status: 'planejado',
-    }, { onSuccess: () => toast({ title: 'Aplicação duplicada!', description: n }) });
+    }), { onSuccess: () => toast({ title: 'Aplicação duplicada!', description: titulo }) });
   }, [aplicacoesProdutor]);
 
   const aplicacaoLateralReceita = lateralReceita ? aplicacoesProdutor.find(a => a.id === lateralReceita) : null;
@@ -204,7 +203,11 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
               onEditarReceita={() => setLateralReceita(aplic.id)}
               onEditarTalhoes={() => setLateralTalhoes(aplic.id)}
               onDuplicar={() => handleDuplicar(aplic)}
-              onExcluir={() => deleteMutation.mutate(aplic.id)}
+              onExcluir={() => {
+                if (window.confirm(`Excluir a aplicação "${aplic.titulo || 'sem título'}"? Esta ação não pode ser desfeita.`)) {
+                  deleteMutation.mutate(aplic.id);
+                }
+              }}
             />
           ))}
         </div>

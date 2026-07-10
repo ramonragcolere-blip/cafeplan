@@ -18,6 +18,7 @@ import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
+import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
 
 
 const PROTOCOLOS = ['Protocolo Ramon', '5ª Aproximação MG', 'Boletim 100 IAC', 'Personalizado'];
@@ -107,7 +108,7 @@ function ImportarManual2040({ talhao, analise2040Existente, onSalvar, onClose })
 }
 
 // ── Aba Consolidação de Compras ────────────────────────────────────────────────
-function AbaCompras2({ resultados, dosesEditadas, produtosEfetivos = {} }) {
+function AbaCompras2({ resultados, produtosEfetivos = {} }) {
   if (!resultados || resultados.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
@@ -206,15 +207,15 @@ export default function Adubacao2() {
   const [msgCalculo, setMsgCalculo] = useState('');
 
   // Queries
-  const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
-  const { data: todosTalhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
-  const { data: todasAnalises = [] } = useQuery({ queryKey: ['analises_solo'], queryFn: () => base44.entities.AnaliseSolo.list() });
-  const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
-  const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples'], queryFn: () => base44.entities.FonteSimples.list() });
+  const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
+  const { data: todosTalhoes = [] } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000) });
+  const { data: todasAnalises = [] } = useQuery({ queryKey: ['analises_solo', 'completo'], queryFn: () => base44.entities.AnaliseSolo.list(undefined, 5000) });
+  const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes', 'catalogo-completo'], queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000) });
+  const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples', 'catalogo-completo'], queryFn: () => base44.entities.FonteSimples.list(undefined, 5000) });
   // PROBLEMA 1: dados persistidos
   const { data: planejamentosDb = [] } = useQuery({
     queryKey: ['planejamento_adubacao2'],
-    queryFn: () => base44.entities.PlanejamentoAdubacao2.list(),
+    queryFn: () => base44.entities.PlanejamentoAdubacao2.list(undefined, 5000),
   });
 
   const produtor = produtores.find(p => p.id === produtorId) || null;
@@ -232,7 +233,7 @@ export default function Adubacao2() {
   // Query de calagem
   const { data: calagensDb = [] } = useQuery({
     queryKey: ['calagem_recomendacoes'],
-    queryFn: () => base44.entities.BaseRecomendacaoCalagem.list(),
+    queryFn: () => base44.entities.BaseRecomendacaoCalagem.list(undefined, 5000),
   });
 
   // Query itens de notas fiscais do produtor (para pré-preencher preços)
@@ -270,36 +271,51 @@ export default function Adubacao2() {
     [calagensDb, produtor, safra]
   );
 
-  // Registros salvos para produtor+safra
-  const registrosSalvos = useMemo(() =>
-    planejamentosDb.filter(r => r.codigo_produtor === produtor?.codigo && r.safra === safra),
-    [planejamentosDb, produtor, safra]
-  );
+  // Registros salvos para produtor+safra. Se o banco já tiver duplicados,
+  // usa o registro mais recente de cada talhão para evitar restauração inconsistente.
+  const registrosSalvos = useMemo(() => consolidarPlanejamentosPorTalhao(
+    planejamentosDb.filter(r => r.codigo_produtor === produtor?.codigo && r.safra === safra)
+  ), [planejamentosDb, produtor, safra]);
 
-  // Mutations de PlanejamentoAdubacao2
-  const createPlan = useMutation({ mutationFn: d => base44.entities.PlanejamentoAdubacao2.create(d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] }) });
-  const updatePlan = useMutation({ mutationFn: ({ id, d }) => base44.entities.PlanejamentoAdubacao2.update(id, d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] }) });
+  // Serializa os salvamentos por produtor+safra+talhão. Isso evita que dois onBlur
+  // muito próximos criem registros duplicados antes da atualização da query chegar.
+  const idsPlanejamentoRef = useRef(new Map());
+  const filasPlanejamentoRef = useRef(new Map());
+
+  useEffect(() => {
+    const mapa = new Map(idsPlanejamentoRef.current);
+    registrosSalvos.forEach(registro => {
+      if (!registro?.id || !registro?.talhao_id) return;
+      const chave = `${registro.codigo_produtor}|${registro.safra}|${registro.talhao_id}`;
+      mapa.set(chave, registro.id);
+    });
+    idsPlanejamentoRef.current = mapa;
+  }, [registrosSalvos]);
+
+  const upsertPlanejamento = useCallback((payload) => {
+    const chave = `${payload.codigo_produtor}|${payload.safra}|${payload.talhao_id}`;
+    const anterior = filasPlanejamentoRef.current.get(chave) || Promise.resolve();
+    const tarefa = anterior.catch(() => undefined).then(async () => {
+      const idExistente = idsPlanejamentoRef.current.get(chave);
+      if (idExistente) {
+        return base44.entities.PlanejamentoAdubacao2.update(idExistente, payload);
+      }
+      const criado = await base44.entities.PlanejamentoAdubacao2.create(payload);
+      if (criado?.id) idsPlanejamentoRef.current.set(chave, criado.id);
+      return criado;
+    });
+    const filaFinal = tarefa.finally(() => {
+      if (filasPlanejamentoRef.current.get(chave) === filaFinal) {
+        filasPlanejamentoRef.current.delete(chave);
+      }
+    });
+    filasPlanejamentoRef.current.set(chave, filaFinal);
+    return filaFinal;
+  }, []);
 
   // Mutations análise de solo
-  const createAnalise = useMutation({ mutationFn: d => base44.entities.AnaliseSolo.create(d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo'] }) });
-  const updateAnalise = useMutation({ mutationFn: ({ id, d }) => base44.entities.AnaliseSolo.update(id, d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo'] }) });
-
-  // PROBLEMA 1: produtividade lida do banco
-  // { [talhaoId]: { safra1, safra2 } }
-  const produtividade = useMemo(() => {
-    const map = {};
-    registrosSalvos.forEach(r => {
-      map[r.talhao_id] = { safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '', safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '' };
-    });
-    return map;
-  }, [registrosSalvos]);
-
-  // Análises 20-40 lidas do banco
-  const analises2040 = useMemo(() => {
-    const map = {};
-    registrosSalvos.forEach(r => { if (r.analise2040) map[r.talhao_id] = r.analise2040; });
-    return map;
-  }, [registrosSalvos]);
+  const createAnalise = useMutation({ mutationFn: d => base44.entities.AnaliseSolo.create(d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] }) });
+  const updateAnalise = useMutation({ mutationFn: ({ id, d }) => base44.entities.AnaliseSolo.update(id, d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] }) });
 
   // Estado local para edição (antes de salvar)
   const [produtividadeLocal, setProdutividadeLocal] = useState({});
@@ -432,26 +448,6 @@ export default function Adubacao2() {
     setProdutividadeLocal(prev => ({ ...prev, [talhaoId]: { ...(prev[talhaoId] || {}), [campo]: valor } }));
   }, []);
 
-  // Salvar produtividade+analise2040 para um talhão
-  const salvarDadosTalhao = useCallback(async (talhaoObj, overrideData = {}) => {
-    if (!produtor) return;
-    const locProd = produtividadeLocal[talhaoObj.id] || {};
-    const loc2040 = analises2040Local[talhaoObj.id] || null;
-    const existente = registrosSalvos.find(r => r.talhao_id === talhaoObj.id);
-    const payload = {
-      codigo_produtor: produtor.codigo,
-      safra,
-      talhao_id: talhaoObj.id,
-      talhao_nome: talhaoObj.nome,
-      safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
-      safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
-      analise2040: loc2040 || null,
-      ...overrideData,
-    };
-    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
-    else await createPlan.mutateAsync(payload);
-  }, [produtor, safra, produtividadeLocal, analises2040Local, registrosSalvos]);
-
   const handleImportarAnalise = async (talhao, dados) => {
     const existente = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
     const payload = { codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra, ...dados };
@@ -472,7 +468,7 @@ export default function Adubacao2() {
       }
     }
     // Invalida queries para atualizar status
-    queryClient.invalidateQueries({ queryKey: ['analises_solo'] });
+    queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] });
     toast({
       title: falha === 0 ? 'Importação concluída!' : 'Importação parcial',
       description: `${sucesso} talhão(ões) importado(s) com sucesso${falha > 0 ? `, ${falha} com erro` : ''}.`,
@@ -499,7 +495,6 @@ export default function Adubacao2() {
   const handleSalvar2040 = async (talhao, dados) => {
     setAnalises2040Local(prev => ({ ...prev, [talhao.id]: dados }));
     // Persiste imediatamente
-    const existente = registrosSalvos.find(r => r.talhao_id === talhao.id);
     const locProd = produtividadeLocal[talhao.id] || {};
     const payload = {
       codigo_produtor: produtor.codigo,
@@ -510,8 +505,8 @@ export default function Adubacao2() {
       safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
       analise2040: dados,
     };
-    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
-    else await createPlan.mutateAsync(payload);
+    await upsertPlanejamento(payload);
+    await queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
     setModal2040(null);
   };
 
@@ -519,7 +514,6 @@ export default function Adubacao2() {
   const handleBlurProd = useCallback(async (talhao) => {
     if (!produtor) return;
     const locProd = produtividadeLocal[talhao.id] || {};
-    const existente = registrosSalvos.find(r => r.talhao_id === talhao.id);
     const loc2040 = analises2040Local[talhao.id] || null;
     const payload = {
       codigo_produtor: produtor.codigo,
@@ -530,9 +524,9 @@ export default function Adubacao2() {
       safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
       analise2040: loc2040 || null,
     };
-    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
-    else await createPlan.mutateAsync(payload);
-  }, [produtor, safra, produtividadeLocal, analises2040Local, registrosSalvos]);
+    await upsertPlanejamento(payload);
+    await queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
+  }, [produtor, safra, produtividadeLocal, analises2040Local, upsertPlanejamento, queryClient]);
 
   // Cálculo central — aceita lista filtrada opcional (C3)
   const handleCalcularTodos = useCallback((todosParaCalculo) => {
@@ -610,7 +604,6 @@ export default function Adubacao2() {
     try {
     for (const r of resultadosCalculo) {
       const talhao = r.talhao;
-      const existente = registrosSalvos.find(x => x.talhao_id === talhao.id);
       const locProd = produtividadeLocal[talhao.id] || {};
       const loc2040 = analises2040Local[talhao.id] || null;
       const payload = {
@@ -640,27 +633,18 @@ export default function Adubacao2() {
           parcelamentos: parcelamentos[talhao.id] || {},
         },
       };
-      if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
-      else await createPlan.mutateAsync(payload);
+      await upsertPlanejamento(payload);
     }
+    await queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
     toast({ title: 'Planejamento salvo!', description: 'Dados salvos com sucesso.' });
     } catch {
       toast({ title: 'Erro ao salvar', description: 'Tente novamente.', variant: 'destructive' });
     }
-  }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, registrosSalvos]);
-
-  // PROBLEMA 2: editar dose na tabela
-  const handleEditDose = useCallback((talhaoId, nutKey, valor) => {
-    setDosesEditadas(prev => ({
-      ...prev,
-      [talhaoId]: { ...(prev[talhaoId] || {}), [nutKey]: valor },
-    }));
-  }, []);
+  }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, upsertPlanejamento, queryClient, toast]);
 
   // PROBLEMA 3: salvar detalhamento
   const handleSaveDetalhe = useCallback(async (resultadoTalhao, estadoDetalhe) => {
     const talhao = resultadoTalhao.talhao;
-    const existente = registrosSalvos.find(r => r.talhao_id === talhao.id);
     const locProd = produtividadeLocal[talhao.id] || {};
     const loc2040 = analises2040Local[talhao.id] || null;
     const payload = {
@@ -674,9 +658,9 @@ export default function Adubacao2() {
       doses_editadas: dosesEditadas[talhao.id] || {},
       detalhamento: estadoDetalhe,
     };
-    if (existente) await updatePlan.mutateAsync({ id: existente.id, d: payload });
-    else await createPlan.mutateAsync(payload);
-  }, [produtor, safra, produtividadeLocal, analises2040Local, dosesEditadas, registrosSalvos]);
+    await upsertPlanejamento(payload);
+    await queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
+  }, [produtor, safra, produtividadeLocal, analises2040Local, dosesEditadas, upsertPlanejamento, queryClient]);
 
   const podeCacularTodos = analises.length > 0 || talhoes.some(t =>
     !isNaN(parseFloat(produtividadeLocal[t.id]?.safra1)) || !isNaN(parseFloat(produtividadeLocal[t.id]?.safra2))

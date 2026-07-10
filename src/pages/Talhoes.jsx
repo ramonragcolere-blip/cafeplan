@@ -39,8 +39,8 @@ export default function Talhoes() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: talhoes = [], isLoading } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
-  const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
+  const { data: talhoes = [], isLoading } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000) });
+  const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
 
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.Talhao.create(data),
@@ -67,8 +67,33 @@ export default function Talhoes() {
     },
   });
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Talhao.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['talhoes'] })
+    mutationFn: async (talhao) => {
+      const [analises, analises2040, foliares, planosLegados, planos2, aplicacoes, operacoes, posColheitas, lancamentos, cronogramas] = await Promise.all([
+        base44.entities.AnaliseSolo.filter({ talhao_id: talhao.id }),
+        base44.entities.AnaliseSolo2040.filter({ talhao_id: talhao.id }),
+        base44.entities.AnaliseFoliar.filter({ talhao_id: talhao.id }),
+        base44.entities.BasePlanejamentoAdubacao.filter({ talhao_id: talhao.id }),
+        base44.entities.PlanejamentoAdubacao2.filter({ talhao_id: talhao.id }),
+        base44.entities.AplicacaoFoliar.filter({ talhao_id: talhao.id }),
+        base44.entities.PlanejamentoOperacoes.filter({ talhao_id: talhao.id }),
+        base44.entities.PlanejamentoPosColheita.filter({ talhao_id: talhao.id }),
+        base44.entities.Lancamento.filter({ codigo_produtor: talhao.codigo_produtor, talhao: talhao.nome }),
+        base44.entities.CronogramaFoliar.filter({ codigo_produtor: talhao.codigo_produtor }),
+      ]);
+      const vinculadosDiretos = [analises, analises2040, foliares, planosLegados, planos2, aplicacoes, operacoes, posColheitas, lancamentos]
+        .reduce((total, itens) => total + (itens?.length || 0), 0);
+      const cronogramasVinculados = (cronogramas || []).filter(c => (c.talhao_ids || []).includes(talhao.id)).length;
+      const totalVinculos = vinculadosDiretos + cronogramasVinculados;
+      if (totalVinculos > 0) {
+        throw new Error(`Este talhão possui ${totalVinculos} registro(s) vinculado(s). Altere o status para inativo em vez de excluir.`);
+      }
+      return base44.entities.Talhao.delete(talhao.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['talhoes'] });
+      toast({ title: 'Talhão excluído!' });
+    },
+    onError: err => toast({ title: 'Exclusão bloqueada', description: String(err?.message || err), variant: 'destructive' }),
   });
 
   const handleSave = () => {
@@ -81,8 +106,20 @@ export default function Talhoes() {
       return;
     }
     const toNum = (v) => (v !== '' && v !== null && v !== undefined) ? Number(v) : undefined;
+    const produtor = produtores.find(p => p.codigo === form.codigo_produtor);
+    const nome = form.nome.trim();
+    const duplicado = talhoes.some(t => t.id !== editingId && t.codigo_produtor === form.codigo_produtor && String(t.nome || '').trim().toLowerCase() === nome.toLowerCase());
+    if (duplicado) {
+      toast({ title: 'Talhão já cadastrado para este produtor', variant: 'destructive' });
+      return;
+    }
+    const { id, created_date, updated_date, created_by, ...campos } = form;
+    void id; void created_date; void updated_date; void created_by;
     const data = {
-      ...form,
+      ...campos,
+      nome,
+      produtor_id: produtor?.id,
+      codigo_produtor: produtor?.codigo,
       area_ha: toNum(form.area_ha),
       num_plantas: toNum(form.num_plantas),
       litros_por_pe: toNum(form.litros_por_pe),
@@ -182,7 +219,7 @@ export default function Talhoes() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => { setForm({...t}); setEditingId(t.id); setDialogOpen(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(t.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir o talhão ${t.nome}?`)) deleteMutation.mutate(t); }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -206,13 +243,14 @@ export default function Talhoes() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Produtor</Label>
-              <Select value={form.codigo_produtor || 'none'} onValueChange={v => setForm({...form, codigo_produtor: v === 'none' ? null : v})}>
+              <Select disabled={!!editingId} value={form.codigo_produtor || 'none'} onValueChange={v => setForm({...form, codigo_produtor: v === 'none' ? null : v})}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Selecione um produtor</SelectItem>
                   {produtores.map(p => <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {editingId && <p className="text-xs text-muted-foreground mt-1">O produtor não pode ser trocado após o cadastro.</p>}
             </div>
             <div><Label>Nome do Talhão</Label><VoiceInput value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
             <div>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import Map, { NavigationControl, ScaleControl, Source, Layer, Popup } from 'react-map-gl';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
@@ -16,13 +16,25 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoicmFtb25yb2
 
 const INITIAL_VIEW = { longitude: -45.9, latitude: -21.5, zoom: 6, pitch: 0, bearing: 0 };
 
+function calcularCentroPoligono(geometria) {
+  const coordenadas = geometria?.coordinates?.[0] || [];
+  if (!coordenadas.length) return null;
+  const validas = coordenadas.filter(ponto => Array.isArray(ponto) && ponto.length >= 2);
+  if (!validas.length) return null;
+  const soma = validas.reduce((acc, [lng, lat]) => ({ lng: acc.lng + Number(lng), lat: acc.lat + Number(lat) }), { lng: 0, lat: 0 });
+  return { lng: soma.lng / validas.length, lat: soma.lat / validas.length };
+}
+
+
 export default function MapaTalhoes() {
   const mapRef = useRef(null);
   const drawRef = useRef(null);
+  const produtorIdRef = useRef('');
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [produtorId, setProdutorId] = useState('');
+  produtorIdRef.current = produtorId;
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [mapMode, setMapMode] = useState('satelite'); // 'satelite', 'curvas', 'declividade'
   const [desenhando, setDesenhando] = useState(false);
@@ -43,13 +55,13 @@ export default function MapaTalhoes() {
   const terrainExaggeration = mapMode === 'satelite' ? 1.0 : 1.5;
 
   const { data: produtores = [] } = useQuery({
-    queryKey: ['produtores'],
-    queryFn: () => base44.entities.Produtor.list(),
+    queryKey: ['produtores', 'completo'],
+    queryFn: () => base44.entities.Produtor.list(undefined, 5000),
   });
 
   const { data: talhoes = [] } = useQuery({
     queryKey: ['talhoes_mapa'],
-    queryFn: () => base44.entities.Talhao.list(),
+    queryFn: () => base44.entities.Talhao.list(undefined, 5000),
   });
 
   const talhoesFiltrados = produtorId
@@ -72,14 +84,16 @@ export default function MapaTalhoes() {
 
   const handleProdutorChange = (id) => {
     setProdutorId(id);
-    const produtor = produtores.find((p) => p.id === id);
-    if (produtor?.centro_mapa) {
-      try {
-        const centro = typeof produtor.centro_mapa === 'string' ? JSON.parse(produtor.centro_mapa) : produtor.centro_mapa;
-        if (centro?.lng && centro?.lat) {
-          setViewState((v) => ({ ...v, longitude: centro.lng, latitude: centro.lat, zoom: 13 }));
-        }
-      } catch (_) {}
+    const codigo = produtores.find((p) => p.id === id)?.codigo;
+    const talhaoComCentro = talhoes.find(t => (t.produtor_id === id || t.codigo_produtor === codigo) && t.centro_mapa);
+    if (!talhaoComCentro?.centro_mapa) return;
+    try {
+      const centro = typeof talhaoComCentro.centro_mapa === 'string' ? JSON.parse(talhaoComCentro.centro_mapa) : talhaoComCentro.centro_mapa;
+      if (Number.isFinite(Number(centro?.lng)) && Number.isFinite(Number(centro?.lat))) {
+        setViewState((v) => ({ ...v, longitude: Number(centro.lng), latitude: Number(centro.lat), zoom: 13 }));
+      }
+    } catch {
+      // Mantém a posição atual se o centro salvo estiver inválido.
     }
   };
 
@@ -96,7 +110,7 @@ export default function MapaTalhoes() {
         const feature = e.features[0];
         if (!feature) return;
         setGeojsonPendente(feature.geometry);
-        setNovoTalhao({ nome: '', produtor_id: '' });
+        setNovoTalhao({ nome: '', produtor_id: produtorIdRef.current || '' });
         setModalAberto(true);
       });
     }
@@ -120,7 +134,12 @@ export default function MapaTalhoes() {
       toast({ title: 'Nome obrigatório', variant: 'destructive' });
       return;
     }
+    if (!novoTalhao.produtor_id) {
+      toast({ title: 'Selecione o produtor', variant: 'destructive' });
+      return;
+    }
     const produtor = produtores.find((p) => p.id === novoTalhao.produtor_id);
+    const centro = calcularCentroPoligono(geojsonPendente);
     setSalvando(true);
     try {
       await base44.entities.Talhao.create({
@@ -128,6 +147,7 @@ export default function MapaTalhoes() {
         produtor_id: novoTalhao.produtor_id || undefined,
         codigo_produtor: produtor?.codigo || '',
         geojson_poligono: JSON.stringify(geojsonPendente),
+        centro_mapa: centro ? JSON.stringify(centro) : undefined,
       });
       drawRef.current?.deleteAll();
       setDesenhando(false);
@@ -143,15 +163,16 @@ export default function MapaTalhoes() {
     }
   };
 
-  const handleExcluirTalhao = async (id) => {
+  const handleRemoverDesenho = async (id) => {
+    if (!window.confirm('Remover apenas o desenho deste talhão do mapa? O cadastro e os planejamentos serão preservados.')) return;
     try {
-      await base44.entities.Talhao.delete(id);
-      toast({ title: 'Talhão excluído!' });
+      await base44.entities.Talhao.update(id, { geojson_poligono: null, centro_mapa: null });
+      toast({ title: 'Desenho removido do mapa!' });
       setPopupInfo(null);
       queryClient.invalidateQueries({ queryKey: ['talhoes_mapa'] });
       queryClient.invalidateQueries({ queryKey: ['talhoes'] });
     } catch {
-      toast({ title: 'Erro ao excluir', variant: 'destructive' });
+      toast({ title: 'Erro ao remover desenho', variant: 'destructive' });
     }
   };
 
@@ -327,10 +348,10 @@ export default function MapaTalhoes() {
               <div className="p-1">
                 <p className="text-sm font-semibold">{popupInfo.nome}</p>
                 <button 
-                  onClick={() => handleExcluirTalhao(popupInfo.id)}
+                  onClick={() => handleRemoverDesenho(popupInfo.id)}
                   className="mt-1 text-xs text-red-600 hover:text-red-800 font-medium"
                 >
-                  Excluir Talhão
+                  Remover desenho do mapa
                 </button>
               </div>
             </Popup>
@@ -370,7 +391,7 @@ export default function MapaTalhoes() {
               />
             </div>
             <div>
-              <Label className="text-xs mb-1 block">Produtor</Label>
+              <Label className="text-xs mb-1 block">Produtor *</Label>
               <select
                 value={novoTalhao.produtor_id}
                 onChange={(e) => setNovoTalhao((prev) => ({ ...prev, produtor_id: e.target.value }))}

@@ -14,12 +14,12 @@ export default function SeletorProduto({ onSelect, value, nutriente_alvo, dose_r
   const [open, setOpen] = useState(false);
   const [busca, setBusca] = useState('');
 
-  const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
-  const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples'], queryFn: () => base44.entities.FonteSimples.list() });
+  const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes', 'catalogo-completo'], queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000) });
+  const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples', 'catalogo-completo'], queryFn: () => base44.entities.FonteSimples.list(undefined, 5000) });
 
   const todos = useMemo(() => [
-    ...fertilizantes.map(f => ({ ...f, _tipo: 'formulado' })),
-    ...fontesSimples.map(f => ({ ...f, _tipo: 'fonte' })),
+    ...fertilizantes.filter(f => f.ativo !== false).map(f => ({ ...f, _tipo: 'formulado' })),
+    ...fontesSimples.filter(f => f.ativo !== false).map(f => ({ ...f, _tipo: 'fonte' })),
   ], [fertilizantes, fontesSimples]);
 
   // Ordenar por relevância: produtos que têm o nutriente-alvo primeiro

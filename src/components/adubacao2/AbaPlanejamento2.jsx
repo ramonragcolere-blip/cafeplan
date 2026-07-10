@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, Filter, X } from 'lucide-react';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
@@ -6,6 +7,11 @@ import {
   TODOS_ELEMENTOS_GRID, calcMicros, classBadgeColor, fmt, fmtR,
   ResumoParcelamento, EditorParcelamento, DropdownTrocarProduto, StatusBadgePlan,
 } from '@/components/adubacao2/PainelTalhaoHelpers';
+import {
+  calcularPosicaoDropdown,
+  criarMarcacoesPadrao,
+  listarElementosManuaisMarcados,
+} from '@/lib/planejamentoAdubacao2';
 
 const KEY_PARA_LABEL = { n_pct: 'N', k2o_pct: 'K₂O', p2o5_pct: 'P₂O₅', b_pct: 'B' };
 
@@ -45,7 +51,6 @@ function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, dose
 
     const nutrientesPrincipal = [];
     const cobertos = fornecidoPelo(prodPrincipal, doseKgHa);
-    const nutMap = { n_pct: 'N', p2o5_pct: 'P₂O₅', k2o_pct: 'K₂O', b_pct: 'B' };
     if ((parseFloat(prodPrincipal.n_pct) || 0) > 0 && rec.N)    nutrientesPrincipal.push({ label: 'N',    fornecido: cobertos.N });
     if ((parseFloat(prodPrincipal.p2o5_pct) || 0) > 0 && rec.P) nutrientesPrincipal.push({ label: 'P₂O₅', fornecido: cobertos.P });
     if ((parseFloat(prodPrincipal.k2o_pct) || 0) > 0 && rec.K)  nutrientesPrincipal.push({ label: 'K₂O', fornecido: cobertos.K });
@@ -198,20 +203,29 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
   const [dropAberto, setDropAberto] = useState(false);
   const dropRef = useRef(null);
   const btnRef = useRef(null);
-  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 360 });
+
+  const atualizarPosicaoDrop = useCallback(() => {
+    if (!btnRef.current || typeof window === 'undefined') return;
+    const rect = btnRef.current.getBoundingClientRect();
+    setDropPos(calcularPosicaoDropdown(rect, window.innerWidth, window.innerHeight));
+  }, []);
 
   useEffect(() => {
     if (!dropAberto) return;
     const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target) && !btnRef.current?.contains(e.target)) setDropAberto(false); };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [dropAberto]);
+    window.addEventListener('resize', atualizarPosicaoDrop);
+    window.addEventListener('scroll', atualizarPosicaoDrop, true);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('resize', atualizarPosicaoDrop);
+      window.removeEventListener('scroll', atualizarPosicaoDrop, true);
+    };
+  }, [dropAberto, atualizarPosicaoDrop]);
 
   const abrirDrop = () => {
-    if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setDropPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX });
-    }
+    atualizarPosicaoDrop();
     setDropAberto(a => !a);
   };
 
@@ -260,9 +274,9 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
                 </span>
                 <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
               </button>
-              {dropAberto && (
+              {dropAberto && typeof document !== 'undefined' && createPortal(
                 <div ref={dropRef}
-                  style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999, minWidth: 360, maxWidth: 480 }}
+                  style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999, width: dropPos.width }}
                   className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
                   <div className="p-2 border-b border-border">
                     <input autoFocus type="text" placeholder={`Buscar produto${nutField ? ` com ${elLabel}` : ''}…`}
@@ -294,7 +308,8 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
                       <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado para "{busca}"</p>
                     )}
                   </div>
-                </div>
+                </div>,
+                document.body,
               )}
             </div>
           </div>
@@ -476,9 +491,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
   // Marcados: restaura do banco se disponível, senão padrão (temRec = marcado)
   const [marcados, setMarcados] = useState(() => {
     if (marcadosIniciais && Object.keys(marcadosIniciais).length > 0) return marcadosIniciais;
-    const init = {};
-    TODOS_ELEMENTOS_GRID.forEach(el => { init[el.key] = el.temRec; });
-    return init;
+    return criarMarcacoesPadrao(rec, TODOS_ELEMENTOS_GRID);
   });
 
   // Trocas: restaura do banco se disponível
@@ -516,11 +529,20 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
   }, [onExtrasChange]);
 
   const toggleMarcado = (key) => {
-    setMarcados(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      onMarcadosChange?.(next);
-      return next;
-    });
+    const vaiAtivar = !marcados[key];
+    const next = { ...marcados, [key]: vaiAtivar };
+    setMarcados(next);
+    onMarcadosChange?.(next);
+
+    if (!vaiAtivar) {
+      setExtrasManuais(prev => {
+        if (!(key in prev)) return prev;
+        const extrasAtualizados = { ...prev };
+        delete extrasAtualizados[key];
+        onExtrasChange?.(extrasAtualizados);
+        return extrasAtualizados;
+      });
+    }
   };
 
   const handleTrocarProduto = useCallback((nutKey, produto) => {
@@ -540,14 +562,14 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['K']) delete recFiltrado.K;
     if (!marcados['B']) delete recFiltrado.B;
     const prodSalvo = resultado.produtoSugerido || null;
-    const doseSalva = resultado.doseProdutoHa || null;
+    const doseSalva = resultado.doseProdutoHa ?? null;
     return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, complementosSalvos || null);
   }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, complementosSalvos]);
 
-  // Elementos extras marcados (não-rec): Zn, Cu, Mn, Mg, Fe, MO
+  // Elementos manuais: micronutrientes e nutrientes cuja recomendação automática é zero.
   const elementosExtrasMarcados = useMemo(() => {
-    return TODOS_ELEMENTOS_GRID.filter(el => !el.temRec && marcados[el.key]);
-  }, [marcados]);
+    return listarElementosManuaisMarcados(TODOS_ELEMENTOS_GRID, marcados, rec);
+  }, [marcados, rec]);
 
   // Rodapé: totais
   const totais = useMemo(() => {
@@ -563,8 +585,20 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
         custoTotalTalhao += dose * precoNum * (area || 0);
       }
     });
+    Object.values(extrasManuais).forEach(extra => {
+      const dose = Number(extra?.doseKgHa);
+      if (!Number.isFinite(dose) || dose <= 0) return;
+      doseTotalHa += dose;
+      totalKgAll += area ? dose * area : 0;
+      const preco = extra?.produtoId ? precosProd?.[extra.produtoId] : null;
+      const precoNum = preco != null && preco !== '' ? Number(preco) : null;
+      if (precoNum != null && Number.isFinite(precoNum)) {
+        custoTotalHa += dose * precoNum;
+        custoTotalTalhao += dose * precoNum * (area || 0);
+      }
+    });
     return { doseTotalHa, totalKgAll, custoTotalHa, custoTotalTalhao };
-  }, [linhasProdutos, precosProd, area]);
+  }, [linhasProdutos, extrasManuais, precosProd, area]);
 
   return (
     <div className="bg-muted/20 border-l-4 border-primary px-5 py-4 space-y-4">
@@ -956,14 +990,22 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       return merged;
     });
   }, [parcelamentosIniciais]);
-  // Restaura trocas e marcados dos registros salvos — merge por talhão
+  // Restaura trocas, marcações e produtos manuais dos registros salvos.
   useEffect(() => {
     if (!registrosSalvos || registrosSalvos.length === 0) return;
     const trocasAgg = {};
     const marcadosAgg = {};
+    const extrasAgg = {};
     registrosSalvos.forEach(r => {
       if (r.detalhamento?.trocas) trocasAgg[r.talhao_id] = r.detalhamento.trocas;
       if (r.detalhamento?.marcados) marcadosAgg[r.talhao_id] = r.detalhamento.marcados;
+      const extras = {};
+      (r.detalhamento?.complementos || []).forEach(comp => {
+        if (comp?.isManualExtra && comp?.nutKey && comp?.produto?.id) {
+          extras[comp.nutKey] = { produtoId: comp.produto.id, doseKgHa: comp.doseKgHa };
+        }
+      });
+      if (Object.keys(extras).length > 0) extrasAgg[r.talhao_id] = extras;
     });
     if (Object.keys(trocasAgg).length > 0) {
       setTrocasPorTalhao(prev => {
@@ -975,6 +1017,13 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     if (Object.keys(marcadosAgg).length > 0) {
       setMarcadosPorTalhao(prev => {
         const merged = { ...marcadosAgg };
+        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        return merged;
+      });
+    }
+    if (Object.keys(extrasAgg).length > 0) {
+      setExtrasPorTalhao(prev => {
+        const merged = { ...extrasAgg };
         Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
         return merged;
       });
@@ -1056,7 +1105,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       }
 
       let produto = r.produtoSugerido || null;
-      let doseKgHa = r.doseProdutoHa || null;
+      let doseKgHa = r.doseProdutoHa ?? null;
 
       if (!produto && !idsSalvos.has(r.talhao.id) && todosFiltered.length > 0) {
         const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: recFiltrado.N, P: recFiltrado.P, K: recFiltrado.K, B: recFiltrado.B }, r.rec);
@@ -1093,12 +1142,13 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       // Inclui extras manuais (Zn, Cu, Mn, etc.) nos complementos para persistência
       const extrasT = extrasPorTalhao[r.talhao.id] || {};
       Object.entries(extrasT).forEach(([key, data]) => {
-        if (data?.produtoId && data?.doseKgHa) {
+        const doseExtra = Number(data?.doseKgHa);
+        if (data?.produtoId && Number.isFinite(doseExtra) && doseExtra > 0) {
           const prod = todosFiltered.find(p => p.id === data.produtoId) || todos.find(p => p.id === data.produtoId);
           if (prod && !complementos.some(c => c.produto.id === prod.id)) {
             complementos.push({
               produto: { id: prod.id, nome: prod.nome },
-              doseKgHa: parseFloat(data.doseKgHa),
+              doseKgHa: doseExtra,
               nutKey: key,
               nutrientes: [],
               isManualExtra: true,
@@ -1113,7 +1163,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
           doseKgHa,
           complementos,
           trocas,
-          marcados: marcados || (() => { const d = {}; TODOS_ELEMENTOS_GRID.forEach(el => { d[el.key] = el.temRec; }); return d; })(),
+          marcados: marcados || criarMarcacoesPadrao(r.rec, TODOS_ELEMENTOS_GRID),
         };
       }
     });
@@ -1247,7 +1297,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                 const idsSalvos = new Set((registrosSalvos || []).map(x => x.talhao_id));
                 const temRegistroSalvo = r.temRegistroSalvo || idsSalvos.has(r.talhao.id);
                 let produtoExibido = r.produtoSugerido || null;
-                let doseProdutoHaVivo = r.doseProdutoHa || null;
+                let doseProdutoHaVivo = r.doseProdutoHa ?? null;
                 let produtoCarregando = false;
 
                 if (!produtoExibido && r.rec) {

@@ -3,8 +3,9 @@ import { Button } from '@/components/ui/button';
 import { FileDown, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { FAIXAS, NUTRIENTES_KEYS, classificar, CLASS_LABEL } from './FoliarNutrienteUtils';
+import { aplicacaoFoliarIncluiTalhao } from '@/lib/planejamentoFoliar';
 
-function gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos) {
+function gerarPDF(produtor, safra, talhoes, analises, aplicacoes) {
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const PW = 210; const PH = 297;
@@ -30,8 +31,6 @@ function gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos) {
   header();
 
   const talhoesProdutor = talhoes.filter(t => t.codigo_produtor === produtor.codigo);
-  const insumoById = Object.fromEntries(insumos.map(p => [p.id, p]));
-
   talhoesProdutor.forEach((talhao, ti) => {
     const analise = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
 
@@ -83,7 +82,7 @@ function gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos) {
     }
 
     // Planejamento — lista de aplicações livres
-    const aplicacoesTalhao = aplicacoes.filter(a => a.talhao_id === talhao.id && a.safra === safra);
+    const aplicacoesTalhao = aplicacoes.filter(a => aplicacaoFoliarIncluiTalhao(a, talhao.id) && a.safra === safra);
     if (aplicacoesTalhao.length > 0) {
       checkNewPage(8);
       doc.setTextColor(...cor.dark); doc.setFontSize(9); doc.setFont(undefined, 'bold');
@@ -141,21 +140,21 @@ function gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos) {
   doc.save(`foliar_${produtor.codigo}_${safra.replace('/', '-')}.pdf`);
 }
 
-export default function AbaExportarPDFFoliar({ produtor, safra, talhoes, analises, aplicacoes, insumos }) {
+export default function AbaExportarPDFFoliar({ produtor, safra, talhoes, analises, aplicacoes }) {
   const [loading, setLoading] = useState(false);
   const talhoesProdutor = talhoes.filter(t => t.codigo_produtor === produtor?.codigo);
 
   const handleExport = () => {
     setLoading(true);
     setTimeout(() => {
-      gerarPDF(produtor, safra, talhoes, analises, aplicacoes, insumos);
+      gerarPDF(produtor, safra, talhoes, analises, aplicacoes);
       setLoading(false);
     }, 50);
   };
 
   const comDados = talhoesProdutor.filter(t =>
     analises.some(a => a.talhao_id === t.id && a.safra === safra) ||
-    aplicacoes.some(a => a.talhao_id === t.id && a.safra === safra)
+    aplicacoes.some(a => aplicacaoFoliarIncluiTalhao(a, t.id) && a.safra === safra)
   );
 
   return (
@@ -181,7 +180,7 @@ export default function AbaExportarPDFFoliar({ produtor, safra, talhoes, analise
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Talhões incluídos:</p>
             {comDados.map(t => {
               const temAnalise = analises.some(a => a.talhao_id === t.id && a.safra === safra);
-              const temPlano = aplicacoes.some(a => a.talhao_id === t.id && a.safra === safra);
+              const temPlano = aplicacoes.some(a => aplicacaoFoliarIncluiTalhao(a, t.id) && a.safra === safra);
               return (
                 <div key={t.id} className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{t.nome}</span>

@@ -1,28 +1,16 @@
 import React, { useMemo } from 'react';
 import { DollarSign } from 'lucide-react';
+import { calcularCustoAdubacaoHa, calcularCustoProdutoFoliarHa } from '@/lib/integracaoPlanejamentos';
 
 const GRUPOS_DEFENSIVO = ['Fungicida', 'Inseticida', 'Inseticida Biológico', 'Inseticida de Solo', 'Acaricida'];
 const GRUPOS_HERBICIDA = ['Herbicida'];
 
 function calcCustosAdubacaoSolo(planos, talhoes) {
-  let total = 0;
-  planos.forEach(p => {
-    const preco = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-    if (!preco) return;
-    const talhao = talhoes.find(t => t.id === p.talhao_id);
-    const areaHa = talhao?.area_ha || 0;
-    if (!areaHa) return;
-    // dose_rec_manual ou será necessário calcular — mas aqui usamos apenas o campo preco * area
-    // Os registros de BasePlanejamentoAdubacao têm dose calculada no AbaPlanejamento
-    // Tentamos: sem dose armazenada, não conseguimos calcular. 
-    // Então buscamos o custo total pelo campo dose_rec_manual ou usamos preco * area como proxy.
-    // Na entidade não há campo de custo calculado, apenas preco e dose_rec_manual.
-    // Calculamos: dose_rec_manual (kg/ha) * preco (R$/kg) * area_ha = custo total talhão
-    const doseKgHa = parseFloat(String(p.dose_rec_manual || '').replace(',', '.')) || 0;
-    if (!doseKgHa) return;
-    total += doseKgHa * preco * areaHa;
-  });
-  return total;
+  return planos.reduce((total, plano) => {
+    const talhao = talhoes.find(t => t.id === plano.talhao_id);
+    const areaHa = Number(talhao?.area_ha) || 0;
+    return total + calcularCustoAdubacaoHa(plano) * areaHa;
+  }, 0);
 }
 
 function calcCustosFoliar(aplicacoes, talhoes) {
@@ -32,10 +20,9 @@ function calcCustosFoliar(aplicacoes, talhoes) {
     const areaHa = talhao?.area_ha || 0;
     if (!areaHa) return;
     (aplic.produtos || []).forEach(p => {
-      const preco = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-      const dose = parseFloat(String(p.dose || '').replace(',', '.')) || 0;
-      if (!preco || !dose) return;
-      const custo = dose * preco * areaHa;
+      const custoHa = calcularCustoProdutoFoliarHa(p);
+      if (!custoHa) return;
+      const custo = custoHa * areaHa;
       if (GRUPOS_DEFENSIVO.includes(p.grupo)) defensivo += custo;
       else if (GRUPOS_HERBICIDA.includes(p.grupo)) herbicida += custo;
       else foliar += custo;

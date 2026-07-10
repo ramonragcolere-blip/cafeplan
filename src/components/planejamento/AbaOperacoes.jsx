@@ -57,7 +57,7 @@ function calcRow(row, equip, params) {
   return { consLha, custoDiesel, custoMO, total };
 }
 
-export default function AbaOperacoes({ talhoes, produtor, equip, safra, codigoProdutor }) {
+export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safra, codigoProdutor }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [rows, setRows] = useState({});
@@ -71,7 +71,7 @@ export default function AbaOperacoes({ talhoes, produtor, equip, safra, codigoPr
   const { data: params = {} } = useQuery({
     queryKey: ['params_plan'],
     queryFn: async () => {
-      const list = await base44.entities.ParametrosPlanejamento.list();
+      const list = await base44.entities.ParametrosPlanejamento.list(undefined, 5000);
       const map = {};
       list.forEach(p => { map[p.chave] = p.valor; });
       return map;
@@ -88,17 +88,17 @@ export default function AbaOperacoes({ talhoes, produtor, equip, safra, codigoPr
       });
     });
     setRows(init);
-  }, [talhoes, saved]);
+  }, [talhoes, saved, codigoProdutor, safra]);
 
   const updateRow = (talhaoId, idx, field, val) => {
     setRows(prev => {
       const updated = [...(prev[talhaoId] || [])];
       updated[idx] = { ...updated[idx], [field]: val };
       const calc = calcRow(updated[idx], equip, params);
-      updated[idx].consumo_diesel_lha = calc.consLha || updated[idx].consumo_diesel_lha;
-      updated[idx].custo_diesel_rha = calc.custoDiesel || updated[idx].custo_diesel_rha;
-      updated[idx].custo_mo_rha = calc.custoMO || updated[idx].custo_mo_rha;
-      updated[idx].custo_total_rha = calc.total || updated[idx].custo_total_rha;
+      updated[idx].consumo_diesel_lha = calc.consLha;
+      updated[idx].custo_diesel_rha = calc.custoDiesel;
+      updated[idx].custo_mo_rha = calc.custoMO;
+      updated[idx].custo_total_rha = calc.total;
       return { ...prev, [talhaoId]: updated };
     });
   };
@@ -118,7 +118,14 @@ export default function AbaOperacoes({ talhoes, produtor, equip, safra, codigoPr
       for (const row of all) {
         const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
         const data = {
-          ...row,
+          codigo_produtor: codigoProdutor,
+          safra,
+          talhao_id: row.talhao_id,
+          talhao_nome: row.talhao_nome,
+          operacao: row.operacao,
+          meses: row.meses || [],
+          tipo: row.tipo,
+          trator_implemento: row.trator_implemento || '',
           horas_ha: toNum(row.horas_ha),
           consumo_diesel_lha: toNum(row.consumo_diesel_lha),
           custo_diesel_rha: toNum(row.custo_diesel_rha),

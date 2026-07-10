@@ -6,19 +6,21 @@ import ProdutorParamsForm from '../components/parametros/ProdutorParamsForm';
 import ResumoProdutor from '../components/parametros/ResumoProdutor';
 import TalhaoTable from '../components/parametros/TalhaoTable';
 import { calcularPlanejamento } from '../lib/calcularPlanejamento';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function ParametrosTalhoes() {
   const [produtorSelecionado, setProdutorSelecionado] = useState(null);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: produtores = [] } = useQuery({
-    queryKey: ['produtores'],
-    queryFn: () => base44.entities.Produtor.list(),
+    queryKey: ['produtores', 'completo'],
+    queryFn: () => base44.entities.Produtor.list(undefined, 5000),
   });
 
   const { data: talhoes = [], isLoading: loadingTalhoes } = useQuery({
-    queryKey: ['talhoes'],
-    queryFn: () => base44.entities.Talhao.list(),
+    queryKey: ['talhoes', 'completo'],
+    queryFn: () => base44.entities.Talhao.list(undefined, 5000),
   });
 
   const updateProdutorMutation = useMutation({
@@ -52,8 +54,21 @@ export default function ParametrosTalhoes() {
   }, [produtor, updateProdutorMutation]);
 
   const handleSaveTalhao = useCallback((talhaoId, data) => {
+    if (data.seq_colheita != null) {
+      const repetido = talhoesProdutor.some(
+        t => t.id !== talhaoId && Number(t.seq_colheita) === Number(data.seq_colheita)
+      );
+      if (repetido) {
+        toast({
+          variant: 'destructive',
+          title: 'Sequência já utilizada',
+          description: `A posição ${data.seq_colheita} já pertence a outro talhão deste produtor.`,
+        });
+        return;
+      }
+    }
     updateTalhaoMutation.mutate({ id: talhaoId, data });
-  }, [updateTalhaoMutation]);
+  }, [talhoesProdutor, toast, updateTalhaoMutation]);
 
   return (
     <div className="space-y-6">

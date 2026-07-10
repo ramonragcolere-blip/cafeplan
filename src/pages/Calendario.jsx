@@ -6,16 +6,13 @@ import { CalendarDays } from 'lucide-react';
 import MesCard from '@/components/calendario/MesCard';
 import MesDetalheModal from '@/components/calendario/MesDetalheModal';
 import { calcularPlanejamento } from '@/lib/calcularPlanejamento';
+import { normalizarPlanosAdubacao, normalizarAplicacoesFoliares } from '@/lib/integracaoPlanejamentos';
 
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const MESES_NOME = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 const GRUPOS_DEFENSIVO = ['Fungicida','Inseticida','Inseticida Biológico','Inseticida de Solo','Acaricida'];
 const GRUPOS_HERBICIDA = ['Herbicida'];
-
-function getMesIndex(mesStr) {
-  return MESES.indexOf(mesStr?.toUpperCase());
-}
 
 function getMesColheita(dataInicio) {
   if (!dataInicio) return -1;
@@ -24,14 +21,19 @@ function getMesColheita(dataInicio) {
 }
 
 export default function Calendario() {
-  const [produtorFiltro, setProdutorFiltro] = useState('');
+  const [produtorFiltro, setProdutorFiltro] = useState('all');
   const [safraFiltro, setSafraFiltro] = useState('');
   const [mesSelecionado, setMesSelecionado] = useState(null); // 0-11
 
-  const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
-  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list() });
-  const { data: planos = [] } = useQuery({ queryKey: ['base_planejamento'], queryFn: () => base44.entities.BasePlanejamentoAdubacao.list() });
-  const { data: aplicacoesFoliares = [] } = useQuery({ queryKey: ['aplicacoes_foliares'], queryFn: () => base44.entities.AplicacaoFoliar.list() });
+  const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
+  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000) });
+  const { data: planosLegados = [] } = useQuery({ queryKey: ['base_planejamento', 'completo'], queryFn: () => base44.entities.BasePlanejamentoAdubacao.list(undefined, 5000) });
+  const { data: planosAdubacao2 = [] } = useQuery({ queryKey: ['planejamento_adubacao2', 'calendario'], queryFn: () => base44.entities.PlanejamentoAdubacao2.list(undefined, 5000) });
+  const { data: aplicacoesLegadas = [] } = useQuery({ queryKey: ['aplicacoes_foliares', 'completo'], queryFn: () => base44.entities.AplicacaoFoliar.list(undefined, 5000) });
+  const { data: cronogramasFoliares = [] } = useQuery({ queryKey: ['cronograma_foliar', 'calendario'], queryFn: () => base44.entities.CronogramaFoliar.list(undefined, 5000) });
+
+  const planos = useMemo(() => normalizarPlanosAdubacao(planosLegados, planosAdubacao2), [planosLegados, planosAdubacao2]);
+  const aplicacoesFoliares = useMemo(() => normalizarAplicacoesFoliares(aplicacoesLegadas, cronogramasFoliares, talhoes), [aplicacoesLegadas, cronogramasFoliares, talhoes]);
 
   // Safras disponíveis
   const safras = useMemo(() => {
@@ -47,23 +49,23 @@ export default function Calendario() {
   const planosFiltrados = useMemo(() =>
     planos.filter(p =>
       (!safraAtiva || p.safra === safraAtiva) &&
-      (!produtorFiltro || p.codigo_produtor === produtorFiltro)
+      (produtorFiltro === 'all' || p.codigo_produtor === produtorFiltro)
     ), [planos, safraAtiva, produtorFiltro]);
 
   const aplicacoesFiltradas = useMemo(() =>
     aplicacoesFoliares.filter(a =>
       (!safraAtiva || a.safra === safraAtiva) &&
-      (!produtorFiltro || a.codigo_produtor === produtorFiltro)
+      (produtorFiltro === 'all' || a.codigo_produtor === produtorFiltro)
     ), [aplicacoesFoliares, safraAtiva, produtorFiltro]);
 
   const talhoesFiltrados = useMemo(() =>
-    talhoes.filter(t => !produtorFiltro || t.codigo_produtor === produtorFiltro),
+    talhoes.filter(t => produtorFiltro === 'all' || t.codigo_produtor === produtorFiltro),
     [talhoes, produtorFiltro]);
 
   // Calcular colheita por talhão (sequência)
   const colheitaPorMes = useMemo(() => {
     const mapa = {}; // mes(0-11) → [talhao]
-    if (produtorFiltro) {
+    if (produtorFiltro !== 'all') {
       const produtor = produtores.find(p => p.codigo === produtorFiltro);
       if (produtor) {
         const tProdutor = talhoesFiltrados;
@@ -153,7 +155,7 @@ export default function Calendario() {
               <SelectValue placeholder="Todos os produtores" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={null}>Todos os produtores</SelectItem>
+              <SelectItem value="all">Todos os produtores</SelectItem>
               {produtores.map(p => (
                 <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>
               ))}

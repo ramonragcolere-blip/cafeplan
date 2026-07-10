@@ -9,6 +9,7 @@ import AbaAnaliseFoliar from '@/components/foliar/AbaAnaliseFoliar';
 import AbaRecomendacaoFoliar from '@/components/foliar/AbaRecomendacaoFoliar';
 import AbaPlanejamentoFoliar from '@/components/foliar/AbaPlanejamentoFoliar';
 import AbaExportarPDFFoliar from '@/components/foliar/AbaExportarPDFFoliar';
+import { combinarInsumosFoliares } from '@/lib/planejamentoFoliar';
 
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 
@@ -26,11 +27,15 @@ export default function AplicacoesFoliares() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: produtores = [] } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
-  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes'], queryFn: () => base44.entities.Talhao.list(), staleTime: 0 });
-  const { data: analises = [] } = useQuery({ queryKey: ['analises_foliares'], queryFn: () => base44.entities.AnaliseFoliar.list() });
-  const { data: aplicacoes = [] } = useQuery({ queryKey: ['aplicacoes_foliares'], queryFn: () => base44.entities.AplicacaoFoliar.list() });
-  const { data: insumos = [] } = useQuery({ queryKey: ['fertilizantes'], queryFn: () => base44.entities.FertilizanteFormulado.list() });
+  const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
+  const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000), staleTime: 0 });
+  const { data: analises = [] } = useQuery({ queryKey: ['analises_foliares', 'completo'], queryFn: () => base44.entities.AnaliseFoliar.list(undefined, 5000) });
+  const { data: aplicacoesLegadas = [] } = useQuery({ queryKey: ['aplicacoes_foliares', 'completo'], queryFn: () => base44.entities.AplicacaoFoliar.list(undefined, 5000) });
+  const { data: cronogramasFoliares = [] } = useQuery({ queryKey: ['cronograma_foliar'], queryFn: () => base44.entities.CronogramaFoliar.list(undefined, 5000) });
+  const aplicacoes = useMemo(() => [...aplicacoesLegadas, ...cronogramasFoliares], [aplicacoesLegadas, cronogramasFoliares]);
+  const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes', 'catalogo-completo'], queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000) });
+  const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples', 'catalogo-completo'], queryFn: () => base44.entities.FonteSimples.list(undefined, 5000) });
+  const insumos = useMemo(() => combinarInsumosFoliares(fertilizantes, fontesSimples), [fertilizantes, fontesSimples]);
 
   const produtor = useMemo(() => produtores.find(p => p.id === produtorId) || null, [produtores, produtorId]);
   const talhoesProdutor = useMemo(() => produtor ? talhoes.filter(t => t.codigo_produtor === produtor.codigo) : [], [talhoes, produtor]);
@@ -38,29 +43,12 @@ export default function AplicacoesFoliares() {
   // ── Mutations AnaliseFoliar ──────────────────────────────────────────────────
   const analiseCreate = useMutation({
     mutationFn: data => base44.entities.AnaliseFoliar.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_foliares'] }); toast({ title: 'Análise foliar salva!' }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_foliares', 'completo'] }); toast({ title: 'Análise foliar salva!' }); },
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
   const analiseUpdate = useMutation({
     mutationFn: ({ id, data }) => base44.entities.AnaliseFoliar.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_foliares'] }); toast({ title: 'Análise foliar atualizada!' }); },
-    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
-  });
-
-  // ── Mutations AplicacaoFoliar ────────────────────────────────────────────────
-  const aplicacaoCreate = useMutation({
-    mutationFn: data => base44.entities.AplicacaoFoliar.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['aplicacoes_foliares'] }); toast({ title: 'Aplicação salva!' }); },
-    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
-  });
-  const aplicacaoUpdate = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.AplicacaoFoliar.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['aplicacoes_foliares'] }); toast({ title: 'Aplicação atualizada!' }); },
-    onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
-  });
-  const aplicacaoDelete = useMutation({
-    mutationFn: (id) => base44.entities.AplicacaoFoliar.delete(id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['aplicacoes_foliares'] }); toast({ title: 'Aplicação removida.' }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['analises_foliares', 'completo'] }); toast({ title: 'Análise foliar atualizada!' }); },
     onError: err => toast({ title: 'Erro', description: String(err?.message || err), variant: 'destructive' }),
   });
 
@@ -76,19 +64,8 @@ export default function AplicacoesFoliares() {
     handleSaveAnalise(talhao, data);
   };
 
-  const handleSaveAplicacao = (talhao, data) => {
-    const payload = { ...data, codigo_produtor: produtor.codigo, talhao_id: talhao.id, talhao_nome: talhao.nome, safra };
-    if (data.id) aplicacaoUpdate.mutate({ id: data.id, data: payload });
-    else aplicacaoCreate.mutate(payload);
-  };
-
-  const handleRemoverAplicacao = (id) => {
-    aplicacaoDelete.mutate(id);
-  };
-
   const pronto = produtor && safra;
   const isAnaliseSaving = analiseCreate.isPending || analiseUpdate.isPending;
-  const isPlanSaving = aplicacaoCreate.isPending || aplicacaoUpdate.isPending;
 
   return (
     <div className="space-y-6">
@@ -199,7 +176,6 @@ export default function AplicacoesFoliares() {
                 talhoes={talhoes}
                 analises={analises}
                 aplicacoes={aplicacoes}
-                insumos={insumos}
               />
             )}
           </div>

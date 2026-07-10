@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import EquipamentosFazenda from '@/components/produtores/EquipamentosFazenda';
+import { useToast } from '@/components/ui/use-toast';
+import { proximoCodigoProdutor } from '@/lib/integracaoPlanejamentos';
 
 const emptyProdutor = {
   codigo: '', nome: '', cpf_cnpj: '', fazenda: '', municipio: '', uf: 'MG',
@@ -25,31 +27,74 @@ export default function Produtores() {
   const [form, setForm] = useState(emptyProdutor);
   const [editingId, setEditingId] = useState(null);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  const { data: produtores = [], isLoading } = useQuery({ queryKey: ['produtores'], queryFn: () => base44.entities.Produtor.list() });
+  const { data: produtores = [], isLoading } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
 
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.Produtor.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['produtores'] }); setDialogOpen(false); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['produtores'] }); setDialogOpen(false); toast({ title: 'Produtor criado com sucesso!' }); },
+    onError: err => toast({ title: 'Erro ao criar produtor', description: String(err?.message || err), variant: 'destructive' })
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Produtor.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['produtores'] }); setDialogOpen(false); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['produtores'] }); setDialogOpen(false); toast({ title: 'Produtor atualizado com sucesso!' }); },
+    onError: err => toast({ title: 'Erro ao atualizar produtor', description: String(err?.message || err), variant: 'destructive' })
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Produtor.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['produtores'] })
+    mutationFn: async (produtor) => {
+      const codigo = produtor.codigo;
+      const dependencias = await Promise.all([
+        base44.entities.Talhao.filter({ codigo_produtor: codigo }),
+        base44.entities.Safrista.filter({ codigo_produtor: codigo }),
+        base44.entities.Lancamento.filter({ codigo_produtor: codigo }),
+        base44.entities.EquipamentosProdutor.filter({ codigo_produtor: codigo }),
+        base44.entities.BasePlanejamentoAdubacao.filter({ codigo_produtor: codigo }),
+        base44.entities.PlanejamentoAdubacao2.filter({ codigo_produtor: codigo }),
+        base44.entities.AplicacaoFoliar.filter({ codigo_produtor: codigo }),
+        base44.entities.CronogramaFoliar.filter({ codigo_produtor: codigo }),
+        base44.entities.PlanejamentoOperacoes.filter({ codigo_produtor: codigo }),
+        base44.entities.PlanejamentoPosColheita.filter({ codigo_produtor: codigo }),
+      ]);
+      const totalVinculos = dependencias.reduce((total, itens) => total + (itens?.length || 0), 0);
+      if (totalVinculos > 0) {
+        throw new Error(`Este produtor possui ${totalVinculos} registro(s) vinculado(s). Inative-o em vez de excluir.`);
+      }
+      return base44.entities.Produtor.delete(produtor.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['produtores'] });
+      toast({ title: 'Produtor excluído!' });
+    },
+    onError: err => toast({ title: 'Exclusão bloqueada', description: String(err?.message || err), variant: 'destructive' }),
   });
 
   const handleSave = () => {
-    const data = { ...form, area_ha: form.area_ha ? Number(form.area_ha) : undefined };
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, data });
-    } else {
-      createMutation.mutate(data);
+    const codigo = String(form.codigo || '').trim().toUpperCase();
+    const nome = String(form.nome || '').trim();
+    const fazenda = String(form.fazenda || '').trim();
+    if (!codigo || !nome || !fazenda) {
+      toast({ title: 'Preencha código, nome e fazenda', variant: 'destructive' });
+      return;
     }
+    const codigoDuplicado = produtores.some(p => p.id !== editingId && String(p.codigo || '').trim().toUpperCase() === codigo);
+    if (codigoDuplicado) {
+      toast({ title: 'Código de produtor já cadastrado', description: `O código ${codigo} já está em uso.`, variant: 'destructive' });
+      return;
+    }
+    const { id, created_date, updated_date, created_by, ...campos } = form;
+    void id; void created_date; void updated_date; void created_by;
+    const data = {
+      ...campos,
+      codigo,
+      nome,
+      fazenda,
+      area_ha: form.area_ha !== '' && form.area_ha != null ? Number(form.area_ha) : undefined,
+    };
+    if (editingId) updateMutation.mutate({ id: editingId, data });
+    else createMutation.mutate(data);
   };
 
   const openEdit = (p) => {
@@ -59,7 +104,7 @@ export default function Produtores() {
   };
 
   const openNew = () => {
-    const nextCode = `P${String(produtores.length + 1).padStart(3, '0')}`;
+    const nextCode = proximoCodigoProdutor(produtores);
     setForm({ ...emptyProdutor, codigo: nextCode });
     setEditingId(null);
     setDialogOpen(true);
@@ -122,7 +167,7 @@ export default function Produtores() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(p)}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(p.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir o produtor ${p.nome}?`)) deleteMutation.mutate(p); }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -138,7 +183,7 @@ export default function Produtores() {
             <DialogTitle>{editingId ? 'Editar Produtor' : 'Novo Produtor'}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><Label>Código</Label><VoiceInput value={form.codigo} onChange={e => setForm({...form, codigo: e.target.value})} /></div>
+            <div><Label>Código</Label><VoiceInput value={form.codigo} disabled={!!editingId} onChange={e => setForm({...form, codigo: e.target.value})} /><p className="text-xs text-muted-foreground mt-1">O código não pode ser alterado depois do cadastro.</p></div>
             <div><Label>Nome</Label><VoiceInput value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
             <div><Label>CPF/CNPJ</Label><VoiceInput value={form.cpf_cnpj} onChange={e => setForm({...form, cpf_cnpj: e.target.value})} /></div>
             <div><Label>Fazenda</Label><VoiceInput value={form.fazenda} onChange={e => setForm({...form, fazenda: e.target.value})} /></div>

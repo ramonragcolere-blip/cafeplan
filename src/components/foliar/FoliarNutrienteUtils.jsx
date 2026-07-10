@@ -41,16 +41,8 @@ export const CLASS_LABEL = {
   excessivo:  'Excessivo',
 };
 
-// Grupos da base de insumos para recomendação foliar
-export const GRUPOS_RECOMENDACAO = [
-  'Foliar — Nutrição', 'Aminoácido', 'Bioestimulante', 'Cobre', 'Boro', 'Zinco', 'Manganês', 'Magnésio', 'Fósforo',
-];
-
-// Grupos para planejamento (defensivos + foliares)
-export const GRUPOS_PLANEJAMENTO = [
-  'Fungicida', 'Inseticida', 'Inseticida Biológico', 'Acaricida', 'Adjuvante',
-  'Bioestimulante', 'Aminoácido', 'Foliar — Nutrição', 'Cobre', 'Boro', 'Zinco', 'Manganês', 'Magnésio', 'Fósforo',
-];
+// Mantidos como reexports para preservar compatibilidade com imports existentes.
+export { GRUPOS_RECOMENDACAO, GRUPOS_PLANEJAMENTO } from '@/lib/gruposFoliares';
 
 export const EPOCAS = [
   'Pós-colheita',

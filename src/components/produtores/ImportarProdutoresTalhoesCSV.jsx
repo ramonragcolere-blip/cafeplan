@@ -17,7 +17,7 @@ const COLUNAS_ESPERADAS = [
 ];
 
 const FASE_ENUM = ['Em produção', 'Em formação', 'Safra zero', 'Recepado/Brotando'];
-const METODO_ENUM = ['Manual', 'Derriçadeira', 'Colhedora', 'Recolhedora', 'Varriçãoo Manual', 'Varriçãoo Mecanizada'];
+const METODO_ENUM = ['Manual', 'Derriçadeira', 'Colhedora', 'Recolhedora', 'Varrição Manual', 'Varrição Mecanizada'];
 const DECLIVIDADE_ENUM = ['Plano 0-8%', 'Suave ondulado 8-20%', 'Ondulado 20-45%', 'Forte ondulado >45%'];
 
 const NUM_FIELDS = ['area_ha', 'num_plantas', 'pct_mec_colheita', 'pct_mec_rocada', 'pct_mec_herbicida', 'pct_mec_adubacao', 'rendimento_colheita_manual_lppd'];
