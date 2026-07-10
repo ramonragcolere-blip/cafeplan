@@ -551,7 +551,6 @@ export default function Adubacao2() {
     if (!produtor?.codigo) throw new Error('Produtor não selecionado.');
     if (!talhao?.id) throw new Error('Talhão inválido para importação.');
 
-    const existente = analises.find(a => a.talhao_id === talhao.id && a.safra === safra);
     const payload = sanitizeAnaliseSoloPayload({
       ...dados,
       codigo_produtor: produtor.codigo,
@@ -561,9 +560,10 @@ export default function Adubacao2() {
     });
 
     try {
+      const existentes = await base44.entities.AnaliseSolo.filter({ talhao_id: talhao.id, safra });
+      const existente = Array.isArray(existentes) ? existentes.find(a => a?.id) : null;
       if (existente) await updateAnalise.mutateAsync({ id: existente.id, d: payload });
       else await createAnalise.mutateAsync(payload);
-      await queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] });
       return { status: 'ok', operacao: existente ? 'atualizada' : 'criada' };
     } catch (error) {
       throw new Error(getErrorMessage(error));

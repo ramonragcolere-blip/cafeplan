@@ -138,7 +138,7 @@ function PopoverAplicarOutros({ talhoes, pares, idxOrigem, onAplicar, onClose })
 }
 
 // ── Etapa 1: Associação ────────────────────────────────────────────────────────
-function EtapaAssociacao({ talhoes, pares, setPares, onConfirmar, onClose }) {
+function EtapaAssociacao({ talhoes, pares, setPares, onConfirmar, onClose, processando }) {
   const fileRef = useRef();
   const [arquivos, setArquivos] = useState([]);
   const [dragIdx, setDragIdx] = useState(null);
@@ -310,10 +310,10 @@ function EtapaAssociacao({ talhoes, pares, setPares, onConfirmar, onClose }) {
       )}
 
       <DialogFooter className="gap-2">
-        <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-        <Button size="sm" disabled={!podeContinuar} onClick={() => onConfirmar(pares)}
+        <Button variant="outline" size="sm" onClick={onClose} disabled={processando}>Cancelar</Button>
+        <Button size="sm" disabled={!podeContinuar || processando} onClick={() => onConfirmar(pares)}
           className="gap-2 bg-green-700 hover:bg-green-800 text-white">
-          <CheckCircle2 className="w-4 h-4" />
+          {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
           Confirmar e Importar
         </Button>
       </DialogFooter>
@@ -421,66 +421,76 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
   const [progresso, setProgresso] = useState(0);
   const [resultados, setResultados] = useState([]);
   const [salvando, setSalvando] = useState(false);
+  const [processandoConfirmacao, setProcessandoConfirmacao] = useState(false);
+  const processandoConfirmacaoRef = useRef(false);
 
   const handleConfirmar = useCallback(async (paresConfirmados) => {
+    if (processandoConfirmacaoRef.current) return;
+    processandoConfirmacaoRef.current = true;
+    setProcessandoConfirmacao(true);
     setEtapa('processando');
     setProgresso(0);
 
-    // Cache: extrair cada PDF único apenas uma vez
-    const cacheExtracao = {}; // nomeArquivo -> { dados, laboratorio }
-    const arquivosUnicos = [...new Set(paresConfirmados.filter(p => p.arquivo).map(p => p.arquivo.name))];
-    let processados = 0;
+    try {
+      // Cache: extrair cada PDF único apenas uma vez
+      const cacheExtracao = {}; // nomeArquivo -> { dados, laboratorio }
+      const arquivosUnicos = [...new Set(paresConfirmados.filter(p => p.arquivo).map(p => p.arquivo.name))];
+      let processados = 0;
 
-    for (const par of paresConfirmados) {
-      if (!par.arquivo || cacheExtracao[par.arquivo.name]) continue;
-      let dadosExtraidos = {};
-      let laboratorio = 'OUTRO';
-      try {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file: par.arquivo });
-        let textoPDF = '';
+      for (const par of paresConfirmados) {
+        if (!par.arquivo || cacheExtracao[par.arquivo.name]) continue;
+        let dadosExtraidos = {};
+        let laboratorio = 'OUTRO';
         try {
-          const extracao = await base44.integrations.Core.ExtractDataFromUploadedFile({
-            file_url,
-            json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
+          const { file_url } = await base44.integrations.Core.UploadFile({ file: par.arquivo });
+          let textoPDF = '';
+          try {
+            const extracao = await base44.integrations.Core.ExtractDataFromUploadedFile({
+              file_url,
+              json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
+            });
+            if (extracao?.status === 'success' && extracao?.output?.texto_completo) textoPDF = extracao.output.texto_completo;
+          } catch (error) {
+            console.warn('Não foi possível extrair texto completo do PDF; tentando leitura pelo LLM.', error);
+          }
+          const resposta = await base44.integrations.Core.InvokeLLM({
+            prompt: buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.'),
+            file_urls: [file_url],
+            model: 'claude_sonnet_4_6',
           });
-          if (extracao?.status === 'success' && extracao?.output?.texto_completo) textoPDF = extracao.output.texto_completo;
+          let parsed = resposta;
+          if (typeof resposta === 'string') {
+            const m = resposta.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
+            parsed = m ? JSON.parse(m[0]) : null;
+          }
+          if (parsed) {
+            laboratorio = parsed.laboratorio || 'OUTRO';
+            const { laboratorio: _l, ...brutos } = parsed;
+            dadosExtraidos = converterUnidades(brutos, laboratorio);
+          }
         } catch (error) {
-          console.warn('Não foi possível extrair texto completo do PDF; tentando leitura pelo LLM.', error);
+          console.error('Erro ao processar PDF de análise de solo 0-20 cm.', error);
         }
-        const resposta = await base44.integrations.Core.InvokeLLM({
-          prompt: buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.'),
-          file_urls: [file_url],
-          model: 'claude_sonnet_4_6',
-        });
-        let parsed = resposta;
-        if (typeof resposta === 'string') {
-          const m = resposta.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
-          parsed = m ? JSON.parse(m[0]) : null;
-        }
-        if (parsed) {
-          laboratorio = parsed.laboratorio || 'OUTRO';
-          const { laboratorio: _l, ...brutos } = parsed;
-          dadosExtraidos = converterUnidades(brutos, laboratorio);
-        }
-      } catch (error) {
-        console.error('Erro ao processar PDF de análise de solo 0-20 cm.', error);
+        cacheExtracao[par.arquivo.name] = { dados: dadosExtraidos, laboratorio };
+        processados++;
+        setProgresso(processados);
       }
-      cacheExtracao[par.arquivo.name] = { dados: dadosExtraidos, laboratorio };
-      processados++;
-      setProgresso(processados);
+
+      // Cada talhão recebe sua própria cópia dos dados
+      const itensPorcessados = paresConfirmados.map(par => ({
+        talhao: par.talhao,
+        arquivo: par.arquivo,
+        arquivoNome: par.arquivo?.name || '',
+        dados: par.arquivo ? { ...(cacheExtracao[par.arquivo.name]?.dados || {}) } : {},
+        laboratorio: par.arquivo ? (cacheExtracao[par.arquivo.name]?.laboratorio || 'OUTRO') : 'OUTRO',
+      }));
+
+      setItens(itensPorcessados);
+      setEtapa('revisao');
+    } finally {
+      processandoConfirmacaoRef.current = false;
+      setProcessandoConfirmacao(false);
     }
-
-    // Cada talhão recebe sua própria cópia dos dados
-    const itensPorcessados = paresConfirmados.map(par => ({
-      talhao: par.talhao,
-      arquivo: par.arquivo,
-      arquivoNome: par.arquivo?.name || '',
-      dados: par.arquivo ? { ...(cacheExtracao[par.arquivo.name]?.dados || {}) } : {},
-      laboratorio: par.arquivo ? (cacheExtracao[par.arquivo.name]?.laboratorio || 'OUTRO') : 'OUTRO',
-    }));
-
-    setItens(itensPorcessados);
-    setEtapa('revisao');
   }, []);
 
   const handleSalvar = useCallback(async () => {
@@ -518,7 +528,7 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
             {titulo} — {talhoes.length} talhão(ões)
           </DialogTitle>
         </DialogHeader>
-        {etapa === 'associacao' && <EtapaAssociacao talhoes={talhoes} pares={pares} setPares={setPares} onConfirmar={handleConfirmar} onClose={onClose} />}
+        {etapa === 'associacao' && <EtapaAssociacao talhoes={talhoes} pares={pares} setPares={setPares} onConfirmar={handleConfirmar} onClose={onClose} processando={processandoConfirmacao} />}
         {etapa === 'processando' && <EtapaProcessando total={[...new Set(pares.filter(p=>p.arquivo).map(p=>p.arquivo.name))].length} atual={progresso} />}
         {etapa === 'revisao' && <EtapaRevisao itens={itens} setItens={setItens} onSalvar={handleSalvar} salvando={salvando} />}
         {etapa === 'resumo' && <EtapaResumo resultados={resultados} onClose={onClose} />}
