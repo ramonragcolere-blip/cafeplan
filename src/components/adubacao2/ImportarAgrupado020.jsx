@@ -7,6 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Upload, Loader2, CheckCircle2, AlertTriangle, GripVertical, FileText, ArrowRight, XCircle, Layers, Copy, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import {
+  gerarChaveArquivoAnaliseSolo,
+  getErrorMessageAnaliseSolo,
+  interpretarRespostaAnaliseSolo,
+  prepararDadosParaRevisao,
+  temPayloadAnaliseSolo,
+  validarCompletudeExtracao,
+} from '@/lib/analiseSoloImportacao';
 
 const CAMPOS_0_20 = [
   { key: 'ph', label: 'pH' },
@@ -25,20 +33,6 @@ const CAMPOS_0_20 = [
   { key: 'saturacao_bases', label: 'V%' },
   { key: 'data_analise', label: 'Data da Análise', date: true },
 ];
-
-function converterUnidades(dados, laboratorio) {
-  const d = { ...dados };
-  const n = v => (v != null && !isNaN(Number(v))) ? Number(v) : null;
-  if (laboratorio === 'COOXUPE') {
-    if (n(d.potassio) != null) d.potassio = +(n(d.potassio) * 39.1).toFixed(1);
-    ['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'ctc'].forEach(k => {
-      if (n(d[k]) != null) d[k] = +(n(d[k]) / 10).toFixed(3);
-    });
-  } else if (laboratorio === 'LAB_VICOSA') {
-    if (n(d.potassio) != null && n(d.potassio) < 3) d.potassio = +(n(d.potassio) * 391).toFixed(1);
-  }
-  return d;
-}
 
 function parearPorNome(arquivos, talhoes) {
   return talhoes.map((talhao, idx) => {
@@ -67,7 +61,7 @@ function getCorGrupo(nomeArquivo, arquivosUnicos) {
 }
 
 function getErrorMessage(error) {
-  return error?.message || String(error || 'Erro desconhecido');
+  return getErrorMessageAnaliseSolo(error);
 }
 
 const buildPrompt = (textoPDF) => `
@@ -354,6 +348,14 @@ function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
             {item.arquivoNome && <span className="text-xs text-muted-foreground">← {item.arquivoNome}</span>}
             <span className="ml-auto text-xs text-muted-foreground">Lab: {item.laboratorio}</span>
           </div>
+          {(item.erroExtracao || !item.validacao?.completo) && (
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>
+                {item.erroExtracao || `Extração incompleta: ${item.validacao.camposAusentes.join(', ')}`}
+              </span>
+            </div>
+          )}
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
             {CAMPOS_0_20.map(c => (
               <div key={c.key}>
@@ -433,14 +435,15 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
 
     try {
       // Cache: extrair cada PDF único apenas uma vez
-      const cacheExtracao = {}; // nomeArquivo -> { dados, laboratorio }
-      const arquivosUnicos = [...new Set(paresConfirmados.filter(p => p.arquivo).map(p => p.arquivo.name))];
+      const cacheExtracao = {}; // chaveArquivo -> { dados, laboratorio, erro }
       let processados = 0;
 
       for (const par of paresConfirmados) {
-        if (!par.arquivo || cacheExtracao[par.arquivo.name]) continue;
+        const chaveArquivo = gerarChaveArquivoAnaliseSolo(par.arquivo);
+        if (!par.arquivo || cacheExtracao[chaveArquivo]) continue;
         let dadosExtraidos = {};
         let laboratorio = 'OUTRO';
+        let erroExtracao = null;
         try {
           const { file_url } = await base44.integrations.Core.UploadFile({ file: par.arquivo });
           let textoPDF = '';
@@ -458,32 +461,26 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
             file_urls: [file_url],
             model: 'claude_sonnet_4_6',
           });
-          let parsed = resposta;
-          if (typeof resposta === 'string') {
-            const m = resposta.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
-            parsed = m ? JSON.parse(m[0]) : null;
-          }
-          if (parsed) {
-            laboratorio = parsed.laboratorio || 'OUTRO';
-            const { laboratorio: _l, ...brutos } = parsed;
-            dadosExtraidos = converterUnidades(brutos, laboratorio);
+          const interpretado = interpretarRespostaAnaliseSolo(resposta, '0-20');
+          laboratorio = interpretado.laboratorio || 'OUTRO';
+          dadosExtraidos = interpretado.dados;
+          if (!temPayloadAnaliseSolo(dadosExtraidos, '0-20')) {
+            erroExtracao = 'Nenhum dado válido foi extraído do PDF.';
           }
         } catch (error) {
+          erroExtracao = getErrorMessage(error);
           console.error('Erro ao processar PDF de análise de solo 0-20 cm.', error);
         }
-        cacheExtracao[par.arquivo.name] = { dados: dadosExtraidos, laboratorio };
+        cacheExtracao[chaveArquivo] = { dados: dadosExtraidos, laboratorio, erro: erroExtracao };
         processados++;
         setProgresso(processados);
       }
 
-      // Cada talhão recebe sua própria cópia dos dados
-      const itensPorcessados = paresConfirmados.map(par => ({
-        talhao: par.talhao,
-        arquivo: par.arquivo,
-        arquivoNome: par.arquivo?.name || '',
-        dados: par.arquivo ? { ...(cacheExtracao[par.arquivo.name]?.dados || {}) } : {},
-        laboratorio: par.arquivo ? (cacheExtracao[par.arquivo.name]?.laboratorio || 'OUTRO') : 'OUTRO',
-      }));
+      const itensPorcessados = prepararDadosParaRevisao({
+        pares: paresConfirmados,
+        cacheExtracao,
+        profundidade: '0-20',
+      });
 
       setItens(itensPorcessados);
       setEtapa('revisao');
@@ -498,7 +495,11 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
     const res = [];
     for (const item of itens) {
       try {
-        await onImportarAnalise(item.talhao, item.dados);
+        if (item.erroExtracao) throw new Error(item.erroExtracao);
+        const validacao = validarCompletudeExtracao(item.dados, '0-20');
+        if (!temPayloadAnaliseSolo(item.dados, '0-20')) throw new Error('Nenhum dado válido para salvar.');
+        if (!validacao.completo) throw new Error(`Extração incompleta: ${validacao.camposAusentes.join(', ')}`);
+        await onImportarAnalise(item.talhao, { ...item.dados, laboratorio_origem: item.laboratorio });
         res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'ok' });
       } catch (error) {
         res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'erro', erro: getErrorMessage(error) });
@@ -529,7 +530,7 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
           </DialogTitle>
         </DialogHeader>
         {etapa === 'associacao' && <EtapaAssociacao talhoes={talhoes} pares={pares} setPares={setPares} onConfirmar={handleConfirmar} onClose={onClose} processando={processandoConfirmacao} />}
-        {etapa === 'processando' && <EtapaProcessando total={[...new Set(pares.filter(p=>p.arquivo).map(p=>p.arquivo.name))].length} atual={progresso} />}
+        {etapa === 'processando' && <EtapaProcessando total={[...new Set(pares.filter(p=>p.arquivo).map(p=>gerarChaveArquivoAnaliseSolo(p.arquivo)))].length} atual={progresso} />}
         {etapa === 'revisao' && <EtapaRevisao itens={itens} setItens={setItens} onSalvar={handleSalvar} salvando={salvando} />}
         {etapa === 'resumo' && <EtapaResumo resultados={resultados} onClose={onClose} />}
       </DialogContent>

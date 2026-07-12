@@ -19,6 +19,14 @@ import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
+import {
+  criarControladorGravacaoAnalise,
+  getErrorMessageAnaliseSolo,
+  normalizarDataAnaliseSolo,
+  normalizarNumeroAnaliseSolo,
+  temPayloadAnaliseSolo,
+  validarCompletudeExtracao,
+} from '@/lib/analiseSoloImportacao';
 
 
 const PROTOCOLOS = ['Protocolo Ramon', '5ª Aproximação MG', 'Boletim 100 IAC', 'Personalizado'];
@@ -67,47 +75,19 @@ const ANALISE_SOLO_ALLOWED_FIELDS = new Set([
   ...ANALISE_SOLO_STRING_FIELDS,
 ]);
 
-function parseAnaliseSoloNumber(value) {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-  if (typeof value !== 'string') return undefined;
-
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-
-  const normalized = trimmed
-    .replace(/\s/g, '')
-    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
-    .replace(',', '.');
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function normalizeAnaliseSoloDate(value) {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const ddmmyyyy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (ddmmyyyy) {
-    const [, day, month, year] = ddmmyyyy;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  return undefined;
-}
-
 function sanitizeAnaliseSoloPayload(input = {}) {
   return Object.entries(input).reduce((payload, [key, value]) => {
     if (!ANALISE_SOLO_ALLOWED_FIELDS.has(key)) return payload;
     if (value == null) return payload;
 
     if (ANALISE_SOLO_NUMERIC_FIELDS.has(key)) {
-      const numberValue = parseAnaliseSoloNumber(value);
+      const numberValue = normalizarNumeroAnaliseSolo(value);
       if (numberValue !== undefined) payload[key] = numberValue;
       return payload;
     }
 
     if (key === 'data_analise') {
-      const dateValue = normalizeAnaliseSoloDate(value);
+      const dateValue = normalizarDataAnaliseSolo(value);
       if (dateValue) payload[key] = dateValue;
       return payload;
     }
@@ -124,10 +104,7 @@ function sanitizeAnaliseSoloPayload(input = {}) {
 }
 
 function getErrorMessage(error) {
-  return error?.response?.data?.message
-    || error?.response?.data?.error
-    || error?.message
-    || String(error || 'Erro desconhecido');
+  return getErrorMessageAnaliseSolo(error);
 }
 
 // ── Status badge ─────────────────────────────────────────────────────────────
@@ -168,6 +145,8 @@ const CAMPOS_2040 = [
   { key: 'calcio',         label: 'Ca (cmolc/dm³)' },
   { key: 'magnesio',       label: 'Mg (cmolc/dm³)' },
   { key: 'aluminio',       label: 'Al (cmolc/dm³)' },
+  { key: 'h_al',           label: 'H+Al (cmolc/dm³)' },
+  { key: 'sb',             label: 'S.B. (cmolc/dm³)' },
   { key: 'fosforo',        label: 'P (mg/dm³)' },
   { key: 'ctc',            label: 'CTC' },
   { key: 'saturacao_bases',label: 'V%' },
@@ -415,10 +394,22 @@ export default function Adubacao2() {
   // Mutations análise de solo
   const createAnalise = useMutation({ mutationFn: d => base44.entities.AnaliseSolo.create(d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] }) });
   const updateAnalise = useMutation({ mutationFn: ({ id, d }) => base44.entities.AnaliseSolo.update(id, d), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] }) });
+  const salvarAnaliseSoloRef = useRef(null);
+  if (!salvarAnaliseSoloRef.current) {
+    salvarAnaliseSoloRef.current = criarControladorGravacaoAnalise({
+      buscarExistentes: ({ talhao_id, safra: safraPayload }) => base44.entities.AnaliseSolo.filter({ talhao_id, safra: safraPayload }),
+      criar: payload => createAnalise.mutateAsync(payload),
+      atualizar: (id, payload) => updateAnalise.mutateAsync({ id, d: payload }),
+    });
+  }
 
   // Estado local para edição (antes de salvar)
   const [produtividadeLocal, setProdutividadeLocal] = useState({});
   const [analises2040Local, setAnalises2040Local] = useState({});
+
+  useEffect(() => {
+    salvarAnaliseSoloRef.current?.registrarExistentes(todasAnalises.filter(a => a.safra === safra));
+  }, [todasAnalises, safra]);
 
   // Ref para garantir que a restauração completa roda apenas uma vez por produtor+safra
   const restauradoRef = useRef('');
@@ -560,11 +551,11 @@ export default function Adubacao2() {
     });
 
     try {
-      const existentes = await base44.entities.AnaliseSolo.filter({ talhao_id: talhao.id, safra });
-      const existente = Array.isArray(existentes) ? existentes.find(a => a?.id) : null;
-      if (existente) await updateAnalise.mutateAsync({ id: existente.id, d: payload });
-      else await createAnalise.mutateAsync(payload);
-      return { status: 'ok', operacao: existente ? 'atualizada' : 'criada' };
+      if (!temPayloadAnaliseSolo(payload, '0-20')) throw new Error('Nenhum dado válido para salvar.');
+      const validacao = validarCompletudeExtracao(payload, '0-20');
+      if (!validacao.completo) throw new Error(`Extração incompleta: ${validacao.camposAusentes.join(', ')}`);
+      const salvo = await salvarAnaliseSoloRef.current(payload);
+      return { status: 'ok', id: salvo?.id || null };
     } catch (error) {
       throw new Error(getErrorMessage(error));
     }

@@ -7,6 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Upload, Loader2, CheckCircle2, AlertTriangle, GripVertical, FileText, ArrowRight, XCircle, Mountain, Copy, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import {
+  gerarChaveArquivoAnaliseSolo,
+  getErrorMessageAnaliseSolo,
+  interpretarRespostaAnaliseSolo,
+  prepararDadosParaRevisao,
+  temPayloadAnaliseSolo,
+  validarCompletudeExtracao,
+} from '@/lib/analiseSoloImportacao';
 
 const CAMPOS_2040 = [
   { key: 'ph',              label: 'pH' },
@@ -16,6 +24,8 @@ const CAMPOS_2040 = [
   { key: 'calcio',          label: 'Ca (cmolc/dm³)' },
   { key: 'magnesio',        label: 'Mg (cmolc/dm³)' },
   { key: 'aluminio',        label: 'Al (cmolc/dm³)' },
+  { key: 'h_al',            label: 'H+Al (cmolc/dm³)' },
+  { key: 'sb',              label: 'S.B. (cmolc/dm³)' },
   { key: 'enxofre',         label: 'S (mg/dm³)' },
   { key: 'boro',            label: 'B (mg/dm³)' },
   { key: 'zinco',           label: 'Zn (mg/dm³)' },
@@ -26,20 +36,6 @@ const CAMPOS_2040 = [
   { key: 'saturacao_bases', label: 'V%' },
   { key: 'data_analise',    label: 'Data da Análise', date: true },
 ];
-
-function converterUnidades(dados, laboratorio) {
-  const d = { ...dados };
-  const n = v => (v != null && !isNaN(Number(v))) ? Number(v) : null;
-  if (laboratorio === 'COOXUPE') {
-    if (n(d.potassio) != null) d.potassio = +(n(d.potassio) * 39.1).toFixed(1);
-    ['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'ctc'].forEach(k => {
-      if (n(d[k]) != null) d[k] = +(n(d[k]) / 10).toFixed(3);
-    });
-  } else if (laboratorio === 'LAB_VICOSA') {
-    if (n(d.potassio) != null && n(d.potassio) < 3) d.potassio = +(n(d.potassio) * 391).toFixed(1);
-  }
-  return d;
-}
 
 function parearPorNome(arquivos, talhoes) {
   return talhoes.map((talhao, idx) => {
@@ -341,6 +337,14 @@ function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
             <span className="text-xs font-semibold">{item.talhao.nome}</span>
             {item.arquivoNome && <span className="text-xs text-muted-foreground">← {item.arquivoNome}</span>}
           </div>
+          {(item.erroExtracao || !item.validacao?.completo) && (
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>
+                {item.erroExtracao || `Extração incompleta: ${item.validacao.camposAusentes.join(', ')}`}
+              </span>
+            </div>
+          )}
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
             {CAMPOS_2040.map(c => (
               <div key={c.key}>
@@ -376,12 +380,17 @@ function EtapaResumo({ resultados, onClose }) {
       </div>
       <div className="border border-border rounded-xl overflow-hidden">
         {resultados.map((r, i) => (
-          <div key={r.talhao.id} className={`flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
+          <div key={r.talhao.id} className={`flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
             {r.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
             <span className="text-xs font-medium flex-1">{r.talhao.nome}</span>
             <span className={`text-xs font-medium ${r.status === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
               {r.status === 'ok' ? 'Salvo' : 'Erro'}
             </span>
+            {r.status === 'erro' && r.erro && (
+              <p className="basis-full pl-7 text-xs text-red-600 break-words">
+                {r.erro}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -419,9 +428,11 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
     let processados = 0;
 
     for (const par of paresConfirmados) {
-      if (!par.arquivo || cacheExtracao[par.arquivo.name]) continue;
+      const chaveArquivo = gerarChaveArquivoAnaliseSolo(par.arquivo);
+      if (!par.arquivo || cacheExtracao[chaveArquivo]) continue;
       let dadosExtraidos = {};
       let laboratorio = 'OUTRO';
+      let erroExtracao = null;
       try {
         const { file_url } = await base44.integrations.Core.UploadFile({ file: par.arquivo });
         let textoPDF = '';
@@ -431,35 +442,35 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
             json_schema: { type: 'object', properties: { texto_completo: { type: 'string' } } },
           });
           if (extracao?.status === 'success' && extracao?.output?.texto_completo) textoPDF = extracao.output.texto_completo;
-        } catch (_) {}
+        } catch (error) {
+          console.warn('Não foi possível extrair texto completo do PDF 20-40; tentando leitura pelo LLM.', error);
+        }
         const resposta = await base44.integrations.Core.InvokeLLM({
           prompt: buildPrompt2040(textoPDF || 'Leia os dados da profundidade 20-40cm diretamente do PDF.'),
           file_urls: [file_url],
           model: 'claude_sonnet_4_6',
         });
-        let parsed = resposta;
-        if (typeof resposta === 'string') {
-          const m = resposta.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
-          parsed = m ? JSON.parse(m[0]) : null;
+        const interpretado = interpretarRespostaAnaliseSolo(resposta, '20-40');
+        laboratorio = interpretado.laboratorio || 'OUTRO';
+        dadosExtraidos = interpretado.dados;
+        if (!temPayloadAnaliseSolo(dadosExtraidos, '20-40')) {
+          erroExtracao = 'Nenhum dado válido foi extraído do PDF.';
         }
-        if (parsed) {
-          laboratorio = parsed.laboratorio || 'OUTRO';
-          const { laboratorio: _l, ...brutos } = parsed;
-          dadosExtraidos = converterUnidades(brutos, laboratorio);
-        }
-      } catch (_) {}
-      cacheExtracao[par.arquivo.name] = { dados: dadosExtraidos, laboratorio };
+      } catch (error) {
+        erroExtracao = getErrorMessageAnaliseSolo(error);
+        console.error('Erro ao processar PDF de análise de solo 20-40 cm.', error);
+      }
+      cacheExtracao[chaveArquivo] = { dados: dadosExtraidos, laboratorio, erro: erroExtracao };
       processados++;
       setProgresso(processados);
     }
 
-    // Cada talhão recebe cópia própria
-    const itensPorcessados = paresConfirmados.map(par => ({
-      talhao: par.talhao,
-      arquivoNome: par.arquivo?.name || '',
-      dados: par.arquivo ? { ...(cacheExtracao[par.arquivo.name]?.dados || {}) } : (analises2040Existentes?.[par.talhao.id] || {}),
-      laboratorio: par.arquivo ? (cacheExtracao[par.arquivo.name]?.laboratorio || 'OUTRO') : 'OUTRO',
-    }));
+    const itensPorcessados = prepararDadosParaRevisao({
+      pares: paresConfirmados,
+      cacheExtracao,
+      profundidade: '20-40',
+      dadosExistentes: analises2040Existentes,
+    });
 
     setItens(itensPorcessados);
     setEtapa('revisao');
@@ -470,10 +481,14 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
     const res = [];
     for (const item of itens) {
       try {
+        if (item.erroExtracao) throw new Error(item.erroExtracao);
+        const validacao = validarCompletudeExtracao(item.dados, '20-40');
+        if (!temPayloadAnaliseSolo(item.dados, '20-40')) throw new Error('Nenhum dado válido para salvar.');
+        if (!validacao.completo) throw new Error(`Extração incompleta: ${validacao.camposAusentes.join(', ')}`);
         await onSalvar2040(item.talhao, item.dados);
         res.push({ talhao: item.talhao, status: 'ok' });
-      } catch {
-        res.push({ talhao: item.talhao, status: 'erro' });
+      } catch (error) {
+        res.push({ talhao: item.talhao, status: 'erro', erro: getErrorMessageAnaliseSolo(error) });
       }
     }
     setResultados(res);
@@ -488,7 +503,7 @@ export default function ImportarAgrupado2040({ talhoes, analises2040Existentes, 
     resumo: 'Resumo da importação',
   }[etapa];
 
-  const totalUnicos = [...new Set(pares.filter(p => p.arquivo).map(p => p.arquivo.name))].length;
+  const totalUnicos = [...new Set(pares.filter(p => p.arquivo).map(p => gerarChaveArquivoAnaliseSolo(p.arquivo)))].length;
 
   return (
     <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
