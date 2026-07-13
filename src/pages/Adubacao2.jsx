@@ -20,12 +20,12 @@ import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
 import {
+  classificarExtracaoAnaliseSolo,
   criarControladorGravacaoAnalise,
   getErrorMessageAnaliseSolo,
   normalizarDataAnaliseSolo,
   normalizarNumeroAnaliseSolo,
   temPayloadAnaliseSolo,
-  validarCompletudeExtracao,
 } from '@/lib/analiseSoloImportacao';
 
 
@@ -552,10 +552,9 @@ export default function Adubacao2() {
 
     try {
       if (!temPayloadAnaliseSolo(payload, '0-20')) throw new Error('Nenhum dado válido para salvar.');
-      const validacao = validarCompletudeExtracao(payload, '0-20');
-      if (!validacao.completo) throw new Error(`Extração incompleta: ${validacao.camposAusentes.join(', ')}`);
+      const classificacao = classificarExtracaoAnaliseSolo(payload, '0-20');
       const salvo = await salvarAnaliseSoloRef.current(payload);
-      return { status: 'ok', id: salvo?.id || null };
+      return { status: classificacao.status, id: salvo?.id || null, camposAusentes: classificacao.camposAusentes };
     } catch (error) {
       throw new Error(getErrorMessage(error));
     }

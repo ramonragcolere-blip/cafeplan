@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
+  classificarExtracaoAnaliseSolo,
   getErrorMessageAnaliseSolo,
   interpretarRespostaAnaliseSolo,
   temPayloadAnaliseSolo,
@@ -124,11 +125,8 @@ export default function ImportarPDFTalhao(props) {
 
   const handleSalvar = async () => {
     try {
-      const validacao = validarCompletudeExtracao(dados, '0-20');
-      if (!temPayloadAnaliseSolo(dados, '0-20')) throw new Error('Nenhum dado válido foi extraído.');
-      if (!validacao.completo) {
-        throw new Error(`Extração incompleta. Confira/preencha: ${validacao.camposAusentes.join(', ')}.`);
-      }
+      const classificacao = classificarExtracaoAnaliseSolo(dados, '0-20');
+      if (!classificacao.temDados) throw new Error('Nenhum dado válido foi extraído.');
       await onImportarAnalise(talhao, { ...dados, laboratorio_origem: laboratorio });
       setSalvo(true);
       setTimeout(() => setOpen(false), 1200);

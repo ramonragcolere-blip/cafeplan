@@ -187,6 +187,39 @@ export function temPayloadAnaliseSolo(dados = {}, profundidade = '0-20') {
   return getCamposAnaliseSolo(profundidade).some((campo) => dados[campo] != null && dados[campo] !== '');
 }
 
+export function classificarExtracaoAnaliseSolo(dados = {}, profundidade = '0-20') {
+  const validacao = validarCompletudeExtracao(dados, profundidade);
+  if (!temPayloadAnaliseSolo(dados, profundidade)) {
+    return {
+      status: 'erro',
+      completo: false,
+      parcial: false,
+      temDados: false,
+      camposAusentes: validacao.camposAusentes,
+    };
+  }
+
+  return {
+    status: validacao.completo ? 'ok' : 'parcial',
+    completo: validacao.completo,
+    parcial: !validacao.completo,
+    temDados: true,
+    camposAusentes: validacao.camposAusentes,
+  };
+}
+
+export function resumirResultadosImportacaoAnaliseSolo(resultados = []) {
+  const completas = resultados.filter((resultado) => resultado.status === 'ok').length;
+  const parciais = resultados.filter((resultado) => resultado.status === 'parcial').length;
+  const erros = resultados.filter((resultado) => resultado.status === 'erro').length;
+  return {
+    completas,
+    parciais,
+    erros,
+    totalSalvas: completas + parciais,
+  };
+}
+
 export function prepararDadosParaRevisao({ pares = [], cacheExtracao = {}, profundidade = '0-20', dadosExistentes = {} }) {
   return pares.map((par) => {
     const chaveArquivo = gerarChaveArquivoAnaliseSolo(par.arquivo);

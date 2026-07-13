@@ -8,12 +8,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Upload, Loader2, CheckCircle2, AlertTriangle, GripVertical, FileText, ArrowRight, XCircle, Layers, Copy, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import {
+  classificarExtracaoAnaliseSolo,
   gerarChaveArquivoAnaliseSolo,
   getErrorMessageAnaliseSolo,
   interpretarRespostaAnaliseSolo,
   prepararDadosParaRevisao,
+  resumirResultadosImportacaoAnaliseSolo,
   temPayloadAnaliseSolo,
-  validarCompletudeExtracao,
 } from '@/lib/analiseSoloImportacao';
 
 const CAMPOS_0_20 = [
@@ -381,28 +382,33 @@ function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
 
 // ── Etapa 4: Resumo ───────────────────────────────────────────────────────────
 function EtapaResumo({ resultados, onClose }) {
-  const ok = resultados.filter(r => r.status === 'ok').length;
-  const err = resultados.filter(r => r.status === 'erro').length;
+  const resumo = resumirResultadosImportacaoAnaliseSolo(resultados);
+  const temPendencia = resumo.parciais > 0 || resumo.erros > 0;
   return (
     <div className="space-y-4">
-      <div className={`flex items-center gap-2 p-4 rounded-xl border text-sm font-medium ${err === 0 ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
-        {err === 0 ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
-        {ok} importado(s) com sucesso{err > 0 ? `, ${err} com erro` : ''}.
+      <div className={`flex items-center gap-2 p-4 rounded-xl border text-sm font-medium ${temPendencia ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-800'}`}>
+        {temPendencia ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+        {resumo.completas} completa(s), {resumo.parciais} parcial(is), {resumo.erros} erro(s).
       </div>
       <div className="border border-border rounded-xl overflow-hidden">
         {resultados.map((r, i) => (
           <div key={r.talhao.id} className={`flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}>
-            {r.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
+            {r.status === 'ok' && <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />}
+            {r.status === 'parcial' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
+            {r.status === 'erro' && <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">{r.talhao.nome}</p>
               <p className="text-xs text-muted-foreground truncate">{r.arquivoNome}</p>
             </div>
-            <span className={`text-xs font-medium ${r.status === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
-              {r.status === 'ok' ? 'Sucesso' : 'Erro'}
+            <span className={`text-xs font-medium ${r.status === 'ok' ? 'text-green-700' : r.status === 'parcial' ? 'text-amber-700' : 'text-red-600'}`}>
+              {r.status === 'ok' ? 'Completa' : r.status === 'parcial' ? 'Parcial' : 'Erro'}
             </span>
-            {r.status === 'erro' && r.erro && (
-              <p className="basis-full pl-7 text-xs text-red-600 break-words">
-                {r.erro}
+            {(r.status === 'erro' && r.erro) && (
+              <p className="basis-full pl-7 text-xs text-red-600 break-words">{r.erro}</p>
+            )}
+            {r.status === 'parcial' && r.camposAusentes?.length > 0 && (
+              <p className="basis-full pl-7 text-xs text-amber-700 break-words">
+                Campos ausentes: {r.camposAusentes.join(', ')}
               </p>
             )}
           </div>
@@ -495,12 +501,15 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
     const res = [];
     for (const item of itens) {
       try {
-        if (item.erroExtracao) throw new Error(item.erroExtracao);
-        const validacao = validarCompletudeExtracao(item.dados, '0-20');
-        if (!temPayloadAnaliseSolo(item.dados, '0-20')) throw new Error('Nenhum dado válido para salvar.');
-        if (!validacao.completo) throw new Error(`Extração incompleta: ${validacao.camposAusentes.join(', ')}`);
+        const classificacao = classificarExtracaoAnaliseSolo(item.dados, '0-20');
+        if (!classificacao.temDados) throw new Error(item.erroExtracao || 'Nenhum dado válido para salvar.');
         await onImportarAnalise(item.talhao, { ...item.dados, laboratorio_origem: item.laboratorio });
-        res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'ok' });
+        res.push({
+          talhao: item.talhao,
+          arquivoNome: item.arquivoNome,
+          status: classificacao.status,
+          camposAusentes: classificacao.camposAusentes,
+        });
       } catch (error) {
         res.push({ talhao: item.talhao, arquivoNome: item.arquivoNome, status: 'erro', erro: getErrorMessage(error) });
       }

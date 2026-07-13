@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   CAMPOS_ANALISE_020,
   CAMPOS_ANALISE_2040,
+  classificarExtracaoAnaliseSolo,
   criarControladorGravacaoAnalise,
   desembrulharRespostaAnaliseSolo,
   gerarChaveArquivoAnaliseSolo,
@@ -12,6 +13,7 @@ import {
   normalizarDataAnaliseSolo,
   normalizarNumeroAnaliseSolo,
   prepararDadosParaRevisao,
+  resumirResultadosImportacaoAnaliseSolo,
   validarCompletudeExtracao,
 } from '../src/lib/analiseSoloImportacao.js';
 
@@ -76,6 +78,13 @@ function extrairKeysCampos(codigo, nomeConstante) {
 
 function faltantes(recebidos, esperados) {
   return esperados.filter((campo) => !recebidos.includes(campo));
+}
+
+function payloadCompleto020() {
+  return Object.fromEntries(CAMPOS_ANALISE_020.map((campo) => [
+    campo,
+    campo === 'data_analise' ? '2026-07-03' : 1,
+  ]));
 }
 
 test('inventario privado contem um PDF 0-20 individual, dois em lote, sete em lote e sete 20-40', (t) => {
@@ -143,6 +152,50 @@ test('modulo compartilhado normaliza numeros, datas, chave de arquivo e completu
     pares: [{ talhao: { id: 't1' }, arquivo: { name: 'a.pdf', size: 1, lastModified: 2 } }],
     cacheExtracao: { 'a.pdf|1|2': { dados: { ph: 5.4 }, laboratorio: 'COOXUPE' } },
   })[0].validacao.completo, false);
+});
+
+test('classificacao permite laudo completo, laudo parcial com dados validos e bloqueia laudo vazio', () => {
+  const completo = classificarExtracaoAnaliseSolo(payloadCompleto020(), '0-20');
+  assert.deepEqual({
+    status: completo.status,
+    completo: completo.completo,
+    parcial: completo.parcial,
+    temDados: completo.temDados,
+    ausentes: completo.camposAusentes,
+  }, {
+    status: 'ok',
+    completo: true,
+    parcial: false,
+    temDados: true,
+    ausentes: [],
+  });
+
+  const parcial = classificarExtracaoAnaliseSolo({ ph: 5.4, calcio: 3.2 }, '0-20');
+  assert.equal(parcial.status, 'parcial');
+  assert.equal(parcial.completo, false);
+  assert.equal(parcial.parcial, true);
+  assert.equal(parcial.temDados, true);
+  assert.ok(parcial.camposAusentes.includes('data_analise'));
+
+  const vazio = classificarExtracaoAnaliseSolo({}, '0-20');
+  assert.equal(vazio.status, 'erro');
+  assert.equal(vazio.temDados, false);
+});
+
+test('resumo de lote separa importacoes completas, parciais e erros sem dados validos', () => {
+  const resultados = [
+    { talhao: { id: 't1' }, ...classificarExtracaoAnaliseSolo(payloadCompleto020(), '0-20') },
+    { talhao: { id: 't2' }, ...classificarExtracaoAnaliseSolo({ ph: 5.1 }, '0-20') },
+    { talhao: { id: 't3' }, ...classificarExtracaoAnaliseSolo({}, '0-20') },
+  ];
+
+  assert.deepEqual(resultados.map((resultado) => resultado.status), ['ok', 'parcial', 'erro']);
+  assert.deepEqual(resumirResultadosImportacaoAnaliseSolo(resultados), {
+    completas: 1,
+    parciais: 1,
+    erros: 1,
+    totalSalvas: 2,
+  });
 });
 
 test('controlador compartilhado serializa gravacoes por talhao e safra e evita dois creates concorrentes', async () => {
@@ -216,7 +269,13 @@ test('cache de PDFs agrupados diferencia arquivos distintos mesmo quando o nome 
 test('lote 0-20 grava uma vez por talhao, tem uma mensagem final, nao usa toast por talhao e continua apos erro', () => {
   assert.match(source.agrupado020, /for \(const item of itens\) \{[\s\S]*await onImportarAnalise\(item\.talhao,\s*\{\s*\.\.\.item\.dados/);
   assert.match(source.agrupado020, /catch \(error\) \{[\s\S]*status:\s*'erro'/);
+  assert.match(source.agrupado020, /status:\s*classificacao\.status/);
+  assert.doesNotMatch(source.agrupado020, /if \(!validacao\.completo\) throw new Error\(`Extração incompleta/);
+  assert.doesNotMatch(source.agrupado2040, /if \(!validacao\.completo\) throw new Error\(`Extração incompleta/);
+  assert.doesNotMatch(source.individual020, /throw new Error\(`Extração incompleta/);
+  assert.doesNotMatch(source.pagina, /throw new Error\(`Extração incompleta/);
   assert.equal((source.agrupado020.match(/setEtapa\('resumo'\)/g) || []).length, 1);
+  assert.match(source.agrupado020, /resumirResultadosImportacaoAnaliseSolo\(resultados\)/);
   assert.doesNotMatch(source.agrupado020, /useToast|toast\(/);
   assert.doesNotMatch(source.agrupado2040, /useToast|toast\(/);
 });
