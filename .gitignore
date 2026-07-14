@@ -31,3 +31,4 @@ dist-ssr
 .vite
 
 /tests/fixtures/analise-solo-privadas/
+base44/.app.jsonc
