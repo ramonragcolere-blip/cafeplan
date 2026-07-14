@@ -6,64 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ChevronDown, ChevronRight, Save, Loader2, Leaf } from 'lucide-react';
-
-// ── Lógica de cálculo (portada de CalcCalagem.jsx) ────────────────────────────
-
-const NIVEIS = {
-  Mínimo:    { ca: 3.0, mg: 1.0, k: 0.33 },
-  Bom:       { ca: 3.6, mg: 1.2, k: 0.40 },
-  Excelente: { ca: 4.5, mg: 1.5, k: 0.50 },
-};
-
-function calcCalagEmElevacao(caAtual, mgAtual, nivel, produto, area) {
-  const meta = NIVEIS[nivel] || NIVEIS['Bom'];
-  const defCa = Math.max(0, meta.ca - (Number(caAtual) || 0));
-  const defMg = Math.max(0, meta.mg - (Number(mgAtual) || 0));
-  if (!produto) return { defCa, defMg, meta };
-
-  const pctCa = parseFloat(produto.ca_pct) || 0;
-  const pctMg = parseFloat(produto.mg_pct) || 0;
-
-  let dosePeloCa = 0;
-  if (pctCa > 0 && defCa > 0) {
-    const cmolcPorTonCa = (1000 * (pctCa / 100)) / 560;
-    dosePeloCa = (defCa / cmolcPorTonCa) * 1000;
-  }
-  let dosePeloMg = 0;
-  if (pctMg > 0 && defMg > 0) {
-    const cmolcPorTonMg = (1000 * (pctMg / 100)) / 400;
-    dosePeloMg = (defMg / cmolcPorTonMg) * 1000;
-  }
-
-  const doseFinalHa = Math.max(dosePeloCa, dosePeloMg);
-  const totalKg = area > 0 ? doseFinalHa * area : null;
-
-  return {
-    defCa, defMg, meta,
-    dosePeloCa: Math.round(dosePeloCa),
-    dosePeloMg: Math.round(dosePeloMg),
-    doseFinalHa: Math.round(doseFinalHa),
-    totalKg: totalKg != null ? Math.round(totalKg) : null,
-    ton:  totalKg != null ? parseFloat((totalKg / 1000).toFixed(3)) : null,
-    sc40: totalKg != null ? parseFloat((totalKg / 40).toFixed(1))   : null,
-    sc50: totalKg != null ? parseFloat((totalKg / 50).toFixed(1))   : null,
-  };
-}
-
-function calcCalagemVpct({ ctc, v1, v2, prnt, area }) {
-  if (ctc == null || v1 == null || v2 == null || v2 <= v1) return { doseFinalHa: 0, totalKg: 0, ton: 0 };
-  let nc = ctc * (v2 - v1) / 100;
-  if (prnt > 0) nc = nc * (100 / prnt);
-  const doseFinalHa = Math.max(0, Math.round(nc * 1000));
-  const totalKg = area > 0 ? Math.round(doseFinalHa * area) : null;
-  return {
-    doseFinalHa,
-    totalKg,
-    ton:  totalKg != null ? parseFloat((totalKg / 1000).toFixed(3)) : null,
-    sc40: totalKg != null ? parseFloat((totalKg / 40).toFixed(1))   : null,
-    sc50: totalKg != null ? parseFloat((totalKg / 50).toFixed(1))   : null,
-  };
-}
+import {
+  NIVEIS_CALAGEM as NIVEIS,
+  calcCalagemElevacao,
+  calcCalagemVpct,
+  calcularDistribuicaoCalagem,
+  criarObservacoesCalagem,
+  lerDadosAnaliseCalagem,
+  lerMetadadosCalagem,
+  normalizarNumeroCalagem,
+  selecionarRegistroCalagem,
+} from '@/lib/calagemAdubacao2';
 
 // ── Seletor de produto corretivo com portal ───────────────────────────────────
 function SeletorCorretivo({ produto, corretivos, onChange }) {
@@ -159,7 +112,7 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
 // ── Cards de resultado ────────────────────────────────────────────────────────
 function CardsResultado({ resultado }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
       <div className="bg-white rounded-lg p-2.5 text-center border border-lime-100">
         <p className="text-xs text-muted-foreground">Dose produto</p>
         <p className="font-bold text-base">{resultado.doseFinalHa} <span className="text-xs font-normal">kg/ha</span></p>
@@ -182,6 +135,18 @@ function CardsResultado({ resultado }) {
           <p className="font-bold text-base">{resultado.sc40} <span className="text-xs font-normal">sc</span></p>
         </div>
       )}
+      {resultado.gPlanta != null && (
+        <div className="bg-white rounded-lg p-2.5 text-center border border-lime-100">
+          <p className="text-xs text-muted-foreground">Dose/planta</p>
+          <p className="font-bold text-base">{resultado.gPlanta.toLocaleString()} <span className="text-xs font-normal">g</span></p>
+        </div>
+      )}
+      {resultado.gMetro != null && (
+        <div className="bg-white rounded-lg p-2.5 text-center border border-lime-100">
+          <p className="text-xs text-muted-foreground">Dose/metro</p>
+          <p className="font-bold text-base">{resultado.gMetro.toLocaleString()} <span className="text-xs font-normal">g</span></p>
+        </div>
+      )}
     </div>
   );
 }
@@ -195,19 +160,15 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const [v2, setV2] = useState('');
   const [prntManual, setPrntManual] = useState('');
   const carregadoRef = useRef(false);
+  const registroIdRef = useRef(null);
+  const filaSalvamentoRef = useRef(Promise.resolve());
   const queryClient = useQueryClient();
 
-  const area = talhao.area_ha || 0;
+  const area = normalizarNumeroCalagem(talhao.area_ha) || 0;
   const talhaoId = talhao.id;
   const ctxKey = `${codigoProdutor}|${safra}|${talhaoId}`;
 
-  // Ca e Mg já estão em cmolc/dm³ no banco (convertidos na importação) — leitura direta
-  const caAtual   = analise?.calcio          != null ? Number(analise.calcio)          : undefined;
-  const mgAtual   = analise?.magnesio        != null ? Number(analise.magnesio)        : undefined;
-  const kAtual    = analise?.potassio        != null ? Number(analise.potassio)        / 391 : undefined; // mg/dm³ → cmolc/dm³
-  const v1        = analise?.saturacao_bases != null ? Number(analise.saturacao_bases) : undefined;
-  const ctcAtual  = analise?.ctc             != null ? Number(analise.ctc)             :
-    (caAtual != null && mgAtual != null ? caAtual + mgAtual + (kAtual || 0) : undefined);
+  const { caAtual, mgAtual, kAtual, v1, ctcAtual } = useMemo(() => lerDadosAnaliseCalagem(analise), [analise]);
 
   const { data: registrosSalvos = [], isLoading: carregando } = useQuery({
     queryKey: ['recomendacao_calagem', ctxKey],
@@ -217,38 +178,78 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
     enabled: !!(codigoProdutor && safra && talhaoId),
   });
 
-  useEffect(() => { carregadoRef.current = false; }, [ctxKey]);
+  useEffect(() => {
+    carregadoRef.current = false;
+    registroIdRef.current = null;
+    setRegistroId(null);
+    setProtocolo('elevacao');
+    setNivel('Bom');
+    setProdutoId(null);
+    setV2('');
+    setPrntManual('');
+  }, [ctxKey]);
 
   useEffect(() => {
     if (carregadoRef.current || carregando) return;
-    const reg = registrosSalvos[0];
+    const reg = selecionarRegistroCalagem(registrosSalvos);
     if (reg) {
+      const metadados = lerMetadadosCalagem(reg);
       const metaSalva = reg.meta || 'Bom';
-      if (metaSalva.startsWith('V%')) {
+      if (metadados.protocolo === 'vpct' || metaSalva.startsWith('V%')) {
         setProtocolo('vpct');
-        const v2Salvo = metaSalva.split('→')[1];
+        const v2Salvo = metadados.v2_desejado ?? metaSalva.split('→')[1];
         if (v2Salvo) setV2(v2Salvo);
+        if (metadados.prnt_efetivo && metadados.prnt_efetivo !== 100) setPrntManual(String(metadados.prnt_efetivo));
       } else if (NIVEIS[metaSalva]) {
         setNivel(metaSalva);
       }
       setProdutoId(reg.produto_id || null);
+      setRegistroId(reg.id);
+      registroIdRef.current = reg.id;
     }
     carregadoRef.current = true;
   }, [registrosSalvos, carregando]);
 
   const [registroId, setRegistroId] = useState(null);
   useEffect(() => {
-    if (registrosSalvos[0]?.id) setRegistroId(registrosSalvos[0].id);
+    const idAtual = selecionarRegistroCalagem(registrosSalvos)?.id || null;
+    setRegistroId(idAtual);
+    registroIdRef.current = idAtual;
   }, [registrosSalvos]);
 
   const { mutate: salvar, isPending: salvando } = useMutation({
     mutationFn: async (dados) => {
-      if (registroId) return base44.entities.BaseRecomendacaoCalagem.update(registroId, dados);
-      return base44.entities.BaseRecomendacaoCalagem.create(dados);
+      const tarefa = filaSalvamentoRef.current.catch(() => undefined).then(async () => {
+        if (registroIdRef.current) {
+          return base44.entities.BaseRecomendacaoCalagem.update(registroIdRef.current, dados);
+        }
+
+        const existentes = await base44.entities.BaseRecomendacaoCalagem.filter({
+          codigo_produtor: dados.codigo_produtor,
+          safra: dados.safra,
+          talhao_id: dados.talhao_id,
+        });
+        const existente = selecionarRegistroCalagem(existentes);
+        if (existente?.id) {
+          registroIdRef.current = existente.id;
+          setRegistroId(existente.id);
+          return base44.entities.BaseRecomendacaoCalagem.update(existente.id, dados);
+        }
+
+        const criado = await base44.entities.BaseRecomendacaoCalagem.create(dados);
+        if (criado?.id) {
+          registroIdRef.current = criado.id;
+          setRegistroId(criado.id);
+        }
+        return criado;
+      });
+      filaSalvamentoRef.current = tarefa;
+      return tarefa;
     },
     onSuccess: (res) => {
       if (!registroId && res?.id) setRegistroId(res.id);
       queryClient.invalidateQueries({ queryKey: ['recomendacao_calagem', ctxKey] });
+      queryClient.invalidateQueries({ queryKey: ['calagem_recomendacoes'] });
     },
   });
 
@@ -257,22 +258,32 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const meta = NIVEIS[nivel] || NIVEIS['Bom'];
 
   const resultadoElevacao = useMemo(() =>
-    calcCalagEmElevacao(caAtual, mgAtual, nivel, produto, area),
+    calcCalagemElevacao(caAtual, mgAtual, nivel, produto, area),
     [caAtual, mgAtual, nivel, produto, area]
   );
 
-  const prntEfetivo = produto?.prnt > 0 ? Number(produto.prnt) : prntManual !== '' ? Number(prntManual) : 100;
+  const prntProduto = normalizarNumeroCalagem(produto?.prnt);
+  const prntManualNum = normalizarNumeroCalagem(prntManual);
+  const prntEfetivo = prntProduto > 0 ? prntProduto : prntManualNum > 0 ? prntManualNum : 100;
 
   const resultadoVpct = useMemo(() => {
     if (v1 == null || v2 === '' || ctcAtual == null) return null;
-    const v2Num = Number(v2);
-    if (isNaN(v2Num) || v2Num <= 0 || v2Num > 100) return null;
+    const v2Num = normalizarNumeroCalagem(v2);
+    if (v2Num == null || v2Num <= 0 || v2Num > 100) return null;
     return calcCalagemVpct({ ctc: ctcAtual, v1, v2: v2Num, prnt: prntEfetivo, area });
   }, [ctcAtual, v1, v2, prntEfetivo, area]);
 
-  const resultado = protocolo === 'elevacao' ? resultadoElevacao : resultadoVpct;
+  const resultadoBase = protocolo === 'elevacao' ? resultadoElevacao : resultadoVpct;
+  const resultado = useMemo(() => {
+    if (!resultadoBase || resultadoBase.doseFinalHa == null) return resultadoBase;
+    return {
+      ...resultadoBase,
+      ...calcularDistribuicaoCalagem({ doseKgHa: resultadoBase.doseFinalHa, doseTotalKg: resultadoBase.totalKg, talhao }),
+    };
+  }, [resultadoBase, talhao]);
 
   const handleSalvar = () => {
+    if (!resultado || resultado.doseFinalHa == null) return;
     salvar({
       codigo_produtor: codigoProdutor, safra,
       talhao_id: talhaoId,
@@ -287,12 +298,22 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
       deficit_mg: resultadoElevacao?.defMg ?? null,
       dose_kg_ha: resultado?.doseFinalHa ?? null,
       dose_total_kg: resultado?.totalKg ?? null,
+      observacoes: criarObservacoesCalagem({
+        protocolo,
+        v2_desejado: protocolo === 'vpct' ? normalizarNumeroCalagem(v2) : null,
+        prnt_efetivo: protocolo === 'vpct' ? prntEfetivo : null,
+        ctc_atual: ctcAtual,
+        v_atual: v1,
+        dose_por_planta_g: resultado?.gPlanta ?? null,
+        dose_por_metro_g: resultado?.gMetro ?? null,
+      }),
     });
   };
 
   // Badge de resumo para o header
-  const temRegistro = registrosSalvos.length > 0;
-  const doseSalva = registrosSalvos[0]?.dose_kg_ha;
+  const registroAtual = selecionarRegistroCalagem(registrosSalvos);
+  const temRegistro = !!registroAtual;
+  const doseSalva = registroAtual?.dose_kg_ha;
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${expandido ? 'border-lime-300 shadow-sm' : 'border-border'}`}>
@@ -374,22 +395,22 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                           <td className="px-3 py-2 font-medium">Ca (cmolc/dm³)</td>
                           <td className="px-3 py-2 tabular-nums">{caAtual != null ? caAtual.toFixed(2) : '—'}</td>
                           <td className="px-3 py-2 tabular-nums">{meta.ca}</td>
-                          <td className={`px-3 py-2 font-semibold ${resultadoElevacao?.defCa > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {resultadoElevacao ? (resultadoElevacao.defCa > 0 ? `−${resultadoElevacao.defCa.toFixed(2)}` : '✓') : '—'}
+                          <td className={`px-3 py-2 font-semibold ${resultadoElevacao?.defCa > 0 ? 'text-red-600' : resultadoElevacao?.defCa === 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                            {resultadoElevacao?.defCa == null ? '—' : (resultadoElevacao.defCa > 0 ? `−${resultadoElevacao.defCa.toFixed(2)}` : '✓')}
                           </td>
                           <td className="px-3 py-2 font-medium">
-                            {resultadoElevacao ? (resultadoElevacao.defCa > 0 ? `déficit: ${resultadoElevacao.defCa.toFixed(2)} cmolc` : 'Sem déficit') : '—'}
+                            {resultadoElevacao?.defCa == null ? 'não informado' : (resultadoElevacao.defCa > 0 ? `déficit: ${resultadoElevacao.defCa.toFixed(2)} cmolc` : 'Sem déficit')}
                           </td>
                         </tr>
                         <tr className="border-b border-border/40">
                           <td className="px-3 py-2 font-medium">Mg (cmolc/dm³)</td>
                           <td className="px-3 py-2 tabular-nums">{mgAtual != null ? mgAtual.toFixed(2) : '—'}</td>
                           <td className="px-3 py-2 tabular-nums">{meta.mg}</td>
-                          <td className={`px-3 py-2 font-semibold ${resultadoElevacao?.defMg > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {resultadoElevacao ? (resultadoElevacao.defMg > 0 ? `−${resultadoElevacao.defMg.toFixed(2)}` : '✓') : '—'}
+                          <td className={`px-3 py-2 font-semibold ${resultadoElevacao?.defMg > 0 ? 'text-red-600' : resultadoElevacao?.defMg === 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                            {resultadoElevacao?.defMg == null ? '—' : (resultadoElevacao.defMg > 0 ? `−${resultadoElevacao.defMg.toFixed(2)}` : '✓')}
                           </td>
                           <td className="px-3 py-2 font-medium">
-                            {resultadoElevacao ? (resultadoElevacao.defMg > 0 ? `déficit: ${resultadoElevacao.defMg.toFixed(2)} cmolc` : 'Sem déficit') : '—'}
+                            {resultadoElevacao?.defMg == null ? 'não informado' : (resultadoElevacao.defMg > 0 ? `déficit: ${resultadoElevacao.defMg.toFixed(2)} cmolc` : 'Sem déficit')}
                           </td>
                         </tr>
                         <tr>
@@ -404,6 +425,12 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                   </div>
 
                   <SeletorCorretivo produto={produto} corretivos={corretivos} onChange={setProdutoId} />
+
+                  {resultadoElevacao?.incompleto && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                      Informe Ca e Mg na análise 0-20 cm para calcular a elevação por bases trocáveis.
+                    </div>
+                  )}
 
                   {resultadoElevacao && resultadoElevacao.defCa === 0 && resultadoElevacao.defMg === 0 && (
                     <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-700 font-medium">
@@ -431,7 +458,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                   )}
 
                   <div className="flex justify-end">
-                    <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando} className="gap-2">
+                    <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null} className="gap-2">
                       {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       Salvar
                     </Button>
@@ -526,7 +553,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                       )}
 
                       <div className="flex justify-end">
-                        <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando} className="gap-2">
+                        <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null} className="gap-2">
                           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                           Salvar
                         </Button>

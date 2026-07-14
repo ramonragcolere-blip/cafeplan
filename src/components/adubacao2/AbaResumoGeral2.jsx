@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { LayoutList, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
+import { calcularDistribuicaoCalagem, calcularMetrosLinearesTalhao, selecionarRegistroCalagem } from '@/lib/calagemAdubacao2';
 
 const PRINT_STYLES = `
 @media print {
@@ -21,12 +22,7 @@ const PRINT_STYLES = `
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getMetros(talhao) {
-  const esp = talhao?.espacamento;
-  const partes = esp?.split(/[xX×]/).map(p => parseFloat(p?.replace(',', '.')));
-  const linhaM = partes?.[0] || 0;
-  if (talhao?.num_plantas && linhaM > 0) return talhao.num_plantas * linhaM;
-  if (talhao?.area_ha && linhaM > 0) return Math.round((talhao.area_ha * 10000) / linhaM);
-  return 0;
+  return calcularMetrosLinearesTalhao(talhao);
 }
 
 function ordemConsolidado(nomeProd) {
@@ -62,7 +58,15 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
   // Mapa de calagem por talhão
   const calagensMap = useMemo(() => {
     const m = {};
-    calagens.forEach(c => { m[c.talhao_id] = c; });
+    const porTalhao = {};
+    calagens.forEach(c => {
+      if (!c?.talhao_id) return;
+      if (!porTalhao[c.talhao_id]) porTalhao[c.talhao_id] = [];
+      porTalhao[c.talhao_id].push(c);
+    });
+    Object.entries(porTalhao).forEach(([talhaoId, registros]) => {
+      m[talhaoId] = selecionarRegistroCalagem(registros);
+    });
     return m;
   }, [calagens]);
 
@@ -139,10 +143,12 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
 
       // Linha de calagem (se há registro salvo para este talhão)
       const calagem = calagensMap[talhaoId];
-      if (calagem?.produto_nome && calagem?.dose_kg_ha) {
-        const totalKg = area > 0 ? Math.round(calagem.dose_kg_ha * area) : calagem.dose_total_kg || null;
-        const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
-        const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+      if (calagem?.produto_nome && calagem?.dose_kg_ha != null) {
+        const { totalKg, gPlanta, gMetro } = calcularDistribuicaoCalagem({
+          doseKgHa: calagem.dose_kg_ha,
+          doseTotalKg: calagem.dose_total_kg,
+          talhao,
+        });
         linhas.push({ produtoNome: calagem.produto_nome, produtoId: null, doseKgHa: calagem.dose_kg_ha, totalKg, gPlanta, gMetro, nutLabels: ['Calagem'], isCalagem: true });
       }
 
