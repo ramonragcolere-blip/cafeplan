@@ -6,6 +6,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import {
+  classificarExtracaoAnaliseSolo,
+  getErrorMessageAnaliseSolo,
+  interpretarRespostaAnaliseSolo,
+  temPayloadAnaliseSolo,
+  validarCompletudeExtracao,
+} from '@/lib/analiseSoloImportacao';
 
 const CAMPOS_0_20 = [
   { key: 'ph', label: 'pH' },
@@ -24,20 +31,6 @@ const CAMPOS_0_20 = [
   { key: 'saturacao_bases', label: 'V%' },
   { key: 'data_analise', label: 'Data da Análise', date: true },
 ];
-
-function converterUnidades(dados, laboratorio) {
-  const d = { ...dados };
-  const n = v => (v != null && !isNaN(Number(v))) ? Number(v) : null;
-  if (laboratorio === 'COOXUPE') {
-    if (n(d.potassio) != null) d.potassio = +(n(d.potassio) * 39.1).toFixed(1);
-    ['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'ctc'].forEach(k => {
-      if (n(d[k]) != null) d[k] = +(n(d[k]) / 10).toFixed(3);
-    });
-  } else if (laboratorio === 'LAB_VICOSA') {
-    if (n(d.potassio) != null && n(d.potassio) < 3) d.potassio = +(n(d.potassio) * 391).toFixed(1);
-  }
-  return d;
-}
 
 const buildPrompt = (textoPDF) => `
 Você é especialista em laudos de análise de solo da COOXUPÉ (Cooperativa Regional de Cafeicultores em Guaxupé).
@@ -70,7 +63,8 @@ Retorne SOMENTE JSON válido:
   }
 }`;
 
-export default function ImportarPDFTalhao({ talhao, safra, analises, analises2040, onImportarAnalise, talhoes }) {
+export default function ImportarPDFTalhao(props) {
+  const { talhao, onImportarAnalise } = props;
   const fileRef = useRef();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -98,11 +92,9 @@ export default function ImportarPDFTalhao({ talhao, safra, analises, analises204
         if (extracao?.status === 'success' && extracao?.output?.texto_completo) {
           textoPDF = extracao.output.texto_completo;
         }
-      } catch (_) {}
-
-      console.log('=== TEXTO PDF EXTRAÍDO ===');
-      console.log(textoPDF);
-      console.log('=== FIM TEXTO PDF ===');
+      } catch (error) {
+        console.warn('Não foi possível extrair texto completo do PDF; tentando leitura pelo LLM.', error);
+      }
 
       const resposta = await base44.integrations.Core.InvokeLLM({
         prompt: buildPrompt(textoPDF || 'Leia os dados diretamente do arquivo PDF anexo.'),
@@ -110,23 +102,21 @@ export default function ImportarPDFTalhao({ talhao, safra, analises, analises204
         model: 'claude_sonnet_4_6',
       });
 
-      let parsed = resposta;
-      if (typeof resposta === 'string') {
-        const m = resposta.match(/\{[\s\S]*\}/);
-        parsed = m ? JSON.parse(m[0]) : null;
-      }
-
-      if (parsed?.dados) {
-        const convertido = converterUnidades(parsed.dados, parsed.laboratorio || 'OUTRO');
-        setDados(convertido);
-        setLaboratorio(parsed.laboratorio || 'OUTRO');
+      const interpretado = interpretarRespostaAnaliseSolo(resposta, '0-20');
+      if (temPayloadAnaliseSolo(interpretado.dados, '0-20')) {
+        setDados(interpretado.dados);
+        setLaboratorio(interpretado.laboratorio || 'OUTRO');
+        const validacao = validarCompletudeExtracao(interpretado.dados, '0-20');
+        if (!validacao.completo) {
+          setErro(`Extração incompleta. Confira/preencha: ${validacao.camposAusentes.join(', ')}.`);
+        }
       } else {
         setDados({});
         setErro('Não foi possível extrair dados automaticamente. Preencha manualmente.');
       }
     } catch (err) {
       setDados({});
-      setErro(`Erro ao processar PDF: ${err?.message || String(err)}`);
+      setErro(`Erro ao processar PDF: ${getErrorMessageAnaliseSolo(err)}`);
     } finally {
       setLoading(false);
       e.target.value = '';
@@ -134,9 +124,15 @@ export default function ImportarPDFTalhao({ talhao, safra, analises, analises204
   };
 
   const handleSalvar = async () => {
-    await onImportarAnalise(talhao, { ...dados, laboratorio_origem: laboratorio });
-    setSalvo(true);
-    setTimeout(() => setOpen(false), 1200);
+    try {
+      const classificacao = classificarExtracaoAnaliseSolo(dados, '0-20');
+      if (!classificacao.temDados) throw new Error('Nenhum dado válido foi extraído.');
+      await onImportarAnalise(talhao, { ...dados, laboratorio_origem: laboratorio });
+      setSalvo(true);
+      setTimeout(() => setOpen(false), 1200);
+    } catch (error) {
+      setErro(`Erro ao salvar: ${getErrorMessageAnaliseSolo(error)}`);
+    }
   };
 
   const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
