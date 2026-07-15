@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { LayoutList, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
+import { montarGruposResumoAdubacao2 } from '@/lib/calagemAdubacao2';
 
 const PRINT_STYLES = `
 @media print {
@@ -19,15 +20,6 @@ const PRINT_STYLES = `
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getMetros(talhao) {
-  const esp = talhao?.espacamento;
-  const partes = esp?.split(/[xX×]/).map(p => parseFloat(p?.replace(',', '.')));
-  const linhaM = partes?.[0] || 0;
-  if (talhao?.num_plantas && linhaM > 0) return talhao.num_plantas * linhaM;
-  if (talhao?.area_ha && linhaM > 0) return Math.round((talhao.area_ha * 10000) / linhaM);
-  return 0;
-}
 
 function ordemConsolidado(nomeProd) {
   const n = (nomeProd || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -58,14 +50,6 @@ function formatQtd(kg) {
  *  - registrosSalvos: array de PlanejamentoAdubacao2 (contém detalhamento.precos)
  */
 export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra, registrosSalvos = [] }) {
-
-  // Mapa de calagem por talhão
-  const calagensMap = useMemo(() => {
-    const m = {};
-    calagens.forEach(c => { m[c.talhao_id] = c; });
-    return m;
-  }, [calagens]);
-
   // Mapa de preços salvos por produto (de todos os registros)
   const precosMap = useMemo(() => {
     const m = {};
@@ -77,79 +61,16 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
   }, [registrosSalvos]);
 
   // Constrói grupos por talhão (adubação principal + complementares + calagem)
-  const grupos = useMemo(() => {
-    // Coleta todos os talhões relevantes (com rec OU com calagem)
-    const talhaoIds = new Set([
-      ...(resultados || []).filter(r => r.rec).map(r => r.talhao.id),
-      ...calagens.map(c => c.talhao_id),
-    ]);
-
-    return Array.from(talhaoIds).map(talhaoId => {
-      const resultado = (resultados || []).find(r => r.talhao.id === talhaoId);
-      const talhao = resultado?.talhao || talhoes.find(t => t.id === talhaoId);
-      if (!talhao) return null;
-
-      const area = talhao.area_ha || 0;
-      const numPlantas = talhao.num_plantas || 0;
-      const metros = getMetros(talhao);
-      const linhas = [];
-
-      // Produtos de adubação (principal + complementares)
-      if (resultado?.rec) {
-        const rec = resultado.rec;
-        const efetivo = produtosEfetivos[talhaoId];
-        const produtoSalvo = resultado.produtoSugerido || null;
-        const doseSalva = resultado.doseProdutoHa || null;
-
-        // — Produto principal —
-        let produtoPrincipal = efetivo?.produto || produtoSalvo;
-        let dosePrincipal = efetivo?.doseKgHa ?? doseSalva;
-
-        if (!produtoPrincipal && todos.length > 0) {
-          const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
-          const sugN = sugestoes['n_pct'];
-          if (sugN?.produtoId) {
-            const prod = todos.find(p => p.id === sugN.produtoId);
-            if (prod) {
-              produtoPrincipal = prod;
-              const pctN = parseFloat(prod.n_pct) || 0;
-              dosePrincipal = pctN > 0 && rec.N != null ? Math.round((rec.N / (pctN / 100)) * 10) / 10 : null;
-            }
-          }
-        }
-
-        if (produtoPrincipal && dosePrincipal) {
-          const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
-          const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
-          const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-          linhas.push({ produtoNome: produtoPrincipal.nome, produtoId: produtoPrincipal.id, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['Principal'], isCalagem: false });
-        }
-
-        // — Complementares salvos —
-        const complementos = efetivo?.complementos || [];
-        for (const comp of complementos) {
-          if (!comp.produto?.nome || !comp.doseKgHa) continue;
-          const totalKg = area > 0 ? Math.round(comp.doseKgHa * area) : null;
-          const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
-          const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-          const nutLabels = (comp.nutrientes || []).map(n => n.label).filter(Boolean);
-          linhas.push({ produtoNome: comp.produto.nome, produtoId: comp.produto.id, doseKgHa: comp.doseKgHa, totalKg, gPlanta, gMetro, nutLabels: nutLabels.length > 0 ? nutLabels : ['Complemento'], isCalagem: false });
-        }
-      }
-
-      // Linha de calagem (se há registro salvo para este talhão)
-      const calagem = calagensMap[talhaoId];
-      if (calagem?.produto_nome && calagem?.dose_kg_ha) {
-        const totalKg = area > 0 ? Math.round(calagem.dose_kg_ha * area) : calagem.dose_total_kg || null;
-        const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
-        const gMetro  = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-        linhas.push({ produtoNome: calagem.produto_nome, produtoId: null, doseKgHa: calagem.dose_kg_ha, totalKg, gPlanta, gMetro, nutLabels: ['Calagem'], isCalagem: true });
-      }
-
-      if (linhas.length === 0) return null;
-      return { talhao, linhas };
-    }).filter(Boolean);
-  }, [resultados, todos, produtosEfetivos, calagensMap, talhoes]);
+  const grupos = useMemo(() => montarGruposResumoAdubacao2({
+    resultados,
+    todos,
+    produtosEfetivos,
+    calagens,
+    talhoes,
+    codigoProdutor: produtor?.codigo,
+    safra,
+    sugerirProdutos: sugerirProdutosInteligente,
+  }), [resultados, todos, produtosEfetivos, calagens, talhoes, produtor, safra]);
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
@@ -314,7 +235,12 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                       {linhas.map((linha, li) => (
                        <tr key={`${talhao.id}-${li}`}
                          className={`border-b border-border/50 ${linha.isCalagem ? 'bg-amber-50/60' : li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
-                         <td className="px-4 py-2.5 font-medium text-foreground">{linha.produtoNome}</td>
+                         <td className="px-4 py-2.5 font-medium text-foreground">
+                           {linha.produtoNome}
+                           {linha.pendenteProduto && (
+                             <span className="block text-[10px] font-semibold text-amber-700 mt-0.5">Selecione o corretivo para salvar e enviar às compras</span>
+                           )}
+                         </td>
                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                            {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
                          </td>
