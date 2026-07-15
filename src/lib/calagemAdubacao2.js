@@ -102,7 +102,7 @@ export function calcularDistribuicaoCalagem({ doseKgHa, doseTotalKg, talhao }) {
   const area = normalizarNumeroCalagem(talhao?.area_ha) || 0;
   const numPlantas = normalizarNumeroCalagem(talhao?.num_plantas) || 0;
   const totalSalvo = normalizarNumeroCalagem(doseTotalKg);
-  const totalKg = dose != null && area > 0 ? Math.round(dose * area) : totalSalvo;
+  const totalKg = totalSalvo != null ? Math.round(totalSalvo) : dose != null && area > 0 ? Math.round(dose * area) : null;
   const metros = calcularMetrosLinearesTalhao(talhao);
   return {
     totalKg,
@@ -150,4 +150,226 @@ export function lerMetadadosCalagem(registro) {
 
 export function criarObservacoesCalagem(dados) {
   return JSON.stringify({ _tipo: 'calagem_adubacao2', ...dados });
+}
+
+export function normalizarChaveProdutoCalagem(nome) {
+  return (nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+export function listarCalagensRecentesPorTalhao({ calagens = [], talhoes = [], codigoProdutor = null, safra = null }) {
+  const talhoesIds = new Set((talhoes || []).map(t => t.id));
+  const porTalhao = {};
+  (calagens || []).forEach(calagem => {
+    if (!calagem?.talhao_id) return;
+    if (talhoesIds.size > 0 && !talhoesIds.has(calagem.talhao_id)) return;
+    if (codigoProdutor && calagem.codigo_produtor && calagem.codigo_produtor !== codigoProdutor) return;
+    if (safra && calagem.safra && calagem.safra !== safra) return;
+    if (!porTalhao[calagem.talhao_id]) porTalhao[calagem.talhao_id] = [];
+    porTalhao[calagem.talhao_id].push(calagem);
+  });
+
+  return Object.values(porTalhao)
+    .map(registros => selecionarRegistroCalagem(registros))
+    .filter(Boolean);
+}
+
+function produtoCalagemPendente(calagem) {
+  const dose = normalizarNumeroCalagem(calagem?.dose_kg_ha) || 0;
+  return dose > 0 && !(calagem?.produto_nome || '').trim() && !(calagem?.produto_id || '').trim();
+}
+
+export function precisaCorretivoParaCalagemPositiva({ doseKgHa, produto = null }) {
+  const dose = normalizarNumeroCalagem(doseKgHa) || 0;
+  return dose > 0 && !produto;
+}
+
+export function podeSalvarRecomendacaoCalagem({ resultado, produto = null }) {
+  const dose = normalizarNumeroCalagem(resultado?.doseFinalHa);
+  if (dose == null) return false;
+  return !precisaCorretivoParaCalagemPositiva({ doseKgHa: dose, produto });
+}
+
+export function atualizarListaCalagens(listaAtual, registroAtualizado) {
+  const lista = Array.isArray(listaAtual) ? listaAtual : [];
+  if (!registroAtualizado) return lista;
+  const indice = lista.findIndex(item =>
+    (registroAtualizado.id && item.id === registroAtualizado.id) ||
+    (item.codigo_produtor === registroAtualizado.codigo_produtor &&
+      item.safra === registroAtualizado.safra &&
+      item.talhao_id === registroAtualizado.talhao_id)
+  );
+  if (indice >= 0) {
+    const proxima = [...lista];
+    proxima[indice] = { ...proxima[indice], ...registroAtualizado };
+    return proxima;
+  }
+  return [...lista, registroAtualizado];
+}
+
+function criarLinhaCalagemResumo(calagem, talhao) {
+  const doseKgHa = normalizarNumeroCalagem(calagem?.dose_kg_ha);
+  if (doseKgHa == null) return null;
+  const { totalKg, gPlanta, gMetro } = calcularDistribuicaoCalagem({
+    doseKgHa,
+    doseTotalKg: calagem.dose_total_kg,
+    talhao,
+  });
+  const pendenteProduto = produtoCalagemPendente(calagem);
+  const produtoNome = (calagem.produto_nome || '').trim() || (pendenteProduto ? 'Corretivo não selecionado' : '');
+  if (!produtoNome && doseKgHa <= 0) return null;
+
+  return {
+    produtoNome,
+    produtoId: calagem.produto_id || null,
+    doseKgHa,
+    totalKg,
+    gPlanta,
+    gMetro,
+    nutLabels: ['Calagem'],
+    isCalagem: true,
+    pendenteProduto,
+  };
+}
+
+export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null }) {
+  const mapa = {};
+
+  (resultados || []).forEach(r => {
+    const efetivo = produtosEfetivos[r.talhao.id];
+    const area = r.talhao.area_ha || 0;
+    const sacas = r.mediaBienal != null ? r.mediaBienal * area : 0;
+
+    const produto = efetivo?.produto || r.produtoSugerido;
+    const dose = efetivo?.doseKgHa ?? r.doseProdutoHa;
+    if (produto) {
+      const id = produto.id;
+      const chave = `id:${id}`;
+      const doseTotal = dose != null ? dose * area : 0;
+      if (!mapa[chave]) mapa[chave] = { produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
+      mapa[chave].talhoes.push(r.talhao.nome);
+      mapa[chave].qtdTotal += doseTotal;
+      mapa[chave].areaTotal += area;
+      mapa[chave].sacasTotal += sacas;
+    }
+
+    const complementos = efetivo?.complementos || [];
+    for (const comp of complementos) {
+      if (!comp.produto?.id || !comp.doseKgHa) continue;
+      const id = comp.produto.id;
+      const chave = `id:${id}`;
+      const doseTotal = comp.doseKgHa * area;
+      if (!mapa[chave]) mapa[chave] = { produto: comp.produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
+      if (!mapa[chave].talhoes.includes(r.talhao.nome)) mapa[chave].talhoes.push(r.talhao.nome);
+      mapa[chave].qtdTotal += doseTotal;
+      mapa[chave].areaTotal += area;
+    }
+  });
+
+  const talhaoPorId = new Map((talhoes || []).map(t => [t.id, t]));
+  const calagensRecentes = listarCalagensRecentesPorTalhao({ calagens, talhoes, codigoProdutor, safra });
+  calagensRecentes.forEach(calagem => {
+    const doseKgHa = normalizarNumeroCalagem(calagem.dose_kg_ha);
+    if (doseKgHa == null || doseKgHa <= 0) return;
+    const produtoNome = (calagem.produto_nome || '').trim();
+    if (!produtoNome) return;
+
+    const talhao = talhaoPorId.get(calagem.talhao_id);
+    if (!talhao) return;
+    const { totalKg } = calcularDistribuicaoCalagem({
+      doseKgHa,
+      doseTotalKg: calagem.dose_total_kg,
+      talhao,
+    });
+    if (totalKg == null || totalKg <= 0) return;
+
+    const produtoId = (calagem.produto_id || '').trim();
+    const chave = produtoId ? `id:${produtoId}` : `nome:${normalizarChaveProdutoCalagem(produtoNome)}`;
+    if (!mapa[chave]) {
+      mapa[chave] = {
+        produto: { id: produtoId || chave, nome: produtoNome },
+        produtoId: produtoId || null,
+        produtoNome,
+        talhoes: [],
+        qtdTotal: 0,
+        areaTotal: 0,
+        sacasTotal: 0,
+        doseKgHa,
+        isCalagem: true,
+      };
+    }
+    if (!mapa[chave].talhoes.includes(talhao.nome)) mapa[chave].talhoes.push(talhao.nome);
+    mapa[chave].qtdTotal += totalKg;
+    mapa[chave].areaTotal += normalizarNumeroCalagem(talhao.area_ha) || 0;
+  });
+
+  return Object.values(mapa);
+}
+
+export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null }) {
+  const calagensRecentes = listarCalagensRecentesPorTalhao({ calagens, talhoes, codigoProdutor, safra });
+  const calagensMap = {};
+  calagensRecentes.forEach(calagem => { calagensMap[calagem.talhao_id] = calagem; });
+
+  const talhaoIds = new Set([
+    ...(resultados || []).filter(r => r.rec).map(r => r.talhao.id),
+    ...calagens.map(c => c.talhao_id),
+  ]);
+
+  return Array.from(talhaoIds).map(talhaoId => {
+    const resultado = (resultados || []).find(r => r.talhao.id === talhaoId);
+    const talhao = resultado?.talhao || talhoes.find(t => t.id === talhaoId);
+    if (!talhao) return null;
+
+    const area = normalizarNumeroCalagem(talhao.area_ha) || 0;
+    const numPlantas = normalizarNumeroCalagem(talhao.num_plantas) || 0;
+    const metros = calcularMetrosLinearesTalhao(talhao);
+    const linhas = [];
+
+    if (resultado?.rec) {
+      const rec = resultado.rec;
+      const efetivo = produtosEfetivos[talhaoId];
+      const produtoSalvo = resultado.produtoSugerido || null;
+      const doseSalva = resultado.doseProdutoHa || null;
+
+      let produtoPrincipal = efetivo?.produto || produtoSalvo;
+      let dosePrincipal = efetivo?.doseKgHa ?? doseSalva;
+
+      if (!produtoPrincipal && todos.length > 0 && sugerirProdutos) {
+        const sugestoes = sugerirProdutos(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
+        const sugN = sugestoes['n_pct'];
+        if (sugN?.produtoId) {
+          const prod = todos.find(p => p.id === sugN.produtoId);
+          if (prod) {
+            produtoPrincipal = prod;
+            const pctN = parseFloat(prod.n_pct) || 0;
+            dosePrincipal = pctN > 0 && rec.N != null ? Math.round((rec.N / (pctN / 100)) * 10) / 10 : null;
+          }
+        }
+      }
+
+      if (produtoPrincipal && dosePrincipal) {
+        const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
+        const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
+        const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+        linhas.push({ produtoNome: produtoPrincipal.nome, produtoId: produtoPrincipal.id, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['Principal'], isCalagem: false });
+      }
+
+      const complementos = efetivo?.complementos || [];
+      for (const comp of complementos) {
+        if (!comp.produto?.nome || !comp.doseKgHa) continue;
+        const totalKg = area > 0 ? Math.round(comp.doseKgHa * area) : null;
+        const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
+        const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+        const nutLabels = (comp.nutrientes || []).map(n => n.label).filter(Boolean);
+        linhas.push({ produtoNome: comp.produto.nome, produtoId: comp.produto.id, doseKgHa: comp.doseKgHa, totalKg, gPlanta, gMetro, nutLabels: nutLabels.length > 0 ? nutLabels : ['Complemento'], isCalagem: false });
+      }
+    }
+
+    const calagem = calagensMap[talhaoId];
+    const linhaCalagem = criarLinhaCalagemResumo(calagem, talhao);
+    if (linhaCalagem) linhas.push(linhaCalagem);
+
+    if (linhas.length === 0) return null;
+    return { talhao, linhas };
+  }).filter(Boolean);
 }

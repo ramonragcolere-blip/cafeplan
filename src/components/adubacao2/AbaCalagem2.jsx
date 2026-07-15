@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { ChevronDown, ChevronRight, Save, Loader2, Leaf } from 'lucide-react';
 import {
   NIVEIS_CALAGEM as NIVEIS,
+  atualizarListaCalagens,
   calcCalagemElevacao,
   calcCalagemVpct,
   calcularDistribuicaoCalagem,
@@ -15,6 +16,8 @@ import {
   lerDadosAnaliseCalagem,
   lerMetadadosCalagem,
   normalizarNumeroCalagem,
+  podeSalvarRecomendacaoCalagem,
+  precisaCorretivoParaCalagemPositiva,
   selecionarRegistroCalagem,
 } from '@/lib/calagemAdubacao2';
 
@@ -246,8 +249,11 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
       filaSalvamentoRef.current = tarefa;
       return tarefa;
     },
-    onSuccess: (res) => {
+    onSuccess: (res, dados) => {
       if (!registroId && res?.id) setRegistroId(res.id);
+      const registroAtualizado = { ...dados, ...(res || {}), id: res?.id || registroIdRef.current };
+      queryClient.setQueryData(['calagem_recomendacoes'], anteriores => atualizarListaCalagens(anteriores, registroAtualizado));
+      queryClient.setQueryData(['recomendacao_calagem', ctxKey], anteriores => atualizarListaCalagens(anteriores, registroAtualizado));
       queryClient.invalidateQueries({ queryKey: ['recomendacao_calagem', ctxKey] });
       queryClient.invalidateQueries({ queryKey: ['calagem_recomendacoes'] });
     },
@@ -281,9 +287,10 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
       ...calcularDistribuicaoCalagem({ doseKgHa: resultadoBase.doseFinalHa, doseTotalKg: resultadoBase.totalKg, talhao }),
     };
   }, [resultadoBase, talhao]);
+  const precisaCorretivoParaSalvar = precisaCorretivoParaCalagemPositiva({ doseKgHa: resultado?.doseFinalHa, produto });
 
   const handleSalvar = () => {
-    if (!resultado || resultado.doseFinalHa == null) return;
+    if (!podeSalvarRecomendacaoCalagem({ resultado, produto })) return;
     salvar({
       codigo_produtor: codigoProdutor, safra,
       talhao_id: talhaoId,
@@ -426,6 +433,12 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
 
                   <SeletorCorretivo produto={produto} corretivos={corretivos} onChange={setProdutoId} />
 
+                  {precisaCorretivoParaSalvar && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium">
+                      Selecione o corretivo para salvar e enviar às compras.
+                    </div>
+                  )}
+
                   {resultadoElevacao?.incompleto && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
                       Informe Ca e Mg na análise 0-20 cm para calcular a elevação por bases trocáveis.
@@ -453,12 +466,12 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                           <span className="font-normal text-muted-foreground ml-1">(nutriente mais limitante)</span>
                         </div>
                       </div>
-                      <CardsResultado resultado={resultadoElevacao} />
+                      <CardsResultado resultado={resultado} />
                     </div>
                   )}
 
                   <div className="flex justify-end">
-                    <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null} className="gap-2">
+                    <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null || precisaCorretivoParaSalvar} className="gap-2">
                       {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       Salvar
                     </Button>
@@ -519,6 +532,12 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
 
                       <SeletorCorretivo produto={produto} corretivos={corretivos} onChange={setProdutoId} />
 
+                      {precisaCorretivoParaSalvar && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium">
+                          Selecione o corretivo para salvar e enviar às compras.
+                        </div>
+                      )}
+
                       {v2 !== '' && (
                         <div className="bg-muted/30 rounded-xl p-2.5 text-xs text-muted-foreground font-mono space-y-0.5">
                           <div>NC = CTC × (V2 − V1) / 100 × (100 / PRNT)</div>
@@ -544,7 +563,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                             <div>PRNT: <strong>{prntEfetivo}%</strong></div>
                             <div className="font-semibold text-lime-800">Dose recomendada: {resultadoVpct.doseFinalHa} kg/ha</div>
                           </div>
-                          <CardsResultado resultado={resultadoVpct} />
+                          <CardsResultado resultado={resultado} />
                         </div>
                       )}
 
@@ -553,7 +572,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                       )}
 
                       <div className="flex justify-end">
-                        <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null} className="gap-2">
+                        <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null || precisaCorretivoParaSalvar} className="gap-2">
                           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                           Salvar
                         </Button>

@@ -19,6 +19,7 @@ import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
+import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
 import {
   classificarExtracaoAnaliseSolo,
   criarControladorGravacaoAnalise,
@@ -186,8 +187,17 @@ function ImportarManual2040({ talhao, analise2040Existente, onSalvar, onClose })
 }
 
 // ── Aba Consolidação de Compras ────────────────────────────────────────────────
-function AbaCompras2({ resultados, produtosEfetivos = {} }) {
-  if (!resultados || resultados.length === 0) {
+function AbaCompras2({ resultados, produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor, safra }) {
+  const linhas = useMemo(() => consolidarComprasAdubacao2({
+    resultados,
+    produtosEfetivos,
+    calagens,
+    talhoes,
+    codigoProdutor,
+    safra,
+  }), [resultados, produtosEfetivos, calagens, talhoes, codigoProdutor, safra]);
+
+  if (linhas.length === 0 && (!resultados || resultados.length === 0) && (!calagens || calagens.length === 0)) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
         Clique em "Calcular recomendação para todos" na aba Análises para gerar a consolidação.
@@ -195,40 +205,6 @@ function AbaCompras2({ resultados, produtosEfetivos = {} }) {
     );
   }
 
-  // Agrega por produto (principal + complementares)
-  const mapa = {};
-  resultados.forEach(r => {
-    const efetivo = produtosEfetivos[r.talhao.id];
-    const area = r.talhao.area_ha || 0;
-    const sacas = r.mediaBienal != null ? r.mediaBienal * area : 0;
-
-    // Produto principal
-    const produto = efetivo?.produto || r.produtoSugerido;
-    const dose = efetivo?.doseKgHa ?? r.doseProdutoHa;
-    if (produto) {
-      const id = produto.id;
-      const doseTotal = dose != null ? dose * area : 0;
-      if (!mapa[id]) mapa[id] = { produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
-      mapa[id].talhoes.push(r.talhao.nome);
-      mapa[id].qtdTotal += doseTotal;
-      mapa[id].areaTotal += area;
-      mapa[id].sacasTotal += sacas;
-    }
-
-    // Complementares salvos
-    const complementos = efetivo?.complementos || [];
-    for (const comp of complementos) {
-      if (!comp.produto?.id || !comp.doseKgHa) continue;
-      const id = comp.produto.id;
-      const doseTotal = comp.doseKgHa * area;
-      if (!mapa[id]) mapa[id] = { produto: comp.produto, talhoes: [], qtdTotal: 0, areaTotal: 0, sacasTotal: 0 };
-      if (!mapa[id].talhoes.includes(r.talhao.nome)) mapa[id].talhoes.push(r.talhao.nome);
-      mapa[id].qtdTotal += doseTotal;
-      mapa[id].areaTotal += area;
-    }
-  });
-
-  const linhas = Object.values(mapa);
   if (linhas.length === 0) return (
     <div className="text-center py-12 text-muted-foreground text-sm">
       Nenhum produto sugerido para consolidar.
@@ -248,7 +224,7 @@ function AbaCompras2({ resultados, produtosEfetivos = {} }) {
         </thead>
         <tbody>
           {linhas.map((l, i) => (
-            <tr key={l.produto.id} className={`border-b border-border/50 last:border-0 ${i%2===0?'':'bg-muted/5'}`}>
+            <tr key={l.produto.id || `${l.produto.nome}-${i}`} className={`border-b border-border/50 last:border-0 ${i%2===0?'':'bg-muted/5'} ${l.isCalagem ? 'bg-amber-50/60' : ''}`}>
               <td className="px-4 py-3 font-medium">{l.produto.nome}</td>
               <td className="px-4 py-3 text-xs text-muted-foreground">{l.talhoes.join(', ')}</td>
               <td className="px-4 py-3 text-right tabular-nums">{l.qtdTotal > 0 ? Math.round(l.qtdTotal).toLocaleString('pt-BR') : '—'}</td>
@@ -1025,7 +1001,15 @@ export default function Adubacao2() {
               </Button>
             )}
           </div>
-          <AbaCompras2 resultados={resultadosCalculo} dosesEditadas={dosesEditadas} produtosEfetivos={produtosEfetivosExterno} />
+          <AbaCompras2
+            resultados={resultadosCalculo}
+            dosesEditadas={dosesEditadas}
+            produtosEfetivos={produtosEfetivosExterno}
+            calagens={calagensProdutor}
+            talhoes={talhoes}
+            codigoProdutor={produtor?.codigo}
+            safra={safra}
+          />
         </div>
       )}
 
