@@ -4,6 +4,13 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, Filter, X } from 'lucide-react';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import {
+  filtrarProdutosPlanejamento,
+  listarNutrientesNaoAtendidos,
+  montarLinhasProdutos,
+  montarProdutosEfetivosPlanejamento,
+  origemProdutoCatalogoLabel,
+} from '@/lib/planejamentoProdutosAdubacao2';
+import {
   TODOS_ELEMENTOS_GRID, calcMicros, classBadgeColor, fmt, fmtR,
   ResumoParcelamento, EditorParcelamento, DropdownTrocarProduto, StatusBadgePlan,
 } from '@/components/adubacao2/PainelTalhaoHelpers';
@@ -12,176 +19,6 @@ import {
   criarMarcacoesPadrao,
   listarElementosManuaisMarcados,
 } from '@/lib/planejamentoAdubacao2';
-
-const KEY_PARA_LABEL = { n_pct: 'N', k2o_pct: 'K₂O', p2o5_pct: 'P₂O₅', b_pct: 'B' };
-
-/** Monta lista de linhas de produto.
- *  complementosSalvos = [{ produto: {id,nome}, doseKgHa, nutKey }] — quando presente, pula cascata automática.
- *  produtoSalvo fixado como Principal; trocas = { [nutKey]: produtoId } — sobrescritas manuais.
- */
-function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null) {
-  const _recOrig = recOriginal || rec;
-  if (!rec || !todos.length) return [];
-
-  // ── Caso 1: produto salvo fixado como principal ─────────────────────────
-  if (produtoSalvo) {
-    const principal = todos.find(p => p.id === produtoSalvo.id) || produtoSalvo;
-    const doseKgHa = trocas['n_pct']
-      ? (() => {
-          // usuário trocou o principal; recalcula dose
-          const sub = todos.find(p => p.id === trocas['n_pct']);
-          if (!sub) return doseSalva;
-          const pct = parseFloat(sub.n_pct) || 0;
-          return pct > 0 && rec.N != null ? Math.round((rec.N / (pct / 100)) * 10) / 10 : doseSalva;
-        })()
-      : (doseSalva ?? (() => {
-          const pct = parseFloat(principal.n_pct) || 0;
-          return pct > 0 && rec.N != null ? Math.round((rec.N / (pct / 100)) * 10) / 10 : null;
-        })());
-
-    const prodPrincipal = trocas['n_pct'] ? (todos.find(p => p.id === trocas['n_pct']) || principal) : principal;
-
-    // Nutrientes fornecidos pelo principal
-    const fornecidoPelo = (prod, dose) => ({
-      N: (parseFloat(prod.n_pct)    || 0) / 100 * (dose || 0),
-      P: (parseFloat(prod.p2o5_pct) || 0) / 100 * (dose || 0),
-      K: (parseFloat(prod.k2o_pct)  || 0) / 100 * (dose || 0),
-      B: (parseFloat(prod.b_pct)    || 0) / 100 * (dose || 0),
-    });
-
-    const nutrientesPrincipal = [];
-    const cobertos = fornecidoPelo(prodPrincipal, doseKgHa);
-    if ((parseFloat(prodPrincipal.n_pct) || 0) > 0 && rec.N)    nutrientesPrincipal.push({ label: 'N',    fornecido: cobertos.N });
-    if ((parseFloat(prodPrincipal.p2o5_pct) || 0) > 0 && rec.P) nutrientesPrincipal.push({ label: 'P₂O₅', fornecido: cobertos.P });
-    if ((parseFloat(prodPrincipal.k2o_pct) || 0) > 0 && rec.K)  nutrientesPrincipal.push({ label: 'K₂O', fornecido: cobertos.K });
-    if ((parseFloat(prodPrincipal.b_pct) || 0) > 0 && rec.B)    nutrientesPrincipal.push({ label: 'B',    fornecido: cobertos.B });
-
-    const mapa = {};
-    mapa[prodPrincipal.id] = { produto: prodPrincipal, nutrientes: nutrientesPrincipal, ehPrincipal: true, nutKey: 'n_pct', doseKgHa };
-
-    // Complementos: usa salvos do banco se disponíveis, senão cascata automática
-    if (complementosSalvos && complementosSalvos.length > 0) {
-      // Restaura complementos exatamente como foram salvos
-      for (const comp of complementosSalvos) {
-        if (comp.isManualExtra) continue; // extras manuais são gerenciados separadamente
-        if (!comp.produto?.id || comp.produto.id === prodPrincipal.id) continue;
-        const prodComp = todos.find(p => p.id === comp.produto.id) || comp.produto;
-        const prodId = trocas[comp.nutKey] ? todos.find(p => p.id === trocas[comp.nutKey]) : prodComp;
-        const prodFinal = prodId || prodComp;
-        if (mapa[prodFinal.id]) continue;
-        mapa[prodFinal.id] = {
-          produto: prodFinal,
-          nutrientes: comp.nutrientes || [],
-          ehPrincipal: false,
-          nutKey: comp.nutKey,
-          doseKgHa: comp.doseKgHa,
-        };
-      }
-
-      // Após restaurar os salvos, calcula residual para nutrientes ainda não cobertos
-      const fornecidoTotal = { N: 0, P: 0, K: 0, B: 0 };
-      Object.values(mapa).forEach(l => {
-        const d = l.doseKgHa || 0;
-        const prod = l.produto;
-        fornecidoTotal.N += d * ((parseFloat(prod.n_pct)    || 0) / 100);
-        fornecidoTotal.P += d * ((parseFloat(prod.p2o5_pct) || 0) / 100);
-        fornecidoTotal.K += d * ((parseFloat(prod.k2o_pct)  || 0) / 100);
-        fornecidoTotal.B += d * ((parseFloat(prod.b_pct)    || 0) / 100);
-      });
-      const recResidual = {
-        N: Math.max(0, (rec.N || 0) - fornecidoTotal.N),
-        P: Math.max(0, (rec.P || 0) - fornecidoTotal.P),
-        K: Math.max(0, (rec.K || 0) - fornecidoTotal.K),
-        B: Math.max(0, (rec.B || 0) - fornecidoTotal.B),
-      };
-      const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
-      if (temResidual) {
-        const sugestoesResidual = sugerirProdutosInteligente(todos, recResidual, _recOrig);
-        for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
-          if (!sug?.produtoId) continue;
-          const prodId = trocas[nutKey] || sug.produtoId;
-          const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
-          if (!prod || mapa[prod.id]) continue;
-          const pct = parseFloat(prod[nutKey]) || 0;
-          const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
-          const nutKey2 = nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo;
-          const nutResidual = recResidual[nutKey2] || 0;
-          if (pct > 0 && nutResidual > 1) {
-            const doseComp = Math.round((nutResidual / (pct / 100)) * 10) / 10;
-            const forn = doseComp * (pct / 100);
-            mapa[prod.id] = {
-              produto: prod,
-              nutrientes: [{ label: nutSimbolo, fornecido: forn }],
-              ehPrincipal: false,
-              nutKey,
-              doseKgHa: doseComp,
-            };
-          }
-        }
-      }
-    } else {
-      // Cascata automática — rec residual
-      const recResidual = {
-        N: Math.max(0, (rec.N || 0) - cobertos.N),
-        P: Math.max(0, (rec.P || 0) - cobertos.P),
-        K: Math.max(0, (rec.K || 0) - cobertos.K),
-        B: Math.max(0, (rec.B || 0) - cobertos.B),
-      };
-      const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
-      if (temResidual) {
-        const sugestoesResidual = sugerirProdutosInteligente(todos, { N: recResidual.N, P: recResidual.P, K: recResidual.K, B: recResidual.B }, rec);
-        for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
-          if (!sug?.produtoId) continue;
-          const prodId = trocas[nutKey] || sug.produtoId;
-          if (prodId === prodPrincipal.id) continue;
-          const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
-          if (!prod || prod.id === prodPrincipal.id) continue;
-          const pct = parseFloat(prod[nutKey]) || 0;
-          const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
-          const nutResidual = recResidual[nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo] || 0;
-          if (pct > 0 && nutResidual > 1) {
-            const doseComp = Math.round((nutResidual / (pct / 100)) * 10) / 10;
-            const forn = doseComp * (pct / 100);
-            if (!mapa[prod.id]) {
-              mapa[prod.id] = { produto: prod, nutrientes: [], ehPrincipal: false, nutKey, doseKgHa: doseComp };
-            }
-            mapa[prod.id].nutrientes.push({ label: nutSimbolo, fornecido: forn });
-          }
-        }
-      }
-    }
-
-    return Object.values(mapa);
-  }
-
-  // ── Caso 2: sem produto salvo — sugestão automática completa ────────────
-  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, rec);
-  const principalId = trocas['n_pct'] || sugestoes['n_pct']?.produtoId || null;
-
-  const mapa = {};
-  for (const [nutKey, sug] of Object.entries(sugestoes)) {
-    if (!sug?.produtoId) continue;
-    const prodId = trocas[nutKey] || sug.produtoId;
-    const prod = todos.find(p => p.id === prodId) || todos.find(p => p.id === sug.produtoId);
-    if (!prod) continue;
-    if (!mapa[prod.id]) {
-      mapa[prod.id] = { produto: prod, nutrientes: [], ehPrincipal: prod.id === principalId, nutKey };
-    }
-    const pct = parseFloat(prod[nutKey]) || 0;
-    const nutSimbolo = KEY_PARA_LABEL[nutKey] || nutKey;
-    const nutRec = rec[nutSimbolo === 'K₂O' ? 'K' : nutSimbolo === 'P₂O₅' ? 'P' : nutSimbolo] || 0;
-    if (pct > 0 && nutRec > 0) {
-      const doseKgHa = Math.round((nutRec / (pct / 100)) * 10) / 10;
-      const fornecido = doseKgHa * (pct / 100);
-      mapa[prod.id].nutrientes.push({ label: nutSimbolo, fornecido });
-      if (!mapa[prod.id].doseKgHa || nutKey === 'n_pct') {
-        mapa[prod.id].doseKgHa = doseKgHa;
-      }
-    }
-  }
-
-  return Object.values(mapa);
-}
 
 // ── Editor de Parcelamento / Dropdown de troca — importados de PainelTalhaoHelpers ──
 
@@ -392,7 +229,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
         </thead>
         <tbody>
           {(linhas || []).map(linha => {
-            const { produto, nutrientes, ehPrincipal, doseKgHa, nutKey } = linha;
+            const { produto, nutrientes, ehPrincipal, doseKgHa, nutKey, origemUso } = linha;
             const preco = precos?.[produto.id];
             const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
             const custoHa = precoNum != null && doseKgHa != null ? precoNum * doseKgHa : null;
@@ -408,6 +245,10 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
                   <td className="px-3 py-2 font-medium whitespace-nowrap max-w-[180px]">
                     <div className="flex flex-col gap-0.5">
                       <span className="truncate max-w-[160px]">{produto.nome}</span>
+                      <span className="flex flex-wrap gap-1">
+                        <span className="text-[9px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">{origemUso || 'Produto sugerido'}</span>
+                        <span className="text-[9px] bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded">{origemProdutoCatalogoLabel(produto)}</span>
+                      </span>
                       {/* CORREÇÃO 2: botão Trocar */}
                       {onTrocarProduto && nutKey && (
                         <DropdownTrocarProduto todos={todos} onTrocar={p => onTrocarProduto(nutKey, p)} />
@@ -565,6 +406,8 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     const doseSalva = resultado.doseProdutoHa ?? null;
     return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, complementosSalvos || null);
   }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, complementosSalvos]);
+
+  const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
 
   // Elementos manuais: micronutrientes e nutrientes cuja recomendação automática é zero.
   const elementosExtrasMarcados = useMemo(() => {
@@ -740,6 +583,11 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
       {rec && (
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Produtos Recomendados</p>
+          {nutrientesNaoAtendidos.length > 0 && (
+            <div className="mb-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              Nutrientes não atendidos pelo filtro atual: {nutrientesNaoAtendidos.join(', ')}.
+            </div>
+          )}
           <TabelaProdutos
             linhas={linhasProdutos}
             area={area}
@@ -778,7 +626,6 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
 }
 
 // ── Filtro global de Fornecedor / Produto ─────────────────────────────────────
-// CORREÇÃO 5: produtos sem fornecedor sempre incluídos na sugestão
 
 function FiltroProdutosGlobal({ todos, filtro, onChange }) {
   const [dropFornAberto, setDropFornAberto] = useState(false);
@@ -795,18 +642,7 @@ function FiltroProdutosGlobal({ todos, filtro, onChange }) {
     return Array.from(set).sort();
   }, [todos]);
 
-  const produtosFiltrados = useMemo(() => {
-    return todos
-      .filter(p => {
-        const temNPK = (parseFloat(p.n_pct) || 0) > 0 ||
-                       (parseFloat(p.p2o5_pct) || 0) > 0 ||
-                       (parseFloat(p.k2o_pct) || 0) > 0;
-        if (!temNPK) return false;
-        if (filtro.fornecedores.length > 0 && !filtro.fornecedores.includes(p.fornecedor)) return false;
-        return true;
-      })
-      .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
-  }, [todos, filtro.fornecedores]);
+  const produtosFiltrados = useMemo(() => filtrarProdutosPlanejamento(todos, filtro), [todos, filtro]);
 
   useEffect(() => {
     if (!dropFornAberto) return;
@@ -821,78 +657,96 @@ function FiltroProdutosGlobal({ todos, filtro, onChange }) {
     const novosForn = filtro.fornecedores.includes(f)
       ? filtro.fornecedores.filter(x => x !== f)
       : [...filtro.fornecedores, f];
-    onChange({ fornecedores: novosForn, produtoId: '' });
+    onChange({ ...filtro, fornecedores: novosForn, produtoId: '' });
   };
 
   const handleProduto = (v) => {
     onChange({ ...filtro, produtoId: v === '__todos__' ? '' : v });
   };
 
-  const limpar = () => onChange({ fornecedores: [], produtoId: '' });
-  const temFiltro = filtro.fornecedores.length > 0 || filtro.produtoId;
+  const toggleFontesSemFornecedor = () => {
+    onChange({ ...filtro, produtoId: '', incluirFontesSemFornecedor: !filtro.incluirFontesSemFornecedor });
+  };
+
+  const limpar = () => onChange({ fornecedores: [], produtoId: '', incluirFontesSemFornecedor: false });
+  const temFiltro = filtro.fornecedores.length > 0 || filtro.produtoId || filtro.incluirFontesSemFornecedor;
+  const semProdutos = produtosFiltrados.length === 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-1 py-2">
-      <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-        <Filter className="w-3.5 h-3.5" /> Filtrar sugestão automática (N/P/K):
-      </span>
+    <div className="space-y-2 px-1 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+          <Filter className="w-3.5 h-3.5" /> Filtrar sugestão automática:
+        </span>
 
-      <div ref={dropRef} className="relative">
-        <button type="button" onClick={() => setDropFornAberto(a => !a)}
-          className="h-7 text-xs border border-input rounded px-2 bg-background flex items-center gap-1 min-w-[140px] max-w-[280px] hover:bg-muted/30">
-          {filtro.fornecedores.length === 0 ? (
-            <span className="text-muted-foreground truncate">Todos fornecedores</span>
-          ) : (
-            <span className="flex flex-wrap gap-1 overflow-hidden max-h-5">
-              {filtro.fornecedores.map(f => (
-                <span key={f} className="inline-flex items-center gap-0.5 bg-primary/10 text-primary rounded px-1 text-[10px] font-medium shrink-0">
+        <div ref={dropRef} className="relative">
+          <button type="button" onClick={() => setDropFornAberto(a => !a)}
+            className="h-7 text-xs border border-input rounded px-2 bg-background flex items-center gap-1 min-w-[140px] max-w-[280px] hover:bg-muted/30">
+            {filtro.fornecedores.length === 0 ? (
+              <span className="text-muted-foreground truncate">Todos fornecedores</span>
+            ) : (
+              <span className="flex flex-wrap gap-1 overflow-hidden max-h-5">
+                {filtro.fornecedores.map(f => (
+                  <span key={f} className="inline-flex items-center gap-0.5 bg-primary/10 text-primary rounded px-1 text-[10px] font-medium shrink-0">
+                    {f}
+                    <span role="button"
+                      onMouseDown={e => { e.stopPropagation(); e.preventDefault(); toggleFornecedor(f); }}
+                      className="hover:text-destructive cursor-pointer leading-none">x</span>
+                  </span>
+                ))}
+              </span>
+            )}
+            <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto shrink-0" />
+          </button>
+          {dropFornAberto && (
+            <div className="absolute z-50 top-full left-0 mt-1 min-w-[200px] bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+              {fornecedores.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum fornecedor cadastrado</p>
+              ) : fornecedores.map(f => (
+                <button key={f} type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => toggleFornecedor(f)}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 flex items-center gap-2">
+                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${filtro.fornecedores.includes(f) ? 'bg-primary border-primary text-white' : 'border-input'}`}>
+                    {filtro.fornecedores.includes(f) && <span className="text-[8px] leading-none font-bold">✓</span>}
+                  </span>
                   {f}
-                  <span role="button"
-                    onMouseDown={e => { e.stopPropagation(); e.preventDefault(); toggleFornecedor(f); }}
-                    className="hover:text-destructive cursor-pointer leading-none">✕</span>
-                </span>
+                </button>
               ))}
-            </span>
+            </div>
           )}
-          <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto shrink-0" />
-        </button>
-        {dropFornAberto && (
-          <div className="absolute z-50 top-full left-0 mt-1 min-w-[200px] bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
-            {fornecedores.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum fornecedor cadastrado</p>
-            ) : fornecedores.map(f => (
-              <button key={f} type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => toggleFornecedor(f)}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/60 flex items-center gap-2">
-                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${filtro.fornecedores.includes(f) ? 'bg-primary border-primary text-white' : 'border-input'}`}>
-                  {filtro.fornecedores.includes(f) && <span className="text-[8px] leading-none font-bold">✓</span>}
-                </span>
-                {f}
-              </button>
-            ))}
-          </div>
+        </div>
+
+        <select value={filtro.produtoId || '__todos__'} onChange={e => handleProduto(e.target.value)}
+          className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[220px]">
+          <option value="__todos__">Todos produtos</option>
+          {produtosFiltrados.map(p => (
+            <option key={p.id} value={p.id}>{p.nome}</option>
+          ))}
+        </select>
+
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+          <input type="checkbox" checked={!!filtro.incluirFontesSemFornecedor} onChange={toggleFontesSemFornecedor}
+            className="w-3.5 h-3.5 rounded accent-primary" />
+          Incluir fontes simples sem fornecedor
+        </label>
+
+        {temFiltro && (
+          <button type="button" onClick={limpar}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive underline">
+            <X className="w-3 h-3" /> Limpar filtro
+          </button>
         )}
+
+        <span className={`text-[10px] font-medium ${semProdutos ? 'text-destructive' : 'text-muted-foreground'}`}>
+          {produtosFiltrados.length} produto(s) disponível(is)
+        </span>
       </div>
 
-      <select value={filtro.produtoId || '__todos__'} onChange={e => handleProduto(e.target.value)}
-        className="h-7 text-xs border border-input rounded px-2 bg-background text-foreground max-w-[220px]">
-        <option value="__todos__">Todos produtos</option>
-        {produtosFiltrados.map(p => (
-          <option key={p.id} value={p.id}>{p.nome}</option>
-        ))}
-      </select>
-
-      {temFiltro && (
-        <button type="button" onClick={limpar}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive underline">
-          <X className="w-3 h-3" /> Limpar filtro
-        </button>
-      )}
-      {filtro.fornecedores.length > 0 && (
-        <span className="text-[10px] text-muted-foreground italic">
-          (fontes simples sem fornecedor sempre incluídas)
-        </span>
+      {semProdutos && (
+        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded px-3 py-2">
+          Nenhum produto atende ao filtro atual. O recálculo não usará produtos fora do filtro.
+        </div>
       )}
     </div>
   );
@@ -933,13 +787,26 @@ function MenuAcoes({ onRecalcular, onLimpar }) {
   );
 }
 
+function seletorPoliticaRecalculo(valor, onChange) {
+  return (
+    <select value={valor} onChange={e => onChange(e.target.value)}
+      className="h-8 text-xs border border-input rounded px-2 bg-background text-foreground">
+      <option value="manter">Manter produtos salvos</option>
+      <option value="substituir">Substituir salvos pelo filtro atual</option>
+    </select>
+  );
+}
+
 // ── Componente principal ───────────────────────────────────────────────────────
 
 export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos, precosNotasMap }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
-  const [filtro, setFiltro] = useState({ fornecedores: [], produtoId: '' });
+  const [filtro, setFiltro] = useState({ fornecedores: [], produtoId: '', incluirFontesSemFornecedor: false });
+  const [politicaRecalculo, setPoliticaRecalculo] = useState('manter');
+  const [produtosCalculo, setProdutosCalculo] = useState(() => todos || []);
+  const [filtroPendente, setFiltroPendente] = useState(false);
   // Estado de trocas, marcados e extras manuais por talhão — persistidos no banco
   const [trocasPorTalhao, setTrocasPorTalhao] = useState({});
   const [marcadosPorTalhao, setMarcadosPorTalhao] = useState({});
@@ -948,6 +815,17 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const handleExtrasChange = useCallback((talhaoId, extras) => {
     setExtrasPorTalhao(prev => ({ ...prev, [talhaoId]: extras }));
   }, []);
+
+  useEffect(() => {
+    if (resultados) return;
+    setFiltro({ fornecedores: [], produtoId: '', incluirFontesSemFornecedor: false });
+    setPoliticaRecalculo('manter');
+    setProdutosCalculo(todos || []);
+    setFiltroPendente(false);
+    setTrocasPorTalhao({});
+    setMarcadosPorTalhao({});
+    setExtrasPorTalhao({});
+  }, [resultados, todos]);
 
   const toggleExpand = (id) => setExpandidos(prev => {
     const next = new Set(prev);
@@ -958,19 +836,26 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const expandirTodos = () => setExpandidos(new Set((resultados || []).map(r => r.talhao.id)));
   const recolherTodos = () => setExpandidos(new Set());
 
-  // CORREÇÃO 5: produtos sem fornecedor são sempre incluídos na sugestão automática
-  const todosFiltered = useMemo(() => {
-    if (filtro.fornecedores.length === 0 && !filtro.produtoId) return todos;
-    return todos.filter(p => {
-      if (filtro.produtoId) return p.id === filtro.produtoId;
-      if (filtro.fornecedores.length > 0) {
-        // sem fornecedor = sempre incluir (fontes simples como Ureia, KCl)
-        if (!p.fornecedor) return true;
-        return filtro.fornecedores.includes(p.fornecedor);
-      }
-      return true;
-    });
-  }, [todos, filtro]);
+  const todosFiltered = useMemo(() => filtrarProdutosPlanejamento(todos, filtro), [todos, filtro]);
+
+  const handleFiltroChange = useCallback((next) => {
+    setFiltro(next);
+    setFiltroPendente(true);
+  }, []);
+
+  const handleRecalcularComFiltro = useCallback(() => {
+    const substituirSalvos = politicaRecalculo === 'substituir';
+    if (todosFiltered.length === 0) return;
+    if (substituirSalvos) {
+      setTrocasPorTalhao({});
+      setMarcadosPorTalhao({});
+      setExtrasPorTalhao({});
+      onProdutosEfetivosChange?.({});
+    }
+    setProdutosCalculo(todosFiltered);
+    setFiltroPendente(false);
+    onRecalcular(todosFiltered, { substituirSalvos });
+  }, [onRecalcular, onProdutosEfetivosChange, politicaRecalculo, todosFiltered]);
 
   // Sincroniza quando o pai restaura preços/parcelamentos/trocas/marcados do banco
   // Merge por chave: só preenche chaves ainda ausentes no estado local
@@ -1084,91 +969,25 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   // Expõe trocas, marcados e complementos calculados para o pai usar no handleSalvarTudo
   useEffect(() => {
     if (!onProdutosEfetivosChange || !resultados) return;
-    // Reusa lógica existente mas também agrega complementos
     const idsSalvos = new Set((registrosSalvos || []).map(r => r.talhao_id));
     const pendente = resultados.some(r =>
       r.rec && idsSalvos.has(r.talhao.id) && r.temRegistroSalvo && !r.produtoSugerido && r.doseProdutoHa == null
     );
     if (pendente && todos.length === 0) return;
 
-    const mapa = {};
-    resultados.forEach(r => {
-      if (!r.rec) return;
-      const trocas = trocasPorTalhao[r.talhao.id] || {};
-      const marcados = marcadosPorTalhao[r.talhao.id] || null;
-      const recFiltrado = { ...r.rec };
-      if (marcados) {
-        if (!marcados['N']) delete recFiltrado.N;
-        if (!marcados['P']) delete recFiltrado.P;
-        if (!marcados['K']) delete recFiltrado.K;
-        if (!marcados['B']) delete recFiltrado.B;
-      }
-
-      let produto = r.produtoSugerido || null;
-      let doseKgHa = r.doseProdutoHa ?? null;
-
-      if (!produto && !idsSalvos.has(r.talhao.id) && todosFiltered.length > 0) {
-        const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: recFiltrado.N, P: recFiltrado.P, K: recFiltrado.K, B: recFiltrado.B }, r.rec);
-        const sugN = sugestoes['n_pct'];
-        if (sugN?.produtoId) {
-          const prod = todosFiltered.find(p => p.id === sugN.produtoId);
-          if (prod) {
-            produto = prod;
-            const pctN = parseFloat(prod.n_pct) || 0;
-            doseKgHa = pctN > 0 && r.rec.N != null ? Math.round((r.rec.N / (pctN / 100)) * 10) / 10 : null;
-          }
-        }
-        }
-        if (!produto && idsSalvos.has(r.talhao.id)) return;
-
-        // Calcula complementos para persistir
-        const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
-        const linhas = montarLinhasProdutos(todosFiltered, recFiltrado, trocas, produto, doseKgHa, compsSalvos, r.rec);
-
-        // Sobrescreve produto/dose com a linha principal calculada (captura trocas manuais)
-        const linhaPrincipalCalculada = linhas.find(l => l.ehPrincipal);
-        if (linhaPrincipalCalculada) {
-          produto = linhaPrincipalCalculada.produto;
-          doseKgHa = linhaPrincipalCalculada.doseKgHa;
-        }
-
-      const complementos = linhas.filter(l => !l.ehPrincipal).map(l => ({
-        produto: { id: l.produto.id, nome: l.produto.nome },
-        doseKgHa: l.doseKgHa,
-        nutKey: l.nutKey,
-        nutrientes: l.nutrientes,
-      }));
-
-      // Inclui extras manuais (Zn, Cu, Mn, etc.) nos complementos para persistência
-      const extrasT = extrasPorTalhao[r.talhao.id] || {};
-      Object.entries(extrasT).forEach(([key, data]) => {
-        const doseExtra = Number(data?.doseKgHa);
-        if (data?.produtoId && Number.isFinite(doseExtra) && doseExtra > 0) {
-          const prod = todosFiltered.find(p => p.id === data.produtoId) || todos.find(p => p.id === data.produtoId);
-          if (prod && !complementos.some(c => c.produto.id === prod.id)) {
-            complementos.push({
-              produto: { id: prod.id, nome: prod.nome },
-              doseKgHa: doseExtra,
-              nutKey: key,
-              nutrientes: [],
-              isManualExtra: true,
-            });
-          }
-        }
-      });
-
-      if (produto || complementos.length > 0) {
-        mapa[r.talhao.id] = {
-          produto,
-          doseKgHa,
-          complementos,
-          trocas,
-          marcados: marcados || criarMarcacoesPadrao(r.rec, TODOS_ELEMENTOS_GRID),
-        };
-      }
+    const mapa = montarProdutosEfetivosPlanejamento({
+      resultados,
+      registrosSalvos,
+      todosFiltrados: produtosCalculo,
+      todosCatalogo: todos,
+      trocasPorTalhao,
+      marcadosPorTalhao,
+      extrasPorTalhao,
+      criarMarcacoesPadraoFn: criarMarcacoesPadrao,
+      elementos: TODOS_ELEMENTOS_GRID,
     });
     onProdutosEfetivosChange(mapa);
-  }, [todosFiltered, resultados, registrosSalvos, todos.length, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao]);
+  }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao]);
 
   const metricas = useMemo(() => {
     if (!resultados || resultados.length === 0) return null;
@@ -1182,7 +1001,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
 
     comRec.forEach(r => {
       const area = r.talhao.area_ha || 0;
-      const linhas = montarLinhasProdutos(todosFiltered, r.rec);
+      const linhas = montarLinhasProdutos(produtosCalculo, r.rec);
       linhas.forEach(l => {
         const preco = precos[l.produto.id];
         const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
@@ -1208,13 +1027,17 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       custoHaMedio: custoFazendaHaCount > 0 ? custoFazendaHaSum / custoFazendaHaCount : null,
       custoSaca,
     };
-  }, [resultados, todos, precos]);
+  }, [resultados, produtosCalculo, precos]);
 
   if (!resultados || resultados.length === 0) {
     return (
       <div className="p-6 space-y-4">
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={() => onRecalcular(todosFiltered)}>
+        <div className="bg-card border border-border rounded-xl px-4 py-2">
+          <FiltroProdutosGlobal todos={todos} filtro={filtro} onChange={handleFiltroChange} />
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {seletorPoliticaRecalculo(politicaRecalculo, setPoliticaRecalculo)}
+          <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando || todosFiltered.length === 0} onClick={handleRecalcularComFiltro}>
             {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Recalcular todos
           </Button>
@@ -1236,7 +1059,8 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     <div className="p-5 space-y-5">
       {/* 1. Barra de botões */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando} onClick={() => onRecalcular(todosFiltered)}>
+        {seletorPoliticaRecalculo(politicaRecalculo, setPoliticaRecalculo)}
+        <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando || todosFiltered.length === 0} onClick={handleRecalcularComFiltro}>
           {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
           Recalcular todos
         </Button>
@@ -1261,7 +1085,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
 
       {/* 3. Filtro de fornecedor/produto */}
       <div className="bg-card border border-border rounded-xl px-4 py-2">
-        <FiltroProdutosGlobal todos={todos} filtro={filtro} onChange={setFiltro} />
+        <FiltroProdutosGlobal todos={todos} filtro={filtro} onChange={handleFiltroChange} />
+        {filtroPendente && (
+          <p className="px-1 pb-2 text-[10px] text-amber-700">
+            Filtro alterado. Clique em Recalcular todos para aplicar aos produtos recomendados.
+          </p>
+        )}
       </div>
 
       {/* 4. Tabela */}
@@ -1306,11 +1135,11 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                     produtoCarregando = todos.length === 0;
                   } else {
                     // Sem registro salvo: usa sugestão automática livremente
-                    if (todosFiltered.length > 0) {
-                      const sugestoes = sugerirProdutosInteligente(todosFiltered, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
+                    if (produtosCalculo.length > 0) {
+                      const sugestoes = sugerirProdutosInteligente(produtosCalculo, { N: r.rec.N, P: r.rec.P, K: r.rec.K, B: r.rec.B });
                       const sugN = sugestoes['n_pct'];
                       if (sugN?.produtoId) {
-                        const prod = todosFiltered.find(p => p.id === sugN.produtoId);
+                        const prod = produtosCalculo.find(p => p.id === sugN.produtoId);
                         if (prod) {
                           produtoExibido = prod;
                           const pctN = parseFloat(prod.n_pct) || 0;
@@ -1348,11 +1177,14 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                         ) : produtoExibido ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="font-medium truncate max-w-[160px]">{produtoExibido.nome}</span>
-                            {r.produtoSugerido ? (
-                              <span className="text-[9px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-1.5 py-0.5 w-fit">✓ Salvo</span>
-                            ) : (
-                              <span className="text-[9px] text-muted-foreground italic">Sugerido</span>
-                            )}
+                            <span className="flex flex-wrap gap-1">
+                              <span className={`text-[9px] rounded-full px-1.5 py-0.5 w-fit border ${temRegistroSalvo && !r.substituirSalvo ? 'font-semibold text-green-700 bg-green-50 border-green-200' : 'text-muted-foreground bg-muted border-border'}`}>
+                                {temRegistroSalvo && !r.substituirSalvo ? 'Produto salvo' : 'Produto sugerido'}
+                              </span>
+                              <span className="text-[9px] rounded-full px-1.5 py-0.5 w-fit border text-blue-700 bg-blue-50 border-blue-100">
+                                {origemProdutoCatalogoLabel(produtoExibido)}
+                              </span>
+                            </span>
                           </div>
                         ) : <span className="text-muted-foreground">—</span>}
                       </td>
@@ -1369,7 +1201,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                         <td colSpan={14} className="p-0 border-b border-border">
                           <PainelTalhao
                             resultado={r}
-                            todos={todosFiltered}
+                            todos={produtosCalculo}
                             todosSemFiltro={todos}
                             precosProd={precos}
                             onPrecoChange={(prodId, val) => handlePrecoChange(prodId, val)}
@@ -1379,7 +1211,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                             onFechar={() => toggleExpand(r.talhao.id)}
                             marcadosIniciais={marcadosPorTalhao[r.talhao.id] || null}
                             trocasIniciais={trocasPorTalhao[r.talhao.id] || null}
-                            complementosSalvos={(registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null}
+                            complementosSalvos={r.substituirSalvo ? null : ((registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null)}
                             onMarcadosChange={(m) => handleMarcadosChange(r.talhao.id, m)}
                             onTrocasChange={(t) => handleTrocasChange(r.talhao.id, t)}
                             onExtrasChange={(e) => handleExtrasChange(r.talhao.id, e)}
