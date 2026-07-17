@@ -402,10 +402,10 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['P']) delete recFiltrado.P;
     if (!marcados['K']) delete recFiltrado.K;
     if (!marcados['B']) delete recFiltrado.B;
-    const prodSalvo = resultado.produtoSugerido || null;
-    const doseSalva = resultado.doseProdutoHa ?? null;
-    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, complementosSalvos || null);
-  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, complementosSalvos]);
+    const prodSalvo = resultado.substituirSalvo ? null : (resultado.produtoSugerido || null);
+    const doseSalva = resultado.substituirSalvo ? null : (resultado.doseProdutoHa ?? null);
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : (complementosSalvos || null));
+  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos]);
 
   const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
 

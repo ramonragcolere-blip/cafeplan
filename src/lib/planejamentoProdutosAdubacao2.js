@@ -10,6 +10,18 @@ export const NUTRIENTES_PLANEJAMENTO = [
 ];
 
 const TEM_NUTRIENTE_KEYS = ['n_pct', 'p2o5_pct', 'k2o_pct', 'b_pct'];
+const NUMERICOS_COMPOSICAO = ['n_pct', 'p2o5_pct', 'k2o_pct', 'ca_pct', 'mg_pct', 's_pct', 'b_pct', 'zn_pct', 'cu_pct', 'mn_pct', 'fe_pct'];
+export const CAMPOS_FERTILIZANTE_FORMULADO = [
+  'nome', 'fornecedor', 'grupo', 'tipo_produto', 'tipo_formulacao', 'funcao_composicao', 'ingrediente_ativo',
+  ...NUMERICOS_COMPOSICAO,
+  'outros_nutrientes', 'dose_viveiro', 'dose_plantio', 'dose_1ano_recepa', 'dose_producao', 'dose_esqueletado',
+  'unidade_costal', 'unidade_aplicacao', 'instrucoes_uso', 'composicao_texto', 'intervalo_seguranca', 'observacoes', 'ativo',
+];
+export const CAMPOS_FONTE_SIMPLES = [
+  'nome', 'nutriente_principal', 'nutrientes_secundarios',
+  ...NUMERICOS_COMPOSICAO,
+  'unidade_padrao', 'observacoes', 'ativo',
+];
 
 export function produtoAtivo(produto) {
   return produto?.ativo !== false;
@@ -58,6 +70,13 @@ function fornecidoPelo(prod, dose) {
     K: (parseFloat(prod?.k2o_pct) || 0) / 100 * (dose || 0),
     B: (parseFloat(prod?.b_pct) || 0) / 100 * (dose || 0),
   };
+}
+
+function promoverPrincipalSeNecessario(linhas) {
+  if (!linhas.some(linha => linha.ehPrincipal) && linhas.length > 0) {
+    linhas[0] = { ...linhas[0], ehPrincipal: true };
+  }
+  return linhas;
 }
 
 export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null) {
@@ -147,7 +166,7 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
       }
     }
 
-    return Object.values(mapa);
+    return promoverPrincipalSeNecessario(Object.values(mapa));
   }
 
   const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, rec);
@@ -176,7 +195,7 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
     }
   }
 
-  return Object.values(mapa);
+  return promoverPrincipalSeNecessario(Object.values(mapa));
 }
 
 export function listarNutrientesNaoAtendidos(rec, linhas = []) {
@@ -219,20 +238,20 @@ export function montarProdutosEfetivosPlanejamento({
       if (!marcados.B) delete recFiltrado.B;
     }
 
-    let produto = r.produtoSugerido || null;
-    let doseKgHa = r.doseProdutoHa ?? null;
-    if (!produto && !idsSalvos.has(r.talhao.id) && todosFiltrados.length > 0) {
-      const linhasAuto = montarLinhasProdutos(todosFiltrados, recFiltrado, trocas, null, null, null, r.rec);
-      const principal = linhasAuto.find(l => l.ehPrincipal);
-      if (principal) {
-        produto = principal.produto;
-        doseKgHa = principal.doseKgHa;
-      }
-    }
-    if (!produto && idsSalvos.has(r.talhao.id)) return;
+    let produto = r.substituirSalvo ? null : (r.produtoSugerido || null);
+    let doseKgHa = r.substituirSalvo ? null : (r.doseProdutoHa ?? null);
+    if (!produto && idsSalvos.has(r.talhao.id) && !r.substituirSalvo) return;
 
     const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
-    const linhas = montarLinhasProdutos(todosFiltrados, recFiltrado, trocas, produto, doseKgHa, r.substituirSalvo ? null : compsSalvos, r.rec);
+    const linhas = montarLinhasProdutos(
+      todosFiltrados,
+      recFiltrado,
+      trocas,
+      r.substituirSalvo ? null : produto,
+      r.substituirSalvo ? null : doseKgHa,
+      r.substituirSalvo ? null : compsSalvos,
+      r.rec,
+    );
     const linhaPrincipal = linhas.find(l => l.ehPrincipal);
     if (linhaPrincipal) {
       produto = linhaPrincipal.produto;
@@ -282,6 +301,17 @@ export function combinarCatalogoInsumos(formulados = [], fontes = []) {
     ...(formulados || []).map(produto => ({ ...produto, _tipo: 'formulado', _origemLabel: 'Fertilizante formulado' })),
     ...(fontes || []).map(produto => ({ ...produto, _tipo: 'fonte', _origemLabel: 'Fonte simples' })),
   ];
+}
+
+export function sanitizarPayloadInsumo(tipo, dados = {}) {
+  const permitidos = new Set(tipo === 'fonte' ? CAMPOS_FONTE_SIMPLES : CAMPOS_FERTILIZANTE_FORMULADO);
+  const payload = {};
+  Object.entries(dados || {}).forEach(([key, value]) => {
+    if (!permitidos.has(key)) return;
+    if (value === undefined) return;
+    payload[key] = value;
+  });
+  return payload;
 }
 
 export function contarUsoProdutoPlanejamento(registros = [], produtoId) {

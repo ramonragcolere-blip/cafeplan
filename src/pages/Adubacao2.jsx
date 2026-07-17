@@ -17,9 +17,8 @@ import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
-import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
-import { produtoAtivo } from '@/lib/planejamentoProdutosAdubacao2';
+import { montarLinhasProdutos, produtoAtivo } from '@/lib/planejamentoProdutosAdubacao2';
 import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
 import {
   classificarExtracaoAnaliseSolo,
@@ -617,15 +616,11 @@ export default function Adubacao2() {
           produtoSugerido = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
           doseProdutoHa = registroSalvo.detalhamento.doseProdutoHa ?? null;
         } else if (rec && listaCalculo.length > 0) {
-          const sugestoes = sugerirProdutosInteligente(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
-          const sugN = sugestoes['n_pct'];
-          if (sugN?.produtoId) {
-            const prod = listaCalculo.find(p => p.id === sugN.produtoId);
-            if (prod) {
-              produtoSugerido = prod;
-              const pctN = parseFloat(prod.n_pct) || 0;
-              if (pctN > 0 && rec.N != null) doseProdutoHa = Math.round((rec.N / (pctN / 100)) * 10) / 10;
-            }
+          const linhas = montarLinhasProdutos(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, {}, null, null, null, rec);
+          const principal = linhas.find(l => l.ehPrincipal);
+          if (principal) {
+            produtoSugerido = principal.produto;
+            doseProdutoHa = principal.doseKgHa;
           }
         }
         return {

@@ -8,7 +8,7 @@ import TabelaFertilizantes from '@/components/fertilizantes/TabelaFertilizantes'
 import DialogFertilizante from '@/components/fertilizantes/DialogFertilizante';
 import TabelaFontesSimples from '@/components/fertilizantes/TabelaFontesSimples';
 import DialogFonteSimples from '@/components/fertilizantes/DialogFonteSimples';
-import { combinarCatalogoInsumos, contarUsoProdutoPlanejamento } from '@/lib/planejamentoProdutosAdubacao2';
+import { combinarCatalogoInsumos, contarUsoProdutoPlanejamento, sanitizarPayloadInsumo } from '@/lib/planejamentoProdutosAdubacao2';
 
 export default function BaseFertilizantes() {
   const queryClient = useQueryClient();
@@ -108,8 +108,8 @@ export default function BaseFertilizantes() {
             loading={loadingFert || loadingFontes}
             planejamentos={planejamentos}
             onEditar={produto => {
-              if (produto._tipo === 'fonte') { setEditingFonte(produto); setDialogFonteOpen(true); }
-              else { setEditingFert(produto); setDialogFertOpen(true); }
+              if (produto._tipo === 'fonte') { setEditingFonte({ id: produto.id, ...sanitizarPayloadInsumo('fonte', produto) }); setDialogFonteOpen(true); }
+              else { setEditingFert({ id: produto.id, ...sanitizarPayloadInsumo('formulado', produto) }); setDialogFertOpen(true); }
             }}
             onDeletar={confirmarInativacao}
           />
@@ -145,7 +145,7 @@ export default function BaseFertilizantes() {
         open={dialogFertOpen}
         onOpenChange={setDialogFertOpen}
         dados={editingFert}
-        onSave={data => editingFert ? fertUpdate.mutate({ id: editingFert.id, data }) : fertCreate.mutate(data)}
+        onSave={data => editingFert ? fertUpdate.mutate({ id: editingFert.id, data: sanitizarPayloadInsumo('formulado', data) }) : fertCreate.mutate(sanitizarPayloadInsumo('formulado', data))}
         saving={fertCreate.isPending || fertUpdate.isPending}
       />
 
@@ -153,7 +153,7 @@ export default function BaseFertilizantes() {
         open={dialogFonteOpen}
         onOpenChange={setDialogFonteOpen}
         dados={editingFonte}
-        onSave={data => editingFonte ? fonteUpdate.mutate({ id: editingFonte.id, data }) : fonteCreate.mutate(data)}
+        onSave={data => editingFonte ? fonteUpdate.mutate({ id: editingFonte.id, data: sanitizarPayloadInsumo('fonte', data) }) : fonteCreate.mutate(sanitizarPayloadInsumo('fonte', data))}
         saving={fonteCreate.isPending || fonteUpdate.isPending}
       />
     </div>
