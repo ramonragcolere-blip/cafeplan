@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { FileText, Plus, TrendingUp, Package } from 'lucide-react';
+import { FileText, Plus, TrendingUp, Package, Filter, X } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ImportarNotaFiscal from '@/components/notas/ImportarNotaFiscal';
 import { consolidarPrecosItens } from '@/lib/notasFiscais';
 
@@ -10,6 +11,7 @@ const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimu
 
 export default function NotasFiscais() {
   const [modalAberto, setModalAberto] = useState(false);
+  const [produtorFiltro, setProdutorFiltro] = useState('todos');
 
   const { data: produtores = [] } = useQuery({
     queryKey: ['produtores', 'completo'],
@@ -31,8 +33,18 @@ export default function NotasFiscais() {
     refetchItens();
   };
 
+  // Filtragem por produtor
+  const notasFiltradas = useMemo(() =>
+    produtorFiltro === 'todos' ? notas : notas.filter(n => n.produtor_id === produtorFiltro),
+    [notas, produtorFiltro]
+  );
+  const itensFiltrados = useMemo(() =>
+    produtorFiltro === 'todos' ? itens : itens.filter(i => i.produtor_id === produtorFiltro),
+    [itens, produtorFiltro]
+  );
+
   // Média ponderada pela quantidade comprada; evita distorção entre notas pequenas e grandes.
-  const tabelaPrecos = useMemo(() => consolidarPrecosItens(itens), [itens]);
+  const tabelaPrecos = useMemo(() => consolidarPrecosItens(itensFiltrados), [itensFiltrados]);
 
   const produtorNome = (id) => {
     const p = produtores.find(x => x.id === id);
@@ -49,20 +61,41 @@ export default function NotasFiscais() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">Importação de NF-e e banco de preços de insumos</p>
         </div>
-        <Button onClick={() => setModalAberto(true)} className="gap-2">
-          <Plus className="w-4 h-4" /> Importar XML/PDF de Nota Fiscal
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <Select value={produtorFiltro} onValueChange={setProdutorFiltro}>
+              <SelectTrigger className="w-52 h-9 text-sm">
+                <SelectValue placeholder="Todos os produtores" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os produtores</SelectItem>
+                {produtores.map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.nome || p.fazenda || p.id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {produtorFiltro !== 'todos' && (
+              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setProdutorFiltro('todos')}>
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+          <Button onClick={() => setModalAberto(true)} className="gap-2">
+            <Plus className="w-4 h-4" /> Importar XML/PDF de Nota Fiscal
+          </Button>
+        </div>
       </div>
 
       {/* Cards resumo */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground mb-1">Total de Notas</p>
-          <p className="text-2xl font-bold text-foreground">{notas.length}</p>
+          <p className="text-2xl font-bold text-foreground">{notasFiltradas.length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground mb-1">Total de Itens</p>
-          <p className="text-2xl font-bold text-foreground">{itens.length}</p>
+          <p className="text-2xl font-bold text-foreground">{itensFiltrados.length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground mb-1">Produtos Únicos</p>
@@ -70,7 +103,7 @@ export default function NotasFiscais() {
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground mb-1">Valor Total (notas)</p>
-          <p className="text-lg font-bold text-primary">{fmtR(notas.reduce((s, n) => s + (n.valor_total || 0), 0))}</p>
+          <p className="text-lg font-bold text-primary">{fmtR(notasFiltradas.reduce((s, n) => s + (n.valor_total || 0), 0))}</p>
         </div>
       </div>
 
@@ -121,9 +154,9 @@ export default function NotasFiscais() {
         <div className="px-5 py-4 border-b border-border flex items-center gap-2">
           <Package className="w-4 h-4 text-primary" />
           <h2 className="font-semibold text-sm">Notas Importadas</h2>
-          <span className="text-xs text-muted-foreground ml-1">({notas.length})</span>
+          <span className="text-xs text-muted-foreground ml-1">({notasFiltradas.length})</span>
         </div>
-        {notas.length === 0 ? (
+        {notasFiltradas.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-muted-foreground">
             Nenhuma nota importada ainda.
           </div>
@@ -138,7 +171,7 @@ export default function NotasFiscais() {
                 </tr>
               </thead>
               <tbody>
-                {notas.map((n, i) => (
+                {notasFiltradas.map((n, i) => (
                   <tr key={n.id} className={`border-b border-border/50 last:border-0 hover:bg-muted/10 ${i % 2 === 1 ? 'bg-muted/5' : ''}`}>
                     <td className="px-4 py-2.5 font-mono font-medium">{n.numero_nota || '—'}</td>
                     <td className="px-4 py-2.5">{n.fornecedor_nome || '—'}</td>
