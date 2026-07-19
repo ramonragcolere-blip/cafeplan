@@ -70,7 +70,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     codigoProdutor: produtor?.codigo,
     safra,
     sugerirProdutos: sugerirProdutosInteligente,
-  }), [resultados, todos, produtosEfetivos, calagens, talhoes, produtor, safra]);
+    registrosSalvos,
+  }), [resultados, todos, produtosEfetivos, calagens, talhoes, produtor, safra, registrosSalvos]);
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
@@ -214,8 +215,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/40 border-b border-border">
-                  {['Produto', 'Qtd. total (kg)', 'g / planta', 'g / metro', 'Nutrientes'].map(h => (
-                    <th key={h} className={`px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Produto' || h === 'Nutrientes' ? 'text-left' : 'text-right'}`}>{h}</th>
+                  {['Produto', 'Qtd. total (kg)', 'g / planta', 'g / metro', 'Período de aplicação', 'Nutrientes'].map(h => (
+                    <th key={h} className={`px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Produto' || h === 'Período de aplicação' || h === 'Nutrientes' ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -228,7 +229,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                   return (
                     <React.Fragment key={talhao.id}>
                       <tr className="bg-primary/10 border-b border-primary/20 print-row-talhao">
-                        <td colSpan={5} className="px-4 py-2.5 font-bold text-primary text-sm">
+                        <td colSpan={6} className="px-4 py-2.5 font-bold text-primary text-sm">
                           {partes.join(' · ')}
                         </td>
                       </tr>
@@ -249,6 +250,11 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                          </td>
                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
+                         </td>
+                         <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-pre-line min-w-[150px]">
+                           {(linha.periodoAplicacao || 'A definir').split('\n').map((parte, idx) => (
+                             <div key={idx}>{parte}</div>
+                           ))}
                          </td>
                          <td className="px-4 py-2.5 text-xs">
                            {linha.isCalagem ? (

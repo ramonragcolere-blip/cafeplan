@@ -5,11 +5,13 @@ import {
   calcularDistribuicaoCalagem,
   consolidarComprasAdubacao2,
   atualizarListaCalagens,
+  formatarPeriodoAplicacao,
   lerDadosAnaliseCalagem,
   montarGruposResumoAdubacao2,
   podeSalvarRecomendacaoCalagem,
   resolverRegistroCalagemAtual,
 } from '../src/lib/calagemAdubacao2.js';
+import { readFileSync } from 'node:fs';
 
 test('Calagem V% exige CTC numerica da analise 0-20 e nao usa soma de bases como CTC', () => {
   const dados = lerDadosAnaliseCalagem({
@@ -162,4 +164,90 @@ test('atualizacao imediata apos salvar substitui a calagem no cache sem duplicar
 
   assert.equal(lista.length, 1);
   assert.equal(lista[0].dose_kg_ha, 1000);
+});
+
+test('periodo de aplicacao formata parcelamento com uma parcela', () => {
+  assert.equal(formatarPeriodoAplicacao({ parcelas: [{ pct: 100, meses: ['OUT', 'NOV'] }] }), '100% — OUT/NOV');
+});
+
+test('periodo de aplicacao formata duas ou mais parcelas na ordem cadastrada', () => {
+  assert.equal(formatarPeriodoAplicacao({
+    parcelas: [
+      { pct: 60, meses: ['OUT', 'NOV'] },
+      { pct: 40, meses: ['JAN', 'FEV'] },
+      { pct: 10, meses: ['MAR'] },
+    ],
+  }), '1ª parcela: 60% — OUT/NOV\n2ª parcela: 40% — JAN/FEV\n3ª parcela: 10% — MAR');
+});
+
+test('Resumo Geral mostra periodo do produto principal, complemento e produto manual', () => {
+  const produtosEfetivos = {
+    t1: {
+      produto: { id: 'npk', nome: '20-00-20' },
+      doseKgHa: 400,
+      complementos: [
+        { produto: { id: 'boro', nome: 'Ácido bórico' }, doseKgHa: 10, nutrientes: [{ label: 'B' }] },
+        { produto: { id: 'zinco', nome: 'Sulfato de zinco' }, doseKgHa: 5, nutrientes: [], isManualExtra: true },
+      ],
+    },
+  };
+  const registrosSalvos = [{
+    talhao_id: 't1',
+    detalhamento: {
+      parcelamentos: {
+        npk: { parcelas: [{ pct: 100, meses: ['OUT', 'NOV'] }] },
+        boro: { parcelas: [{ pct: 50, meses: ['OUT'] }, { pct: 50, meses: ['JAN'] }] },
+        zinco: { parcelas: [{ pct: 100, meses: ['DEZ'] }] },
+      },
+    },
+  }];
+  const grupos = montarGruposResumoAdubacao2({
+    resultados: [{ talhao: talhoesBase[0], rec: { N: 1 }, mediaBienal: 30 }],
+    produtosEfetivos,
+    talhoes: talhoesBase,
+    registrosSalvos,
+  });
+
+  assert.equal(grupos[0].linhas.find(l => l.produtoId === 'npk').periodoAplicacao, '100% — OUT/NOV');
+  assert.equal(grupos[0].linhas.find(l => l.produtoId === 'boro').periodoAplicacao, '1ª parcela: 50% — OUT\n2ª parcela: 50% — JAN');
+  assert.equal(grupos[0].linhas.find(l => l.produtoId === 'zinco').periodoAplicacao, '100% — DEZ');
+});
+
+test('ausencia de parcelamento retorna A definir no Resumo Geral', () => {
+  const grupos = montarGruposResumoAdubacao2({
+    resultados: [{ talhao: talhoesBase[0], rec: { N: 1 }, produtoSugerido: { id: 'npk', nome: '20-00-20' }, doseProdutoHa: 400 }],
+    talhoes: talhoesBase,
+    registrosSalvos: [{ talhao_id: 't1', detalhamento: { parcelamentos: {} } }],
+  });
+
+  assert.equal(grupos[0].linhas[0].periodoAplicacao, 'A definir');
+});
+
+test('impressao do Resumo Geral inclui coluna Periodo de aplicacao', () => {
+  const componente = readFileSync(new URL('../src/components/adubacao2/AbaResumoGeral2.jsx', import.meta.url), 'utf8');
+
+  assert.match(componente, /Período de aplicação/);
+  assert.match(componente, /resumo2-detalhe-tabela/);
+});
+
+test('periodo de aplicacao nao altera consolidacao, doses, custos ou quantidades', () => {
+  const resultados = [{
+    talhao: talhoesBase[0],
+    rec: { N: 1 },
+    produtoSugerido: { id: 'npk', nome: '20-00-20' },
+    doseProdutoHa: 400,
+    mediaBienal: 30,
+  }];
+  const registrosSalvos = [{
+    talhao_id: 't1',
+    detalhamento: { parcelamentos: { npk: { parcelas: [{ pct: 100, meses: ['OUT'] }] } } },
+  }];
+  const semPeriodo = montarGruposResumoAdubacao2({ resultados, talhoes: talhoesBase });
+  const comPeriodo = montarGruposResumoAdubacao2({ resultados, talhoes: talhoesBase, registrosSalvos });
+  const comprasAntes = consolidarComprasAdubacao2({ resultados, talhoes: talhoesBase });
+  const comprasDepois = consolidarComprasAdubacao2({ resultados, talhoes: talhoesBase });
+  const camposResumo = ({ periodoAplicacao: _periodoAplicacao, ...linha }) => linha;
+
+  assert.deepEqual(camposResumo(comPeriodo[0].linhas[0]), camposResumo(semPeriodo[0].linhas[0]));
+  assert.deepEqual(comprasDepois, comprasAntes);
 });
