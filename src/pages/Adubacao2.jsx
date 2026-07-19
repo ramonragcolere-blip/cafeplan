@@ -17,8 +17,8 @@ import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
-import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
+import { montarLinhasProdutos, produtoAtivo } from '@/lib/planejamentoProdutosAdubacao2';
 import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
 import {
   classificarExtracaoAnaliseSolo,
@@ -279,9 +279,10 @@ export default function Adubacao2() {
 
   const todos = useMemo(() => [
     ...fertilizantes
+      .filter(produtoAtivo)
       .filter(f => !f.grupo || !GRUPOS_DEFENSIVO.test(f.grupo))
       .map(f => ({ ...f, _tipo: 'formulado' })),
-    ...fontesSimples.map(f => ({ ...f, _tipo: 'fonte' })),
+    ...fontesSimples.filter(produtoAtivo).map(f => ({ ...f, _tipo: 'fonte' })),
   ], [fertilizantes, fontesSimples]);
 
   // Query de calagem
@@ -589,11 +590,13 @@ export default function Adubacao2() {
   }, [produtor, safra, produtividadeLocal, analises2040Local, upsertPlanejamento, queryClient]);
 
   // Cálculo central — aceita lista filtrada opcional (C3)
-  const handleCalcularTodos = useCallback((todosParaCalculo) => {
+  const handleCalcularTodos = useCallback((todosParaCalculo, opcoes = {}) => {
     const listaCalculo = todosParaCalculo || todos;
+    const substituirSalvos = opcoes.substituirSalvos === true;
     setCalculando(true);
     setTimeout(() => {
       const resultados = talhoes.map(talhao => {
+        const registroSalvo = registrosSalvos.find(r => r.talhao_id === talhao.id) || null;
         const locProd = produtividadeLocal[talhao.id] || {};
         const s1 = parseFloat(locProd.safra1);
         const s2 = parseFloat(locProd.safra2);
@@ -608,19 +611,29 @@ export default function Adubacao2() {
 
         let produtoSugerido = null;
         let doseProdutoHa = null;
-        if (rec && listaCalculo.length > 0) {
-          const sugestoes = sugerirProdutosInteligente(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B });
-          const sugN = sugestoes['n_pct'];
-          if (sugN?.produtoId) {
-            const prod = listaCalculo.find(p => p.id === sugN.produtoId);
-            if (prod) {
-              produtoSugerido = prod;
-              const pctN = parseFloat(prod.n_pct) || 0;
-              if (pctN > 0 && rec.N != null) doseProdutoHa = Math.round((rec.N / (pctN / 100)) * 10) / 10;
-            }
+        if (rec && registroSalvo?.detalhamento?.produtoSugerido && !substituirSalvos) {
+          const salvo = registroSalvo.detalhamento.produtoSugerido;
+          produtoSugerido = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
+          doseProdutoHa = registroSalvo.detalhamento.doseProdutoHa ?? null;
+        } else if (rec && listaCalculo.length > 0) {
+          const linhas = montarLinhasProdutos(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, {}, null, null, null, rec);
+          const principal = linhas.find(l => l.ehPrincipal);
+          if (principal) {
+            produtoSugerido = principal.produto;
+            doseProdutoHa = principal.doseKgHa;
           }
         }
-        return { talhao, mediaBienal, analise, analise2040, rec, produtoSugerido, doseProdutoHa };
+        return {
+          talhao,
+          mediaBienal,
+          analise,
+          analise2040,
+          rec,
+          produtoSugerido,
+          doseProdutoHa,
+          temRegistroSalvo: !!registroSalvo,
+          substituirSalvo: substituirSalvos && !!registroSalvo,
+        };
       });
 
       setResultadosCalculo(resultados);
@@ -629,7 +642,7 @@ export default function Adubacao2() {
       setMsgCalculo('Recomendação calculada com sucesso!');
       setTimeout(() => setMsgCalculo(''), 4000);
     }, 100);
-  }, [talhoes, produtividadeLocal, analises, analises2040Local, todos]);
+  }, [talhoes, registrosSalvos, produtividadeLocal, analises, analises2040Local, todos]);
 
   // C2: estado de preços e parcelamentos sincronizado do filho
   // Usamos refs para evitar stale closure no handleSalvarTudo
