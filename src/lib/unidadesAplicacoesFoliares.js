@@ -211,6 +211,51 @@ export function normalizarProdutosAplicacaoFoliar(produtos = [], opcoes = {}) {
   return (produtos || []).map(produto => aplicarNormalizacaoProdutoFoliar(produto, opcoes));
 }
 
+export function produtoReceitaFoliarDeInsumo(insumo = {}, ajustes = {}, opcoes = {}) {
+  const base = {
+    produto_id: insumo.id || ajustes.produto_id || '',
+    produto_nome: insumo.nome || ajustes.produto_nome || '',
+    dose: ajustes.dose ?? insumo.dose_producao ?? '',
+    unidade: ajustes.unidade ?? insumo.unidade_aplicacao ?? insumo.unidade_padrao ?? '',
+    tipo_formulacao: insumo.tipo_formulacao || ajustes.tipo_formulacao || '',
+    grupo: insumo.grupo || ajustes.grupo || '',
+    preco: ajustes.preco ?? '',
+  };
+  if (produtoEhSupera(base)) {
+    base.dose = 2;
+    base.unidade = 'L/ha';
+  }
+  return aplicarNormalizacaoProdutoFoliar({
+    ...base,
+    dose_original: base.dose,
+    unidade_original: base.unidade,
+  }, opcoes);
+}
+
+export function atualizarProdutoReceitaFoliar(produtos = [], indice, atualizacao = {}, opcoes = {}) {
+  return (produtos || []).map((produto, idx) => {
+    if (idx !== indice) return produto;
+    const insumo = (opcoes.insumos || []).find(item => item.id === atualizacao.produto_id);
+    const dadosAtualizados = { ...produto, ...atualizacao };
+    if (Object.prototype.hasOwnProperty.call(atualizacao, 'dose')) dadosAtualizados.dose_original = atualizacao.dose;
+    if (Object.prototype.hasOwnProperty.call(atualizacao, 'unidade')) dadosAtualizados.unidade_original = atualizacao.unidade;
+    const proximo = insumo
+      ? produtoReceitaFoliarDeInsumo(insumo, {
+        ...dadosAtualizados,
+        dose: atualizacao.dose ?? insumo.dose_producao ?? '',
+        unidade: atualizacao.unidade ?? insumo.unidade_aplicacao ?? insumo.unidade_padrao ?? '',
+      }, opcoes)
+      : aplicarNormalizacaoProdutoFoliar(dadosAtualizados, opcoes);
+    return produtoEhSupera(proximo)
+      ? aplicarNormalizacaoProdutoFoliar({ ...proximo, dose: 2, unidade: 'L/ha' }, opcoes)
+      : proximo;
+  });
+}
+
+export function removerProdutoReceitaFoliar(produtos = [], indice) {
+  return (produtos || []).filter((_, idx) => idx !== indice);
+}
+
 export function calcularCustoProdutoFoliarDetalhado(produto = {}, opcoes = {}) {
   const areaHa = numeroDecimal(opcoes.areaHa ?? opcoes.area_ha) ?? 0;
   const normalizado = normalizarDoseProdutoFoliar(produto, opcoes);

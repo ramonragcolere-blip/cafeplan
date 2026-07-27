@@ -2,7 +2,6 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Users, TreePine, ClipboardList, AlertTriangle } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import StatCard from '@/components/dashboard/StatCard';
 import ColheitaProgressoSection from '@/components/dashboard/ColheitaProgressoSection';
 import AdubacaoSection from '@/components/dashboard/AdubacaoSection';
@@ -10,7 +9,12 @@ import AlertasSection from '@/components/dashboard/AlertasSection';
 import ResumoProdutorSection from '@/components/dashboard/ResumoProdutorSection';
 import CustosPlanejadosSection from '@/components/dashboard/CustosPlanejadosSection';
 import { normalizarPlanosAdubacao, normalizarAplicacoesFoliares } from '@/lib/integracaoPlanejamentos';
-import { coletarSafrasDisponiveis } from '@/lib/dashboardPlanejamento';
+import {
+  SAFRA_VAZIA_DASHBOARD,
+  coletarSafrasDisponiveis,
+  opcoesSafraDashboard,
+  resolverSafraDashboard,
+} from '@/lib/dashboardPlanejamento';
 
 function ProdutorAutocomplete({ produtores, value, onChange }) {
   const [query, setQuery] = useState('');
@@ -104,17 +108,14 @@ export default function Dashboard() {
     aplicacoesFoliares: aplicacoesLegadas,
   }), [planosAdubacao2, planosLegados, cronogramasFoliares, aplicacoesLegadas]);
 
+  const opcoesSafra = useMemo(() => opcoesSafraDashboard(safrasDisponiveis), [safrasDisponiveis]);
+
   useEffect(() => {
-    if (!safrasDisponiveis.length) {
-      if (safraFiltro) setSafraFiltro('');
-      return;
-    }
-    if (!safraFiltro || !safrasDisponiveis.includes(safraFiltro)) {
-      setSafraFiltro(safrasDisponiveis[0]);
-    }
+    const proximaSafra = resolverSafraDashboard(safraFiltro, safrasDisponiveis);
+    if (proximaSafra !== safraFiltro) setSafraFiltro(proximaSafra);
   }, [safrasDisponiveis, safraFiltro]);
 
-  const safraAtiva = safraFiltro || safrasDisponiveis[0] || '';
+  const safraAtiva = resolverSafraDashboard(safraFiltro, safrasDisponiveis);
 
   // Cards resumo
   const produtoresAtivos = produtores.filter(p => p.status !== 'inativo');
@@ -139,18 +140,21 @@ export default function Dashboard() {
             value={produtorFiltro}
             onChange={setProdutorFiltro}
           />
-          <Select value={safraAtiva} onValueChange={setSafraFiltro}>
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Safra" />
-            </SelectTrigger>
-            <SelectContent>
-              {safrasDisponiveis.length === 0 ? (
-                <SelectItem value="sem-safra" disabled>Sem safras</SelectItem>
-              ) : safrasDisponiveis.map(safra => (
-                <SelectItem key={safra} value={safra}>{safra}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <label className="sr-only" htmlFor="dashboard-safra-select">Safra</label>
+          <select
+            id="dashboard-safra-select"
+            value={safraAtiva || SAFRA_VAZIA_DASHBOARD}
+            onChange={e => {
+              if (e.target.value !== SAFRA_VAZIA_DASHBOARD) setSafraFiltro(e.target.value);
+            }}
+            className="w-full sm:w-44 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {opcoesSafra.map(opcao => (
+              <option key={opcao.value} value={opcao.value} disabled={opcao.disabled}>
+                {opcao.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
