@@ -10,6 +10,7 @@ import AbaRecomendacaoFoliar from '@/components/foliar/AbaRecomendacaoFoliar';
 import AbaPlanejamentoFoliar from '@/components/foliar/AbaPlanejamentoFoliar';
 import AbaExportarPDFFoliar from '@/components/foliar/AbaExportarPDFFoliar';
 import { combinarInsumosFoliares } from '@/lib/planejamentoFoliar';
+import { normalizarProdutosAplicacaoFoliar } from '@/lib/unidadesAplicacoesFoliares';
 
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 
@@ -32,7 +33,10 @@ export default function AplicacoesFoliares() {
   const { data: analises = [] } = useQuery({ queryKey: ['analises_foliares', 'completo'], queryFn: () => base44.entities.AnaliseFoliar.list(undefined, 5000) });
   const { data: aplicacoesLegadas = [] } = useQuery({ queryKey: ['aplicacoes_foliares', 'completo'], queryFn: () => base44.entities.AplicacaoFoliar.list(undefined, 5000) });
   const { data: cronogramasFoliares = [] } = useQuery({ queryKey: ['cronograma_foliar'], queryFn: () => base44.entities.CronogramaFoliar.list(undefined, 5000) });
-  const aplicacoes = useMemo(() => [...aplicacoesLegadas, ...cronogramasFoliares], [aplicacoesLegadas, cronogramasFoliares]);
+  const aplicacoes = useMemo(() => [...aplicacoesLegadas, ...cronogramasFoliares].map(aplicacao => ({
+    ...aplicacao,
+    produtos: normalizarProdutosAplicacaoFoliar(aplicacao.produtos || [], { volumeCaldaHa: aplicacao.volume_calda_ha }),
+  })), [aplicacoesLegadas, cronogramasFoliares]);
   const { data: fertilizantes = [] } = useQuery({ queryKey: ['fertilizantes', 'catalogo-completo'], queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000) });
   const { data: fontesSimples = [] } = useQuery({ queryKey: ['fontes_simples', 'catalogo-completo'], queryFn: () => base44.entities.FonteSimples.list(undefined, 5000) });
   const insumos = useMemo(() => combinarInsumosFoliares(fertilizantes, fontesSimples), [fertilizantes, fontesSimples]);

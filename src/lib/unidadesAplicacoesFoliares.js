@@ -3,6 +3,9 @@ import { extrairMesesAplicacaoFoliar } from './dashboardPlanejamento.js';
 export const CUSTO_PENDENTE_FOLIAR = 'Custo pendente — revisar dose, unidade ou preço';
 export const STATUS_REVISAR_UNIDADE = 'revisar_unidade';
 export const STATUS_UNIDADE_NORMALIZADA = 'normalizada';
+export const CATEGORIA_ADUBACAO_FOLIAR = 'adubacao_foliar';
+export const CATEGORIA_PRAGAS_DOENCAS = 'pragas_doencas';
+export const CATEGORIA_PLANTAS_DANINHAS = 'plantas_daninhas';
 
 const UNIDADES = {
   L_HA: 'L/ha',
@@ -16,6 +19,17 @@ const UNIDADES = {
 };
 
 const MESES_FOLIARES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
+const GRUPOS_DEFENSIVO = new Set([
+  'fungicida',
+  'inseticida',
+  'inseticidabiologico',
+  'inseticidadesolo',
+  'acaricida',
+  'defensivo',
+  'defensivoagricola',
+]);
+const GRUPOS_HERBICIDA = new Set(['herbicida']);
 
 function normalizarTexto(valor) {
   return String(valor || '')
@@ -252,6 +266,92 @@ export function calcularResumoAplicacaoFoliar(aplicacao = {}, talhoes = []) {
   });
 
   return { areaHa, custoHa, custoTotal, pendencias, produtos };
+}
+
+export function classificarCategoriaProdutoFoliar(produto = {}) {
+  const grupo = normalizarNomeProdutoFoliar(produto.grupo);
+  if (GRUPOS_HERBICIDA.has(grupo) || grupo.includes('herbicida')) return CATEGORIA_PLANTAS_DANINHAS;
+  if (
+    GRUPOS_DEFENSIVO.has(grupo) ||
+    grupo.includes('fungicida') ||
+    grupo.includes('inseticida') ||
+    grupo.includes('acaricida') ||
+    grupo.includes('defensivo')
+  ) {
+    return CATEGORIA_PRAGAS_DOENCAS;
+  }
+  return CATEGORIA_ADUBACAO_FOLIAR;
+}
+
+export function calcularCustosFoliaresPorCategoria(aplicacoes = [], talhoes = [], filtros = {}) {
+  const totais = {
+    [CATEGORIA_ADUBACAO_FOLIAR]: 0,
+    [CATEGORIA_PRAGAS_DOENCAS]: 0,
+    [CATEGORIA_PLANTAS_DANINHAS]: 0,
+    pendencias: 0,
+  };
+  const talhaoMap = Object.fromEntries((talhoes || []).map(talhao => [talhao.id, talhao]));
+
+  (aplicacoes || []).forEach(aplicacao => {
+    if (filtros.codigoProdutor && aplicacao.codigo_produtor !== filtros.codigoProdutor) return;
+    if (filtros.safra && aplicacao.safra !== filtros.safra) return;
+    const ids = aplicacao.talhao_id
+      ? [aplicacao.talhao_id]
+      : Array.isArray(aplicacao.talhao_ids) ? aplicacao.talhao_ids : [];
+
+    ids.forEach(talhaoId => {
+      const talhao = talhaoMap[talhaoId];
+      const areaHa = numeroDecimal(talhao?.area_ha) ?? 0;
+      if (!areaHa) return;
+      (aplicacao.produtos || []).forEach(produto => {
+        const custo = calcularCustoProdutoFoliarDetalhado(produto, {
+          volumeCaldaHa: aplicacao.volume_calda_ha,
+          areaHa,
+        });
+        if (!custo.valido) {
+          totais.pendencias += 1;
+          return;
+        }
+        totais[classificarCategoriaProdutoFoliar(produto)] += custo.custo_total;
+      });
+    });
+  });
+
+  return totais;
+}
+
+export function calcularCustosFoliaresPorTalhao(aplicacoes = [], talhoes = [], filtros = {}) {
+  const mapa = {};
+  (talhoes || []).forEach(talhao => {
+    mapa[talhao.id] = { custoHa: 0, custoTotal: 0, pendencias: 0 };
+  });
+
+  (aplicacoes || []).forEach(aplicacao => {
+    if (filtros.codigoProdutor && aplicacao.codigo_produtor !== filtros.codigoProdutor) return;
+    if (filtros.safra && aplicacao.safra !== filtros.safra) return;
+    const ids = aplicacao.talhao_id
+      ? [aplicacao.talhao_id]
+      : Array.isArray(aplicacao.talhao_ids) ? aplicacao.talhao_ids : [];
+
+    ids.forEach(talhaoId => {
+      const areaHa = numeroDecimal(talhoes.find(t => t.id === talhaoId)?.area_ha) ?? 0;
+      if (!mapa[talhaoId] || !areaHa) return;
+      (aplicacao.produtos || []).forEach(produto => {
+        const custo = calcularCustoProdutoFoliarDetalhado(produto, {
+          volumeCaldaHa: aplicacao.volume_calda_ha,
+          areaHa,
+        });
+        if (!custo.valido) {
+          mapa[talhaoId].pendencias += 1;
+          return;
+        }
+        mapa[talhaoId].custoHa += custo.custo_ha;
+        mapa[talhaoId].custoTotal += custo.custo_total;
+      });
+    });
+  });
+
+  return mapa;
 }
 
 export function validarPeriodoAplicacaoFoliar(aplicacao = {}) {

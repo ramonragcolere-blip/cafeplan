@@ -102,6 +102,7 @@ export default function Planejamento() {
               produtor={produtor}
               safra={safraSel}
               planejamentosAdubacao={planejamentosAdubacao}
+              cronogramasFoliares={cronogramasFoliares}
             />
           </TabsContent>
 
