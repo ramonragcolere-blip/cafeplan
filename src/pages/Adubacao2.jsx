@@ -19,7 +19,15 @@ import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
 import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
-import { montarLinhasProdutos, produtoAtivo } from '@/lib/planejamentoProdutosAdubacao2';
+import {
+  listaSeguraAdubacao2,
+  MENSAGEM_FALLBACK_ADUBACAO2,
+  montarLinhasProdutos,
+  normalizarComplementosAdubacao2,
+  normalizarProdutoAdubacao2,
+  objetoSeguroAdubacao2,
+  produtoAtivo,
+} from '@/lib/planejamentoProdutosAdubacao2';
 import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
 import {
   classificarExtracaoAnaliseSolo,
@@ -40,6 +48,40 @@ const ABAS = [
   { id: 'compras',      label: 'Consolidação de Compras' },
   { id: 'resumo',       label: 'Resumo Geral' },
 ];
+
+class Adubacao2ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[Adubacao2] Falha inesperada ao carregar planejamento', error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 max-w-7xl mx-auto">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+            {MENSAGEM_FALLBACK_ADUBACAO2}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const ANALISE_SOLO_NUMERIC_FIELDS = new Set([
   'area_ha',
@@ -341,7 +383,7 @@ export default function Adubacao2() {
 
   useEffect(() => {
     const mapa = new Map(idsPlanejamentoRef.current);
-    registrosSalvos.forEach(registro => {
+    listaSeguraAdubacao2(registrosSalvos).forEach(registro => {
       if (!registro?.id || !registro?.talhao_id) return;
       const chave = `${registro.codigo_produtor}|${registro.safra}|${registro.talhao_id}`;
       mapa.set(chave, registro.id);
@@ -405,15 +447,19 @@ export default function Adubacao2() {
     let precosAgg = {};
     let parcelamentosAgg = {};
 
-    registrosSalvos.forEach(r => {
+    const registrosLista = listaSeguraAdubacao2(registrosSalvos);
+    registrosLista.forEach(r => {
+      const det = objetoSeguroAdubacao2(r.detalhamento);
       prodMap[r.talhao_id] = {
         safra1: r.safra1_sc_ha != null ? String(r.safra1_sc_ha) : '',
         safra2: r.safra2_sc_ha != null ? String(r.safra2_sc_ha) : '',
       };
       if (r.analise2040) a2040Map[r.talhao_id] = r.analise2040;
-      if (r.detalhamento?.precos) precosAgg = { ...precosAgg, ...r.detalhamento.precos };
-      if (r.detalhamento?.parcelamentos && Object.keys(r.detalhamento.parcelamentos).length > 0) {
-        parcelamentosAgg[r.talhao_id] = r.detalhamento.parcelamentos;
+      const precosDetalhe = objetoSeguroAdubacao2(det.precos);
+      if (Object.keys(precosDetalhe).length > 0) precosAgg = { ...precosAgg, ...precosDetalhe };
+      const parcelamentosDetalhe = objetoSeguroAdubacao2(det.parcelamentos);
+      if (Object.keys(parcelamentosDetalhe).length > 0) {
+        parcelamentosAgg[r.talhao_id] = parcelamentosDetalhe;
       }
     });
 
@@ -441,9 +487,10 @@ export default function Adubacao2() {
       }
 
       // Reconstrói resultadosCalculo a partir dos dados salvos
-      const resultadosRestaurados = talhoes.map(talhao => {
-        const registro = registrosSalvos.find(r => r.talhao_id === talhao.id);
-        if (!registro?.detalhamento?.rec) {
+      const resultadosRestaurados = listaSeguraAdubacao2(talhoes).map(talhao => {
+        const registro = registrosLista.find(r => r.talhao_id === talhao.id);
+        const det = objetoSeguroAdubacao2(registro?.detalhamento);
+        if (!det.rec) {
           const locProd = prodMap[talhao.id] || {};
           const s1 = parseFloat(locProd.safra1);
           const s2 = parseFloat(locProd.safra2);
@@ -454,7 +501,6 @@ export default function Adubacao2() {
           const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
           return { talhao, mediaBienal, analise, analise2040: a2040Map[talhao.id] || null, rec: null, produtoSugerido: null, doseProdutoHa: null, temRegistroSalvo: !!registro };
         }
-        const det = registro.detalhamento;
         const locProd = prodMap[talhao.id] || {};
         const s1 = parseFloat(locProd.safra1);
         const s2 = parseFloat(locProd.safra2);
@@ -465,14 +511,15 @@ export default function Adubacao2() {
           else if (!isNaN(s2)) mediaBienal = s2;
         }
         let produtoSugerido = det.produtoSugerido ? {
-          ...det.produtoSugerido,
+          ...normalizarProdutoAdubacao2(det.produtoSugerido),
           dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa ?? null,
           dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
           dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
           nutriente_alvo: det.nutriente_alvo || 'n_pct',
         } : null;
-        if (produtoSugerido && todos.length > 0) {
-          const prodCatalogo = todos.find(p => p.id === produtoSugerido.id);
+        const todosLista = listaSeguraAdubacao2(todos);
+        if (produtoSugerido && todosLista.length > 0) {
+          const prodCatalogo = todosLista.find(p => p.id === produtoSugerido.id);
           if (prodCatalogo) produtoSugerido = prodCatalogo;
         }
         const analise = todasAnalises.find(a => a.talhao_id === talhao.id && a.safra === safra) || null;
@@ -497,25 +544,27 @@ export default function Adubacao2() {
 
         const prodEfetivosMap = {};
         resultadosRestaurados.forEach(r => {
-          if (r.produtoSugerido && r.doseProdutoHa != null) {
-            const registroRestaurado = registrosPorTalhao[r.talhao.id] || null;
+          const registroRestaurado = registrosPorTalhao[r.talhao.id] || null;
+          const detRestaurado = objetoSeguroAdubacao2(registroRestaurado?.detalhamento);
+          const complementosRestaurados = normalizarComplementosAdubacao2(detRestaurado.complementos).map(comp => ({
+            ...comp,
+            doseKgHa: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+            dose_utilizada_kg_ha: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+            dose_calculada_kg_ha: comp.dose_calculada_kg_ha ?? comp.doseKgHa,
+            dose_ajustada_manualmente: Boolean(comp.dose_ajustada_manualmente),
+            nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
+          }));
+          if ((r.produtoSugerido && r.doseProdutoHa != null) || complementosRestaurados.length > 0) {
             prodEfetivosMap[r.talhao.id] = {
-              produto: r.produtoSugerido,
+              produto: r.produtoSugerido || null,
               doseKgHa: r.dose_utilizada_kg_ha ?? r.doseProdutoHa,
               dose_calculada_kg_ha: r.dose_calculada_kg_ha ?? r.doseProdutoHa,
               dose_utilizada_kg_ha: r.dose_utilizada_kg_ha ?? r.doseProdutoHa,
               dose_ajustada_manualmente: Boolean(r.dose_ajustada_manualmente),
               nutriente_alvo: r.nutriente_alvo || 'n_pct',
-              complementos: (registroRestaurado?.detalhamento?.complementos || []).map(comp => ({
-                ...comp,
-                doseKgHa: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
-                dose_utilizada_kg_ha: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
-                dose_calculada_kg_ha: comp.dose_calculada_kg_ha ?? comp.doseKgHa,
-                dose_ajustada_manualmente: Boolean(comp.dose_ajustada_manualmente),
-                nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
-              })),
-              trocas: registroRestaurado?.detalhamento?.trocas || {},
-              marcados: registroRestaurado?.detalhamento?.marcados || null,
+              complementos: complementosRestaurados,
+              trocas: objetoSeguroAdubacao2(detRestaurado.trocas),
+              marcados: Object.keys(objetoSeguroAdubacao2(detRestaurado.marcados)).length > 0 ? objetoSeguroAdubacao2(detRestaurado.marcados) : null,
             };
           }
         });
@@ -626,7 +675,8 @@ export default function Adubacao2() {
     setCalculando(true);
     setTimeout(() => {
       const resultados = talhoes.map(talhao => {
-        const registroSalvo = registrosSalvos.find(r => r.talhao_id === talhao.id) || null;
+        const registroSalvo = listaSeguraAdubacao2(registrosSalvos).find(r => r.talhao_id === talhao.id) || null;
+        const detSalvo = objetoSeguroAdubacao2(registroSalvo?.detalhamento);
         const locProd = produtividadeLocal[talhao.id] || {};
         const s1 = parseFloat(locProd.safra1);
         const s2 = parseFloat(locProd.safra2);
@@ -641,17 +691,17 @@ export default function Adubacao2() {
 
         let produtoSugerido = null;
         let doseProdutoHa = null;
-        if (rec && registroSalvo?.detalhamento?.produtoSugerido && !substituirSalvos) {
-          const salvo = registroSalvo.detalhamento.produtoSugerido;
+        if (rec && detSalvo.produtoSugerido && !substituirSalvos) {
+          const salvo = normalizarProdutoAdubacao2(detSalvo.produtoSugerido);
           const produtoBase = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
           produtoSugerido = {
             ...produtoBase,
-            dose_calculada_kg_ha: registroSalvo.detalhamento.dose_calculada_kg_ha ?? registroSalvo.detalhamento.doseProdutoHa ?? null,
-            dose_utilizada_kg_ha: registroSalvo.detalhamento.dose_utilizada_kg_ha ?? registroSalvo.detalhamento.doseProdutoHa ?? null,
-            dose_ajustada_manualmente: Boolean(registroSalvo.detalhamento.dose_ajustada_manualmente),
-            nutriente_alvo: registroSalvo.detalhamento.nutriente_alvo || 'n_pct',
+            dose_calculada_kg_ha: detSalvo.dose_calculada_kg_ha ?? detSalvo.doseProdutoHa ?? null,
+            dose_utilizada_kg_ha: detSalvo.dose_utilizada_kg_ha ?? detSalvo.doseProdutoHa ?? null,
+            dose_ajustada_manualmente: Boolean(detSalvo.dose_ajustada_manualmente),
+            nutriente_alvo: detSalvo.nutriente_alvo || 'n_pct',
           };
-          doseProdutoHa = registroSalvo.detalhamento.dose_utilizada_kg_ha ?? registroSalvo.detalhamento.doseProdutoHa ?? null;
+          doseProdutoHa = detSalvo.dose_utilizada_kg_ha ?? detSalvo.doseProdutoHa ?? null;
         } else if (rec && listaCalculo.length > 0) {
           const linhas = montarLinhasProdutos(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, {}, null, null, null, rec);
           const principal = linhas.find(l => l.ehPrincipal);
@@ -668,10 +718,10 @@ export default function Adubacao2() {
           rec,
           produtoSugerido,
           doseProdutoHa,
-          dose_calculada_kg_ha: registroSalvo?.detalhamento?.dose_calculada_kg_ha ?? doseProdutoHa,
-          dose_utilizada_kg_ha: registroSalvo?.detalhamento?.dose_utilizada_kg_ha ?? doseProdutoHa,
-          dose_ajustada_manualmente: Boolean(registroSalvo?.detalhamento?.dose_ajustada_manualmente),
-          nutriente_alvo: registroSalvo?.detalhamento?.nutriente_alvo || 'n_pct',
+          dose_calculada_kg_ha: detSalvo.dose_calculada_kg_ha ?? doseProdutoHa,
+          dose_utilizada_kg_ha: detSalvo.dose_utilizada_kg_ha ?? doseProdutoHa,
+          dose_ajustada_manualmente: Boolean(detSalvo.dose_ajustada_manualmente),
+          nutriente_alvo: detSalvo.nutriente_alvo || 'n_pct',
           temRegistroSalvo: !!registroSalvo,
           substituirSalvo: substituirSalvos && !!registroSalvo,
         };
@@ -816,6 +866,7 @@ export default function Adubacao2() {
   }, []);
 
   return (
+    <Adubacao2ErrorBoundary resetKey={`${produtorId || 'sem-produtor'}|${safra || 'sem-safra'}`}>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Adubação 2.0</h1>
@@ -1150,5 +1201,6 @@ export default function Adubacao2() {
         />
       )}
     </div>
+    </Adubacao2ErrorBoundary>
   );
 }

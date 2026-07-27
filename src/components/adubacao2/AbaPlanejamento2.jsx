@@ -9,9 +9,12 @@ import {
   calcularDoseProdutoPorAlvo,
   filtrarProdutosPlanejamento,
   listarNutrientesNaoAtendidos,
+  listaSeguraAdubacao2,
   montarLinhasProdutos,
   montarProdutosEfetivosPlanejamento,
   NUTRIENTES_ALVO_ADUBACAO2,
+  normalizarComplementosAdubacao2,
+  objetoSeguroAdubacao2,
   origemProdutoCatalogoLabel,
   resolverAcaoProdutoDuplicado,
   restaurarDoseCalculadaLinha,
@@ -87,7 +90,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
   // Produtos com o nutriente específico; fallback: todos os produtos se lista vazia
   const produtosDoNutriente = useMemo(() => {
-    const sorted = [...todos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    const sorted = listaSeguraAdubacao2(todos).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
     if (!nutField) return sorted;
     // Produtos com teor ficam no topo; os demais ficam abaixo mas aparecem sempre
     const comNutriente = sorted.filter(p => (parseFloat(p[nutField]) || 0) > 0);
@@ -97,7 +100,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
   const semProdutosEspecificos = useMemo(() => {
     if (!nutField) return false;
-    return todos.filter(p => (parseFloat(p[nutField]) || 0) > 0).length === 0;
+    return listaSeguraAdubacao2(todos).filter(p => (parseFloat(p[nutField]) || 0) > 0).length === 0;
   }, [todos, nutField]);
 
   const produtosFiltrados = useMemo(() => {
@@ -106,7 +109,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
     return produtosDoNutriente.filter(p => (p.nome || '').toLowerCase().includes(q));
   }, [produtosDoNutriente, busca]);
 
-  const produtoSelecionado = todos.find(p => p.id === produtoId) || null;
+  const produtoSelecionado = listaSeguraAdubacao2(todos).find(p => p.id === produtoId) || null;
   const doseNum = doseManual !== '' ? parseFloat(doseManual) : null;
   const preco = produtoId ? precos?.[produtoId] : null;
   const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
@@ -246,8 +249,13 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange, onDoseChange, onRestaurarDose, onAlvoChange, onAdicionarManual, onExcluirManual }) {
   const [expandidoProd, setExpandidoProd] = useState(null);
 
-  const temManuaisLivres = Object.keys(extrasManuais || {}).some(key => String(key).startsWith('manual-'));
-  const semLinhas = (!linhas || linhas.length === 0) && (!elementosExtras || elementosExtras.length === 0) && !temManuaisLivres;
+  const extrasObj = objetoSeguroAdubacao2(extrasManuais);
+  const linhasLista = listaSeguraAdubacao2(linhas).filter(linha => linha?.produto);
+  const elementosExtrasLista = listaSeguraAdubacao2(elementosExtras);
+  const precosObj = objetoSeguroAdubacao2(precos);
+  const parcelamentosObj = objetoSeguroAdubacao2(parcelamentos);
+  const temManuaisLivres = Object.keys(extrasObj).some(key => String(key).startsWith('manual-'));
+  const semLinhas = linhasLista.length === 0 && elementosExtrasLista.length === 0 && !temManuaisLivres;
   if (semLinhas) {
     return (
       <div className="bg-muted/30 border border-dashed border-border rounded-lg px-4 py-3 text-xs text-muted-foreground text-center space-y-3">
@@ -271,16 +279,16 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
           </tr>
         </thead>
         <tbody>
-          {(linhas || []).map(linha => {
+          {linhasLista.map(linha => {
             const { produto, nutrientes, ehPrincipal, doseKgHa, nutKey, origemUso, dose_ajustada_manualmente } = linha;
-            const preco = precos?.[produto.id];
+            const preco = precosObj?.[produto.id];
             const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
             const custoHa = precoNum != null && doseKgHa != null ? precoNum * doseKgHa : null;
             const totalKg = doseKgHa != null && area ? Math.round(doseKgHa * area * 10) / 10 : null;
             const custoTotal = custoHa != null && area ? custoHa * area : null;
-            const parc = parcelamentos?.[produto.id] || null;
+            const parc = parcelamentosObj?.[produto.id] || null;
             const expandido = expandidoProd === produto.id;
-            const nutStr = nutrientes.map(n => `${n.label} ${fmt(n.fornecido, 1)}`).join(' · ');
+            const nutStr = listaSeguraAdubacao2(nutrientes).map(n => `${n.label} ${fmt(n.fornecido, 1)}`).join(' · ');
 
             return (
               <React.Fragment key={produto.id}>
@@ -372,7 +380,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
             );
           })}
           {/* Linhas de elementos extras (Zn, Cu, Mn, Mg, Fe, MO) marcados no grid */}
-          {(elementosExtras || []).map(el => (
+          {elementosExtrasLista.map(el => (
             <LinhaElementoExtra
               key={`extra-${el.key}`}
               elLabel={el.label}
@@ -384,11 +392,11 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
               parcelamentos={parcelamentos}
               onParcelamentoChange={onParcelamentoChange}
               onAplicarParcTodos={onAplicarParcTodos}
-              value={extrasManuais?.[el.key]}
+              value={extrasObj?.[el.key]}
               onChange={(data) => onExtraChange(el.key, data)}
             />
           ))}
-          {Object.entries(extrasManuais || {}).filter(([key]) => String(key).startsWith('manual-')).map(([key, data]) => (
+          {Object.entries(extrasObj).filter(([key]) => String(key).startsWith('manual-')).map(([key, data]) => (
             <LinhaElementoExtra
               key={key}
               elLabel="Produto adicionado manualmente"
@@ -427,32 +435,33 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
 
   // Marcados: restaura do banco se disponível, senão padrão (temRec = marcado)
   const [marcados, setMarcados] = useState(() => {
-    if (marcadosIniciais && Object.keys(marcadosIniciais).length > 0) return marcadosIniciais;
+    const marcadosObj = objetoSeguroAdubacao2(marcadosIniciais);
+    if (Object.keys(marcadosObj).length > 0) return marcadosObj;
     return criarMarcacoesPadrao(rec, TODOS_ELEMENTOS_GRID);
   });
 
   // Trocas: restaura do banco se disponível
-  const [trocas, setTrocas] = useState(() => trocasIniciais || {});
+  const [trocas, setTrocas] = useState(() => objetoSeguroAdubacao2(trocasIniciais));
 
   // Extras manuais: restaura do banco se disponível
   const [extrasManuais, setExtrasManuais] = useState(() => {
     const init = {};
-    (complementosSalvos || []).forEach(c => {
+    normalizarComplementosAdubacao2(complementosSalvos).forEach(c => {
       if (c.isManualExtra && c.produto?.id) {
         init[c.linhaId || c.nutKey] = { produtoId: c.produto.id, doseKgHa: c.doseKgHa, nutriente_alvo: c.nutriente_alvo || c.nutKey || 'dose_manual', nutKey: c.nutKey, isManualLivre: Boolean(c.isManualLivre), usoSeparado: Boolean(c.usoSeparado) };
       }
     });
     return init;
   });
-  const [ajustesDose, setAjustesDose] = useState(() => ajustesDoseIniciais || {});
+  const [ajustesDose, setAjustesDose] = useState(() => objetoSeguroAdubacao2(ajustesDoseIniciais));
 
   // Garante que checkboxes dos extras salvos fiquem marcados ao carregar
   useEffect(() => {
-    const keys = Object.keys(extrasManuais);
+    const keys = Object.keys(objetoSeguroAdubacao2(extrasManuais));
     if (keys.length === 0) return;
     setMarcados(prev => {
       let changed = false;
-      const next = { ...prev };
+      const next = { ...objetoSeguroAdubacao2(prev) };
       keys.forEach(k => { if (!next[k]) { next[k] = true; changed = true; } });
       return changed ? next : prev;
     });
@@ -460,7 +469,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
 
   const handleExcluirManual = useCallback((key) => {
     setExtrasManuais(prev => {
-      const next = { ...prev };
+      const next = { ...objetoSeguroAdubacao2(prev) };
       delete next[key];
       onExtrasChange?.(next);
       return next;
@@ -470,7 +479,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
   const handleAdicionarManual = useCallback(() => {
     const key = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setExtrasManuais(prev => {
-      const next = { ...prev, [key]: { produtoId: '', doseKgHa: '', nutriente_alvo: 'dose_manual', nutKey: 'dose_manual', isManualLivre: true, usoSeparado: true } };
+      const next = { ...objetoSeguroAdubacao2(prev), [key]: { produtoId: '', doseKgHa: '', nutriente_alvo: 'dose_manual', nutKey: 'dose_manual', isManualLivre: true, usoSeparado: true } };
       onExtrasChange?.(next);
       return next;
     });
@@ -479,7 +488,8 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
   const atualizarAjusteDose = useCallback((linha, ajuste) => {
     const chave = chaveLinhaProduto(linha);
     setAjustesDose(prev => {
-      const next = { ...prev, [chave]: { ...(prev[chave] || {}), ...ajuste, linhaId: chave } };
+      const prevObj = objetoSeguroAdubacao2(prev);
+      const next = { ...prevObj, [chave]: { ...(prevObj[chave] || {}), ...ajuste, linhaId: chave } };
       onAjustesDoseChange?.(next);
       return next;
     });
@@ -505,15 +515,17 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
   }, [rec, atualizarAjusteDose]);
 
   const toggleMarcado = (key) => {
-    const vaiAtivar = !marcados[key];
-    const next = { ...marcados, [key]: vaiAtivar };
+    const marcadosObj = objetoSeguroAdubacao2(marcados);
+    const vaiAtivar = !marcadosObj[key];
+    const next = { ...marcadosObj, [key]: vaiAtivar };
     setMarcados(next);
     onMarcadosChange?.(next);
 
     if (!vaiAtivar) {
       setExtrasManuais(prev => {
-        if (!(key in prev)) return prev;
-        const extrasAtualizados = { ...prev };
+        const prevObj = objetoSeguroAdubacao2(prev);
+        if (!(key in prevObj)) return prev;
+        const extrasAtualizados = { ...prevObj };
         delete extrasAtualizados[key];
         onExtrasChange?.(extrasAtualizados);
         return extrasAtualizados;
@@ -523,7 +535,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
 
   const handleTrocarProduto = useCallback((nutKey, produto) => {
     setTrocas(prev => {
-      const next = { ...prev, [nutKey]: produto.id };
+      const next = { ...objetoSeguroAdubacao2(prev), [nutKey]: produto.id };
       onTrocasChange?.(next);
       return next;
     });
@@ -539,28 +551,29 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['B']) delete recFiltrado.B;
     const prodSalvo = resultado.substituirSalvo ? null : (resultado.produtoSugerido || null);
     const doseSalva = resultado.substituirSalvo ? null : (resultado.doseProdutoHa ?? null);
-    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : (complementosSalvos || null), rec, ajustesDose);
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : normalizarComplementosAdubacao2(complementosSalvos), rec, ajustesDose);
   }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos, ajustesDose]);
 
   const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
   const balancoNutrientes = useMemo(() => calcularBalancoNutrientes(rec, [
     ...linhasProdutos,
-    ...Object.values(extrasManuais).map(extra => ({
-      produto: todosSemFiltro.find(produto => produto.id === extra?.produtoId),
+    ...Object.values(objetoSeguroAdubacao2(extrasManuais)).map(extra => ({
+      produto: listaSeguraAdubacao2(todosSemFiltro).find(produto => produto.id === extra?.produtoId),
       doseKgHa: extra?.doseKgHa,
     })),
   ]), [rec, linhasProdutos, extrasManuais, todosSemFiltro]);
 
   const handleExtraChange = useCallback((key, data) => {
+    const extrasObj = objetoSeguroAdubacao2(extrasManuais);
     if (data?.produtoId) {
-      const duplicidade = resolverAcaoProdutoDuplicado({ produtoId: data.produtoId, linhas: linhasProdutos, manuais: extrasManuais });
+      const duplicidade = resolverAcaoProdutoDuplicado({ produtoId: data.produtoId, linhas: linhasProdutos, manuais: extrasObj });
       if (duplicidade.duplicado && String(key).startsWith('manual-') && typeof window !== 'undefined') {
         const usarSeparado = window.confirm('Este produto já existe neste talhão. Clique em OK para adicionar como uso separado ou Cancelar para editar a linha existente.');
         if (!usarSeparado) return;
       }
     }
     setExtrasManuais(prev => {
-      const next = { ...prev, [key]: data };
+      const next = { ...objetoSeguroAdubacao2(prev), [key]: data };
       onExtrasChange?.(next);
       return next;
     });
@@ -585,7 +598,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
         custoTotalTalhao += dose * precoNum * (area || 0);
       }
     });
-    Object.values(extrasManuais).forEach(extra => {
+    Object.values(objetoSeguroAdubacao2(extrasManuais)).forEach(extra => {
       const dose = Number(extra?.doseKgHa);
       if (!Number.isFinite(dose) || dose <= 0) return;
       doseTotalHa += dose;
@@ -1021,7 +1034,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     return next;
   });
 
-  const expandirTodos = () => setExpandidos(new Set((resultados || []).map(r => r.talhao.id)));
+  const expandirTodos = () => setExpandidos(new Set(listaSeguraAdubacao2(resultados).filter(r => r?.talhao?.id).map(r => r.talhao.id)));
   const recolherTodos = () => setExpandidos(new Set());
 
   const todosFiltered = useMemo(() => filtrarProdutosPlanejamento(todos, filtro), [todos, filtro]);
@@ -1048,47 +1061,51 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   // Sincroniza quando o pai restaura preços/parcelamentos/trocas/marcados do banco
   // Merge por chave: só preenche chaves ainda ausentes no estado local
   useEffect(() => {
-    if (!precosIniciais || Object.keys(precosIniciais).length === 0) return;
+    const precosIniciaisObj = objetoSeguroAdubacao2(precosIniciais);
+    if (Object.keys(precosIniciaisObj).length === 0) return;
     setPrecos(prev => {
-      const merged = { ...precosIniciais };
-      Object.keys(prev).forEach(k => { merged[k] = prev[k]; }); // local sobrescreve salvo
+      const merged = { ...precosIniciaisObj };
+      Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; }); // local sobrescreve salvo
       return merged;
     });
   }, [precosIniciais]);
   useEffect(() => {
-    if (!parcelamentosIniciais || Object.keys(parcelamentosIniciais).length === 0) return;
+    const parcelamentosIniciaisObj = objetoSeguroAdubacao2(parcelamentosIniciais);
+    if (Object.keys(parcelamentosIniciaisObj).length === 0) return;
     setParcelamentos(prev => {
-      const merged = { ...parcelamentosIniciais };
-      Object.keys(prev).forEach(k => { merged[k] = prev[k]; }); // local sobrescreve salvo
+      const merged = { ...parcelamentosIniciaisObj };
+      Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; }); // local sobrescreve salvo
       return merged;
     });
   }, [parcelamentosIniciais]);
   // Restaura trocas, marcações e produtos manuais dos registros salvos.
   useEffect(() => {
-    if (!registrosSalvos || registrosSalvos.length === 0) return;
+    const registrosLista = listaSeguraAdubacao2(registrosSalvos);
+    if (registrosLista.length === 0) return;
     const trocasAgg = {};
     const marcadosAgg = {};
     const extrasAgg = {};
     const ajustesAgg = {};
-    registrosSalvos.forEach(r => {
-      if (r.detalhamento?.trocas) trocasAgg[r.talhao_id] = r.detalhamento.trocas;
-      if (r.detalhamento?.marcados) marcadosAgg[r.talhao_id] = r.detalhamento.marcados;
-      if (r.detalhamento?.produtoSugerido?.id) {
-        const key = `n_pct:${r.detalhamento.produtoSugerido.id}`;
+    registrosLista.forEach(r => {
+      const det = objetoSeguroAdubacao2(r.detalhamento);
+      if (Object.keys(objetoSeguroAdubacao2(det.trocas)).length > 0) trocasAgg[r.talhao_id] = objetoSeguroAdubacao2(det.trocas);
+      if (Object.keys(objetoSeguroAdubacao2(det.marcados)).length > 0) marcadosAgg[r.talhao_id] = objetoSeguroAdubacao2(det.marcados);
+      if (det.produtoSugerido?.id) {
+        const key = `n_pct:${det.produtoSugerido.id}`;
         ajustesAgg[r.talhao_id] = {
           ...(ajustesAgg[r.talhao_id] || {}),
           [key]: {
             linhaId: key,
-            dose_calculada_kg_ha: r.detalhamento.dose_calculada_kg_ha ?? r.detalhamento.doseProdutoHa,
-            dose_utilizada_kg_ha: r.detalhamento.dose_utilizada_kg_ha ?? r.detalhamento.doseProdutoHa,
-            doseKgHa: r.detalhamento.dose_utilizada_kg_ha ?? r.detalhamento.doseProdutoHa,
-            dose_ajustada_manualmente: Boolean(r.detalhamento.dose_ajustada_manualmente),
-            nutriente_alvo: r.detalhamento.nutriente_alvo || 'n_pct',
+            dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa,
+            dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa,
+            doseKgHa: det.dose_utilizada_kg_ha ?? det.doseProdutoHa,
+            dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
+            nutriente_alvo: det.nutriente_alvo || 'n_pct',
           },
         };
       }
       const extras = {};
-      (r.detalhamento?.complementos || []).forEach(comp => {
+      normalizarComplementosAdubacao2(det.complementos).forEach(comp => {
         if (comp?.produto?.id) {
           const key = comp.linhaId || `${comp.nutKey || comp.nutriente_alvo || 'produto'}:${comp.produto.id}`;
           ajustesAgg[r.talhao_id] = {
@@ -1119,28 +1136,28 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     if (Object.keys(trocasAgg).length > 0) {
       setTrocasPorTalhao(prev => {
         const merged = { ...trocasAgg };
-        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; });
         return merged;
       });
     }
     if (Object.keys(marcadosAgg).length > 0) {
       setMarcadosPorTalhao(prev => {
         const merged = { ...marcadosAgg };
-        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; });
         return merged;
       });
     }
     if (Object.keys(extrasAgg).length > 0) {
       setExtrasPorTalhao(prev => {
         const merged = { ...extrasAgg };
-        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; });
         return merged;
       });
     }
     if (Object.keys(ajustesAgg).length > 0) {
       setAjustesDosePorTalhao(prev => {
         const merged = { ...ajustesAgg };
-        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; });
         return merged;
       });
     }
@@ -1148,11 +1165,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
 
   // Preenche preços das notas fiscais para produtos sem preço manual
   useEffect(() => {
-    if (!precosNotasMap || Object.keys(precosNotasMap).length === 0) return;
+    const precosNotasObj = objetoSeguroAdubacao2(precosNotasMap);
+    if (Object.keys(precosNotasObj).length === 0) return;
     setPrecos(prev => {
       const next = { ...prev };
       let changed = false;
-      Object.entries(precosNotasMap).forEach(([prodId, media]) => {
+      Object.entries(precosNotasObj).forEach(([prodId, media]) => {
         if (!next[prodId] && next[prodId] !== 0) {
           next[prodId] = String(media);
           changed = true;
@@ -1182,7 +1200,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const handleAplicarParcTodos = useCallback((prodId, parc) => {
     setParcelamentos(prev => {
       const next = { ...prev };
-      (resultados || []).forEach(r => {
+      listaSeguraAdubacao2(resultados).filter(r => r?.talhao?.id).forEach(r => {
         next[r.talhao.id] = { ...(next[r.talhao.id] || {}), [prodId]: parc };
       });
       return next;
@@ -1226,9 +1244,10 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao]);
 
   const metricas = useMemo(() => {
-    if (!resultados || resultados.length === 0) return null;
-    const comRec = resultados.filter(r => r.rec);
-    const areaTotal = resultados.reduce((s, r) => s + (r.talhao.area_ha || 0), 0);
+    const resultadosLista = listaSeguraAdubacao2(resultados).filter(r => r?.talhao);
+    if (resultadosLista.length === 0) return null;
+    const comRec = resultadosLista.filter(r => r.rec);
+    const areaTotal = resultadosLista.reduce((s, r) => s + (r.talhao.area_ha || 0), 0);
 
     let custoFazendaTotal = 0;
     let custoFazendaHaSum = 0;
@@ -1239,6 +1258,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       const area = r.talhao.area_ha || 0;
       const linhas = montarLinhasProdutos(produtosCalculo, r.rec);
       linhas.forEach(l => {
+        if (!l?.produto?.id) return;
         const preco = precos[l.produto.id];
         const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
         if (precoNum != null && l.doseKgHa != null) {
@@ -1255,8 +1275,8 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
 
     return {
       calculados: comRec.length,
-      total: resultados.length,
-      pct: resultados.length > 0 ? Math.round((comRec.length / resultados.length) * 100) : 0,
+      total: resultadosLista.length,
+      pct: resultadosLista.length > 0 ? Math.round((comRec.length / resultadosLista.length) * 100) : 0,
       areaTotal,
       mediaSc: comRec.length > 0 ? comRec.reduce((s, r) => s + (r.mediaBienal || 0), 0) / comRec.length : null,
       custoFazendaTotal: custoFazendaTotal > 0 ? custoFazendaTotal : null,
@@ -1352,7 +1372,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
               </tr>
             </thead>
             <tbody>
-              {resultados.map((r, i) => {
+              {listaSeguraAdubacao2(resultados).filter(r => r?.talhao).map((r, i) => {
                 const expandido = expandidos.has(r.talhao.id);
                 const area = r.talhao.area_ha || 0;
 
