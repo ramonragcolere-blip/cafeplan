@@ -281,7 +281,7 @@ function AbaCompras2({ resultados, produtosEfetivos = {}, calagens = [], talhoes
 }
 
 // ── Página principal ──────────────────────────────────────────────────────────
-export default function Adubacao2() {
+export function Adubacao2Conteudo() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [produtorId, setProdutorId] = useState('');
@@ -448,6 +448,11 @@ export default function Adubacao2() {
     let parcelamentosAgg = {};
 
     const registrosLista = listaSeguraAdubacao2(registrosSalvos);
+    const registrosSalvosPorTalhao = Object.fromEntries(
+      registrosLista
+        .filter(registro => registro?.talhao_id)
+        .map(registro => [registro.talhao_id, registro])
+    );
     registrosLista.forEach(r => {
       const det = objetoSeguroAdubacao2(r.detalhamento);
       prodMap[r.talhao_id] = {
@@ -544,7 +549,7 @@ export default function Adubacao2() {
 
         const prodEfetivosMap = {};
         resultadosRestaurados.forEach(r => {
-          const registroRestaurado = registrosPorTalhao[r.talhao.id] || null;
+          const registroRestaurado = registrosSalvosPorTalhao[r.talhao.id] || null;
           const detRestaurado = objetoSeguroAdubacao2(registroRestaurado?.detalhamento);
           const complementosRestaurados = normalizarComplementosAdubacao2(detRestaurado.complementos).map(comp => ({
             ...comp,
@@ -866,7 +871,6 @@ export default function Adubacao2() {
   }, []);
 
   return (
-    <Adubacao2ErrorBoundary resetKey={`${produtorId || 'sem-produtor'}|${safra || 'sem-safra'}`}>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Adubação 2.0</h1>
@@ -1201,6 +1205,13 @@ export default function Adubacao2() {
         />
       )}
     </div>
+  );
+}
+
+export default function Adubacao2() {
+  return (
+    <Adubacao2ErrorBoundary>
+      <Adubacao2Conteudo />
     </Adubacao2ErrorBoundary>
   );
 }
