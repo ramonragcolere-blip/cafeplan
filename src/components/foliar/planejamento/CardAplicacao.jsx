@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Trash2, CalendarDays, MapPin, FlaskConical, Pencil, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  CUSTO_PENDENTE_FOLIAR,
+  calcularCustoProdutoFoliarDetalhado,
+  calcularResumoAplicacaoFoliar,
+  formatarDoseNormalizadaFoliar,
+  formatarPeriodoAplicacaoFoliar,
+} from '@/lib/unidadesAplicacoesFoliares';
 
 const fmtR = (v) => v != null && !isNaN(v) ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—';
 
@@ -36,13 +43,10 @@ export default function CardAplicacao({ aplicacao, talhoes, onEditarReceita, onE
   const talhoesAplic = talhoes.filter(t => (aplicacao.talhao_ids || []).includes(t.id));
   const areaTotal = talhoesAplic.reduce((s, t) => s + (t.area_ha || 0), 0);
 
-  // Custos
-  const custoHa = (aplicacao.produtos || []).reduce((s, p) => {
-    const d = parseFloat(String(p.dose || '').replace(',', '.')) || 0;
-    const pr = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-    return s + (d && pr ? d * pr : 0);
-  }, 0);
-  const custoTotal = custoHa * areaTotal;
+  const periodo = formatarPeriodoAplicacaoFoliar(aplicacao);
+  const resumoCustos = calcularResumoAplicacaoFoliar(aplicacao, talhoes);
+  const custoHa = resumoCustos.custoHa;
+  const custoTotal = resumoCustos.custoTotal;
 
   const volumeTotal = aplicacao.volume_calda_ha && areaTotal ? aplicacao.volume_calda_ha * areaTotal : null;
 
@@ -71,10 +75,10 @@ export default function CardAplicacao({ aplicacao, talhoes, onEditarReceita, onE
         </div>
 
         {/* Época */}
-        {aplicacao.epoca && (
+        {periodo && (
           <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground shrink-0">
             <CalendarDays className="w-3 h-3" />
-            <span>{aplicacao.epoca}</span>
+            <span>{periodo}</span>
           </div>
         )}
 
@@ -124,10 +128,18 @@ export default function CardAplicacao({ aplicacao, talhoes, onEditarReceita, onE
                   <span className="font-medium tabular-nums">{volumeTotal.toFixed(0)} L</span>
                 </div>
               )}
-              <div className="flex justify-between gap-2">
-                <span className="text-muted-foreground">Época</span>
-                <span className="font-medium">{aplicacao.epoca || '—'}</span>
-              </div>
+              {periodo && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Data ou época</span>
+                  <span className="font-medium">{periodo}</span>
+                </div>
+              )}
+              {aplicacao.data_prevista && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Data prevista</span>
+                  <span className="font-medium">{aplicacao.data_prevista}</span>
+                </div>
+              )}
               {aplicacao.data_limite && (
                 <div className="flex justify-between gap-2">
                   <span className="text-muted-foreground">Data limite</span>
@@ -194,16 +206,21 @@ export default function CardAplicacao({ aplicacao, talhoes, onEditarReceita, onE
                   </thead>
                   <tbody>
                     {(aplicacao.produtos || []).map((p, idx) => {
-                      const d = parseFloat(String(p.dose || '').replace(',', '.')) || 0;
-                      const pr = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-                      const cHa = d && pr ? d * pr : null;
+                      const custo = calcularCustoProdutoFoliarDetalhado(p, {
+                        volumeCaldaHa: aplicacao.volume_calda_ha,
+                        areaHa: areaTotal,
+                      });
                       return (
                         <tr key={idx} className="border-b border-border/50 last:border-0">
                           <td className="px-2 py-1.5 max-w-[100px]">
                             <span className="truncate block font-medium">{p.produto_nome}</span>
+                            {custo.pendente && <span className="block text-[10px] text-amber-700">{CUSTO_PENDENTE_FOLIAR}</span>}
                           </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{p.dose || '—'} {p.unidade || ''}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{cHa != null ? fmtR(cHa) : '—'}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                            <span className="block">{p.dose || '—'} {p.unidade || ''}</span>
+                            <span className="block text-[10px] text-muted-foreground">{formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: aplicacao.volume_calda_ha })}</span>
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{custo.custo_ha != null ? fmtR(custo.custo_ha) : '—'}</td>
                         </tr>
                       );
                     })}
@@ -224,6 +241,11 @@ export default function CardAplicacao({ aplicacao, talhoes, onEditarReceita, onE
                   </div>
                 )}
               </div>
+            )}
+            {resumoCustos.pendencias > 0 && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                {CUSTO_PENDENTE_FOLIAR}
+              </p>
             )}
           </div>
         </div>

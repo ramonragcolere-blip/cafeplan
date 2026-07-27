@@ -5,6 +5,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { X, Plus, Trash2, Save } from 'lucide-react';
 import { filtrarInsumosPlanejamentoFoliar } from '@/lib/planejamentoFoliar';
+import {
+  CUSTO_PENDENTE_FOLIAR,
+  calcularCustoProdutoFoliarDetalhado,
+  formatarDoseNormalizadaFoliar,
+  normalizarProdutosAplicacaoFoliar,
+} from '@/lib/unidadesAplicacoesFoliares';
 
 const OBJETIVOS = ['Nutrição', 'Ferrugem', 'Cercosporiose', 'Bicho-mineiro', 'Ácaro', 'Bacteriose', 'Pós-colheita', 'Pré-florada', 'Outro'];
 const EQUIPAMENTOS = ['Bomba costal', 'Atomizador', 'Drone', 'Canhão'];
@@ -15,6 +21,11 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
   const [local, setLocal] = useState(() => ({
     titulo: aplicacao.titulo || '',
     objetivos: aplicacao.objetivos || [],
+    data_prevista: aplicacao.data_prevista || '',
+    data_limite: aplicacao.data_limite || '',
+    epoca: aplicacao.epoca || '',
+    periodo_aplicacao: aplicacao.periodo_aplicacao || '',
+    meses: aplicacao.meses || [],
     equipamento: aplicacao.equipamento || '',
     volume_calda_ha: aplicacao.volume_calda_ha || '',
     produtos: aplicacao.produtos || [],
@@ -52,7 +63,7 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
     if (!ins) return;
     setLocal(prev => ({
       ...prev,
-      produtos: [...prev.produtos, {
+      produtos: normalizarProdutosAplicacaoFoliar([...prev.produtos, {
         produto_id: ins.id,
         produto_nome: ins.nome,
         dose,
@@ -60,7 +71,7 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
         tipo_formulacao: ins.tipo_formulacao || '',
         grupo: ins.grupo || '',
         preco: '',
-      }],
+      }], { volumeCaldaHa: prev.volume_calda_ha }),
     }));
     setProdutoSel(''); setDose(''); setUnidade(''); setBusca(''); setAddOpen(false);
   };
@@ -80,13 +91,17 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
   // Resumo de custos
   const custos = useMemo(() => {
     let custoHaTotal = 0;
+    let pendencias = 0;
     local.produtos.forEach(p => {
-      const preco = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-      const doseN = parseFloat(String(p.dose || '').replace(',', '.')) || 0;
-      if (preco && doseN) custoHaTotal += doseN * preco;
+      const custo = calcularCustoProdutoFoliarDetalhado(p, {
+        volumeCaldaHa: local.volume_calda_ha,
+        areaHa: areaTotal,
+      });
+      if (custo.valido) custoHaTotal += custo.custo_ha;
+      else pendencias += 1;
     });
-    return { custoHa: custoHaTotal, total: custoHaTotal * (areaTotal || 0) };
-  }, [local.produtos, areaTotal]);
+    return { custoHa: custoHaTotal, total: custoHaTotal * (areaTotal || 0), pendencias };
+  }, [local.produtos, local.volume_calda_ha, areaTotal]);
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 w-[480px] max-w-full bg-card border-l border-border shadow-2xl flex flex-col">
@@ -126,6 +141,40 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
           </div>
         </div>
 
+        {/* Data ou periodo */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs mb-1 block">Data prevista</Label>
+            <Input type="date" value={local.data_prevista}
+              onChange={e => setLocal(p => ({ ...p, data_prevista: e.target.value }))}
+              className="h-8 text-sm" />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Data-limite</Label>
+            <Input type="date" value={local.data_limite}
+              onChange={e => setLocal(p => ({ ...p, data_limite: e.target.value }))}
+              className="h-8 text-sm" />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Mes</Label>
+            <Select value={local.meses?.[0] || 'none'} onValueChange={v => setLocal(p => ({ ...p, meses: v === 'none' ? [] : [v] }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Selecione…</SelectItem>
+                {['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'].map(mes => (
+                  <SelectItem key={mes} value={mes}>{mes}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Periodo de aplicacao</Label>
+            <Input value={local.periodo_aplicacao || local.epoca}
+              onChange={e => setLocal(p => ({ ...p, periodo_aplicacao: e.target.value, epoca: e.target.value }))}
+              placeholder="Ex: OUT/NOV" className="h-8 text-sm" />
+          </div>
+        </div>
+
         {/* Equipamento + Volume calda */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -141,7 +190,11 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
           <div>
             <Label className="text-xs mb-1 block">Volume de calda (L/ha)</Label>
             <Input type="number" min="0" step="1" value={local.volume_calda_ha}
-              onChange={e => setLocal(p => ({ ...p, volume_calda_ha: e.target.value }))}
+              onChange={e => setLocal(p => ({
+                ...p,
+                volume_calda_ha: e.target.value,
+                produtos: normalizarProdutosAplicacaoFoliar(p.produtos, { volumeCaldaHa: e.target.value }),
+              }))}
               placeholder="Ex: 200" className="h-8 text-sm" />
           </div>
         </div>
@@ -208,24 +261,28 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
                 </thead>
                 <tbody>
                   {local.produtos.map((p, idx) => {
-                    const doseN = parseFloat(String(p.dose || '').replace(',', '.')) || 0;
-                    const precoN = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-                    const totalL = doseN && areaTotal ? doseN * areaTotal : null;
-                    const custoHa = doseN && precoN ? doseN * precoN : null;
+                    const custo = calcularCustoProdutoFoliarDetalhado(p, {
+                      volumeCaldaHa: local.volume_calda_ha,
+                      areaHa: areaTotal,
+                    });
                     return (
                       <tr key={idx} className="border-b border-border/50 last:border-0">
                         <td className="px-2 py-2 font-medium max-w-[120px]">
                           <span className="block truncate">{p.produto_nome}</span>
                           {p.grupo && <span className="text-[10px] text-muted-foreground">{p.grupo}</span>}
+                          {custo.pendente && <span className="block text-[10px] text-amber-700">{CUSTO_PENDENTE_FOLIAR}</span>}
                         </td>
-                        <td className="px-2 py-2 tabular-nums whitespace-nowrap">{p.dose || '—'} {p.unidade || ''}</td>
-                        <td className="px-2 py-2 tabular-nums">{totalL != null ? totalL.toFixed(1) : '—'}</td>
+                        <td className="px-2 py-2 tabular-nums whitespace-nowrap">
+                          <span className="block">{p.dose || '—'} {p.unidade || ''}</span>
+                          <span className="block text-[10px] text-muted-foreground">{formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: local.volume_calda_ha })}</span>
+                        </td>
+                        <td className="px-2 py-2 tabular-nums">{custo.quantidade_total != null ? custo.quantidade_total.toFixed(2) : '—'}</td>
                         <td className="px-2 py-2">
                           <Input type="number" min="0" step="0.01" value={p.preco || ''}
                             onChange={e => handlePrecoChange(idx, e.target.value)}
                             placeholder="—" className="h-6 w-16 text-xs text-right tabular-nums" />
                         </td>
-                        <td className="px-2 py-2 tabular-nums">{custoHa != null ? fmtR(custoHa) : '—'}</td>
+                        <td className="px-2 py-2 tabular-nums">{custo.custo_ha != null ? fmtR(custo.custo_ha) : '—'}</td>
                         <td className="px-2 py-2">
                           <button type="button" onClick={() => handleRemoverProduto(idx)}
                             className="text-muted-foreground hover:text-destructive transition-colors">
@@ -250,9 +307,12 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
         </div>
 
         {/* Resumo de custos */}
-        {custos.custoHa > 0 && (
+        {(custos.custoHa > 0 || custos.pendencias > 0) && (
           <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-1">
             <p className="text-xs font-semibold text-primary">Resumo de custos</p>
+            {custos.pendencias > 0 && (
+              <p className="text-xs text-amber-700">{CUSTO_PENDENTE_FOLIAR}</p>
+            )}
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Custo/ha</span>
               <span className="font-semibold tabular-nums">{fmtR(custos.custoHa)}</span>
@@ -268,7 +328,10 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
       {/* Footer */}
       <div className="px-5 py-4 border-t border-border bg-muted/10 flex gap-2 shrink-0">
         <Button variant="outline" className="flex-1 text-sm" onClick={onCancelar}>Cancelar</Button>
-        <Button className="flex-1 text-sm gap-1.5 bg-primary" onClick={() => onSalvar(local)}>
+        <Button className="flex-1 text-sm gap-1.5 bg-primary" onClick={() => onSalvar({
+          ...local,
+          produtos: normalizarProdutosAplicacaoFoliar(local.produtos, { volumeCaldaHa: local.volume_calda_ha }),
+        })}>
           <Save className="w-4 h-4" /> Salvar receita
         </Button>
       </div>

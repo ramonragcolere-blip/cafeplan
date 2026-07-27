@@ -1,4 +1,8 @@
 import { extrairMesesAplicacaoFoliar, MESES_DASHBOARD, normalizarMesPlanejamento } from './dashboardPlanejamento.js';
+import {
+  calcularCustoProdutoFoliarDetalhado,
+  normalizarProdutosAplicacaoFoliar,
+} from './unidadesAplicacoesFoliares.js';
 
 export const MESES_PLANEJAMENTO = MESES_DASHBOARD;
 
@@ -96,7 +100,11 @@ export function normalizarPlanosAdubacao(planosLegados = [], planejamentos2 = []
  * antigo esperado pelas telas de calendário e custos.
  */
 export function normalizarAplicacoesFoliares(aplicacoesLegadas = [], cronogramas = [], talhoes = []) {
-  const legadas = aplicacoesLegadas.map(aplicacao => ({ ...aplicacao, _origem: 'legado' }));
+  const legadas = aplicacoesLegadas.map(aplicacao => ({
+    ...aplicacao,
+    _origem: 'legado',
+    produtos: normalizarProdutosAplicacaoFoliar(aplicacao.produtos || [], { volumeCaldaHa: aplicacao.volume_calda_ha }),
+  }));
   const talhaoMap = Object.fromEntries(talhoes.map(talhao => [talhao.id, talhao]));
   const novas = [];
 
@@ -115,7 +123,7 @@ export function normalizarAplicacoesFoliares(aplicacoesLegadas = [], cronogramas
         talhao_id: talhaoId,
         talhao_nome: talhao?.nome || '',
         meses,
-        produtos: Array.isArray(cronograma.produtos) ? cronograma.produtos : [],
+        produtos: normalizarProdutosAplicacaoFoliar(cronograma.produtos || [], { volumeCaldaHa: cronograma.volume_calda_ha }),
       });
     });
   });
@@ -128,8 +136,8 @@ export function calcularCustoAdubacaoHa(plano) {
   return numero(plano?.dose_rec_manual) * numero(plano?.preco);
 }
 
-export function calcularCustoProdutoFoliarHa(produto) {
-  return numero(produto?.dose) * numero(produto?.preco);
+export function calcularCustoProdutoFoliarHa(produto, opcoes = {}) {
+  return calcularCustoProdutoFoliarDetalhado(produto, opcoes).custo_ha || 0;
 }
 
 export function proximoCodigoProdutor(produtores = []) {
