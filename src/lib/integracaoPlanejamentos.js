@@ -1,4 +1,6 @@
-export const MESES_PLANEJAMENTO = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+import { extrairMesesAplicacaoFoliar, MESES_DASHBOARD, normalizarMesPlanejamento } from './dashboardPlanejamento.js';
+
+export const MESES_PLANEJAMENTO = MESES_DASHBOARD;
 
 function numero(valor) {
   if (valor === '' || valor == null) return 0;
@@ -9,17 +11,9 @@ function numero(valor) {
 function mesesDoParcelamento(parcelamento) {
   const meses = (parcelamento?.parcelas || [])
     .flatMap(parcela => parcela?.meses || [])
-    .map(mes => String(mes || '').toUpperCase())
-    .filter(mes => MESES_PLANEJAMENTO.includes(mes));
+    .map(mes => normalizarMesPlanejamento(mes))
+    .filter(Boolean);
   return [...new Set(meses)];
-}
-
-function mesesDaData(data) {
-  if (!data || typeof data !== 'string') return [];
-  const match = data.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return [];
-  const indice = Number(match[2]) - 1;
-  return MESES_PLANEJAMENTO[indice] ? [MESES_PLANEJAMENTO[indice]] : [];
 }
 
 function produtoNormalizado(produto, fallback = {}) {
@@ -110,7 +104,7 @@ export function normalizarAplicacoesFoliares(aplicacoesLegadas = [], cronogramas
     const ids = Array.isArray(cronograma.talhao_ids) && cronograma.talhao_ids.length
       ? cronograma.talhao_ids
       : [null];
-    const meses = mesesDaData(cronograma.data_limite);
+    const meses = extrairMesesAplicacaoFoliar(cronograma);
 
     ids.forEach((talhaoId, indice) => {
       const talhao = talhaoMap[talhaoId];

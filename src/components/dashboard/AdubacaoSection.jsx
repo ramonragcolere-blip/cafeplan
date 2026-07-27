@@ -1,43 +1,32 @@
 import React from 'react';
-import { CheckCircle2, Clock } from 'lucide-react';
-
-const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+import { CheckCircle2, CircleDot, Clock, ClipboardList } from 'lucide-react';
+import { categorizarStatusPlanejamento, proximasAdubacoesDashboard } from '@/lib/dashboardPlanejamento';
 
 function mesAtualIndex() { return new Date().getMonth(); } // 0-based
 
-export default function AdubacaoSection({ talhoes, planos, filtroProdutorCodigo }) {
+export default function AdubacaoSection({ talhoes, planos, filtroProdutorCodigo, safra }) {
   const talhoesFiltrados = filtroProdutorCodigo
     ? talhoes.filter(t => t.codigo_produtor === filtroProdutorCodigo)
     : talhoes;
 
-  const planosFiltrados = filtroProdutorCodigo
-    ? planos.filter(p => p.codigo_produtor === filtroProdutorCodigo)
-    : planos;
-
-  // Status por talhão (usando BasePlanejamentoAdubacao)
-  const talhaoIds = [...new Set(talhoesFiltrados.map(t => t.id))];
   const talhaoMap = Object.fromEntries(talhoesFiltrados.map(t => [t.id, t]));
-
-  const concluidos = new Set(planosFiltrados.filter(p => p.status === 'concluido').map(p => p.talhao_id));
-  const emExecucao = new Set(planosFiltrados.filter(p => p.status === 'em_execucao').map(p => p.talhao_id));
-  const comPlano = new Set(planosFiltrados.map(p => p.talhao_id));
-
-  const numConcluidos = talhaoIds.filter(id => concluidos.has(id)).length;
-  const numEmExecucao = talhaoIds.filter(id => emExecucao.has(id) && !concluidos.has(id)).length;
-  const numPendentes = talhaoIds.filter(id => !comPlano.has(id)).length;
-
-  // Próximas adubações nos próximos 30 dias
-  const mesAtual = mesAtualIndex();
-  const mesProximo = (mesAtual + 1) % 12;
-  const proximasAdubacoes = planosFiltrados.filter(p => {
-    if (!p.meses) return false;
-    const mesesFlat = p.meses.flat().map(m => MESES.indexOf(String(m || '').toUpperCase()));
-    return mesesFlat.some(m => m === mesAtual || m === mesProximo);
+  const { totais } = categorizarStatusPlanejamento({
+    talhoes,
+    planos,
+    codigoProdutor: filtroProdutorCodigo,
+    safra,
+  });
+  const proximasUnicas = proximasAdubacoesDashboard({
+    talhoes,
+    planos,
+    codigoProdutor: filtroProdutorCodigo,
+    safra,
+    mesAtualIndice: mesAtualIndex(),
   });
 
-  const proximasUnicas = [...new Map(proximasAdubacoes.map(p => [p.talhao_id + p.nutriente_key, p])).values()];
-
   if (talhoesFiltrados.length === 0) return null;
+
+  const totalTalhoes = totais.totalTalhoes || 0;
 
   return (
     <div className="space-y-4">
@@ -52,28 +41,36 @@ export default function AdubacaoSection({ talhoes, planos, filtroProdutorCodigo 
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
                 <span>Concluído</span>
               </div>
-              <span className="font-bold text-green-700">{numConcluidos}</span>
+              <span className="font-bold text-green-700">{totais.concluido}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="w-4 h-4 text-amber-500" />
                 <span>Em execução</span>
               </div>
-              <span className="font-bold text-amber-600">{numEmExecucao}</span>
+              <span className="font-bold text-amber-600">{totais.emExecucao}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
-                <Clock className="w-4 h-4 text-muted-foreground" />
+                <CircleDot className="w-4 h-4 text-blue-600" />
+                <span>Planejado</span>
+              </div>
+              <span className="font-bold text-blue-700">{totais.planejado}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <ClipboardList className="w-4 h-4 text-muted-foreground" />
                 <span>Sem planejamento</span>
               </div>
-              <span className="font-bold text-muted-foreground">{numPendentes}</span>
+              <span className="font-bold text-muted-foreground">{totais.semPlanejamento}</span>
             </div>
           </div>
           {/* Barra visual */}
-          {talhaoIds.length > 0 && (
+          {totalTalhoes > 0 && (
             <div className="h-2 bg-muted rounded-full overflow-hidden flex">
-              <div className="bg-green-500 h-full" style={{ width: `${(numConcluidos / talhaoIds.length) * 100}%` }} />
-              <div className="bg-amber-400 h-full" style={{ width: `${(numEmExecucao / talhaoIds.length) * 100}%` }} />
+              <div className="bg-green-500 h-full" style={{ width: `${(totais.concluido / totalTalhoes) * 100}%` }} />
+              <div className="bg-amber-400 h-full" style={{ width: `${(totais.emExecucao / totalTalhoes) * 100}%` }} />
+              <div className="bg-blue-500 h-full" style={{ width: `${(totais.planejado / totalTalhoes) * 100}%` }} />
             </div>
           )}
         </div>

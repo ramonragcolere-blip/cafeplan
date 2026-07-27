@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  combinarMesesOperacao,
+  mesesAutomaticosAdubacao2PorTalhao,
+  mesesAutomaticosFoliaresPorTalhao,
+  separarMesesOperacaoSalva,
+} from '@/lib/dashboardPlanejamento';
 
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const TIPOS = ['Mecanizado', 'Manual', 'Misto'];
@@ -27,6 +33,8 @@ const emptyRow = (talhaoId, talhaoNome, codigoProdutor, safra, op) => ({
   talhao_nome: talhaoNome,
   operacao: op.operacao,
   meses: [],
+  meses_automaticos: [],
+  meses_manuais: [],
   tipo: op.tipo,
   trator_implemento: op.trator_implemento,
   horas_ha: '',
@@ -57,10 +65,31 @@ function calcRow(row, equip, params) {
   return { consLha, custoDiesel, custoMO, total };
 }
 
-export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safra, codigoProdutor }) {
+function aplicarMesesAutomaticos(row, mesesAutomaticos) {
+  const separados = separarMesesOperacaoSalva(row, mesesAutomaticos);
+  return { ...row, ...separados };
+}
+
+function mesesAutomaticosDaOperacao(operacao, talhaoId, autoSolo, autoFoliar) {
+  if (operacao === 'Adubação via solo') return autoSolo[talhaoId] || [];
+  if (operacao === 'Aplicação foliar') return autoFoliar[talhaoId] || [];
+  return [];
+}
+
+export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safra, codigoProdutor, planejamentosAdubacao2 = [], cronogramasFoliares = [] }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [rows, setRows] = useState({});
+
+  const mesesAutoSolo = useMemo(() => mesesAutomaticosAdubacao2PorTalhao(
+    planejamentosAdubacao2,
+    { codigoProdutor, safra },
+  ), [planejamentosAdubacao2, codigoProdutor, safra]);
+
+  const mesesAutoFoliar = useMemo(() => mesesAutomaticosFoliaresPorTalhao(
+    cronogramasFoliares,
+    { codigoProdutor, safra },
+  ), [cronogramasFoliares, codigoProdutor, safra]);
 
   const { data: saved = [], isLoading } = useQuery({
     queryKey: ['plan_operacoes', codigoProdutor, safra],
@@ -80,15 +109,23 @@ export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safr
 
   useEffect(() => {
     if (!talhoes.length) return;
-    const init = {};
-    talhoes.forEach(t => {
-      init[t.id] = OPS_PADRAO.map(op => {
-        const existing = saved.find(s => s.talhao_id === t.id && s.operacao === op.operacao);
-        return existing || emptyRow(t.id, t.nome, codigoProdutor, safra, op);
+    setRows(prev => {
+      const init = {};
+      talhoes.forEach(t => {
+        init[t.id] = OPS_PADRAO.map(op => {
+          const existing = saved.find(s => s.talhao_id === t.id && s.operacao === op.operacao);
+          const previous = (prev[t.id] || []).find(r => r.operacao === op.operacao);
+          const preservarManual = previous?.codigo_produtor === codigoProdutor && previous?.safra === safra;
+          const row = {
+            ...(existing || emptyRow(t.id, t.nome, codigoProdutor, safra, op)),
+            ...(preservarManual && previous?.meses_manuais ? { meses_manuais: previous.meses_manuais } : {}),
+          };
+          return aplicarMesesAutomaticos(row, mesesAutomaticosDaOperacao(op.operacao, t.id, mesesAutoSolo, mesesAutoFoliar));
+        });
       });
+      return init;
     });
-    setRows(init);
-  }, [talhoes, saved, codigoProdutor, safra]);
+  }, [talhoes, saved, codigoProdutor, safra, mesesAutoSolo, mesesAutoFoliar]);
 
   const updateRow = (talhaoId, idx, field, val) => {
     setRows(prev => {
@@ -106,8 +143,16 @@ export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safr
   const toggleMes = (talhaoId, idx, mes) => {
     setRows(prev => {
       const updated = [...(prev[talhaoId] || [])];
-      const meses = updated[idx].meses || [];
-      updated[idx] = { ...updated[idx], meses: meses.includes(mes) ? meses.filter(m => m !== mes) : [...meses, mes] };
+      const mesesManuais = updated[idx].meses_manuais || [];
+      const proximosManuais = mesesManuais.includes(mes) ? mesesManuais.filter(m => m !== mes) : [...mesesManuais, mes];
+      updated[idx] = {
+        ...updated[idx],
+        meses_manuais: proximosManuais,
+        meses: combinarMesesOperacao({
+          manuais: proximosManuais,
+          automaticos: updated[idx].meses_automaticos || [],
+        }),
+      };
       return { ...prev, [talhaoId]: updated };
     });
   };
@@ -124,6 +169,8 @@ export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safr
           talhao_nome: row.talhao_nome,
           operacao: row.operacao,
           meses: row.meses || [],
+          meses_automaticos: row.meses_automaticos || [],
+          meses_manuais: row.meses_manuais || [],
           tipo: row.tipo,
           trator_implemento: row.trator_implemento || '',
           horas_ha: toNum(row.horas_ha),
@@ -187,7 +234,13 @@ export default function AbaOperacoes({ talhoes, produtor: _produtor, equip, safr
                             key={m}
                             type="button"
                             onClick={() => toggleMes(t.id, idx, m)}
-                            className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${(row.meses || []).includes(m) ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:border-primary'}`}
+                            className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                              (row.meses_manuais || []).includes(m)
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : (row.meses_automaticos || []).includes(m)
+                                  ? 'bg-green-50 text-green-800 border-green-300'
+                                  : 'border-border text-muted-foreground hover:border-primary'
+                            }`}
                           >{m}</button>
                         ))}
                       </div>
