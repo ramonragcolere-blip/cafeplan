@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/use-toast';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+import { removerDesenhoTalhaoPayload } from '@/lib/segurancaCadastros';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoicmFtb25yb2RyaWd1ZXNjYWZlcGxhbiIsImEiOiJjbXJjdG9ieWgwN2xzMnlxMW5rMnVtcTBhIn0.YjHp5YcBKhnVCVVFSqImAQ';
 
@@ -164,9 +165,10 @@ export default function MapaTalhoes() {
   };
 
   const handleRemoverDesenho = async (id) => {
-    if (!window.confirm('Remover apenas o desenho deste talhão do mapa? O cadastro e os planejamentos serão preservados.')) return;
+    const talhao = talhoes.find(item => item.id === id);
+    if (!window.confirm('Remover apenas o desenho deste talhão do mapa? Serão removidos somente polígono, coordenadas e centro do mapa. O cadastro do talhão, área manual, análises, planejamentos, aplicações, operações, custos e histórico serão preservados.')) return;
     try {
-      await base44.entities.Talhao.update(id, { geojson_poligono: null, centro_mapa: null });
+      await base44.entities.Talhao.update(id, removerDesenhoTalhaoPayload(talhao));
       toast({ title: 'Desenho removido do mapa!' });
       setPopupInfo(null);
       queryClient.invalidateQueries({ queryKey: ['talhoes_mapa'] });

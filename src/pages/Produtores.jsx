@@ -12,7 +12,13 @@ import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import EquipamentosFazenda from '@/components/produtores/EquipamentosFazenda';
 import { useToast } from '@/components/ui/use-toast';
-import { proximoCodigoProdutor } from '@/lib/integracaoPlanejamentos';
+import {
+  calcularProximoCodigoProdutorSeguro,
+  criarProdutorComSeguranca,
+  excluirProdutorComSeguranca,
+  atualizarProdutorComSeguranca,
+  validarCodigoProdutor,
+} from '@/lib/segurancaCadastros';
 
 const emptyProdutor = {
   codigo: '', nome: '', cpf_cnpj: '', fazenda: '', municipio: '', uf: 'MG',
@@ -32,38 +38,22 @@ export default function Produtores() {
   const { data: produtores = [], isLoading } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Produtor.create(data),
+    mutationFn: (data) => criarProdutorComSeguranca(base44.entities, produtores, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['produtores'] }); setDialogOpen(false); toast({ title: 'Produtor criado com sucesso!' }); },
     onError: err => toast({ title: 'Erro ao criar produtor', description: String(err?.message || err), variant: 'destructive' })
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Produtor.update(id, data),
+    mutationFn: ({ id, data }) => {
+      const produtorAtual = produtores.find(produtor => produtor.id === id);
+      return atualizarProdutorComSeguranca(base44.entities, produtores, produtorAtual, data);
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['produtores'] }); setDialogOpen(false); toast({ title: 'Produtor atualizado com sucesso!' }); },
     onError: err => toast({ title: 'Erro ao atualizar produtor', description: String(err?.message || err), variant: 'destructive' })
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (produtor) => {
-      const codigo = produtor.codigo;
-      const dependencias = await Promise.all([
-        base44.entities.Talhao.filter({ codigo_produtor: codigo }),
-        base44.entities.Safrista.filter({ codigo_produtor: codigo }),
-        base44.entities.Lancamento.filter({ codigo_produtor: codigo }),
-        base44.entities.EquipamentosProdutor.filter({ codigo_produtor: codigo }),
-        base44.entities.BasePlanejamentoAdubacao.filter({ codigo_produtor: codigo }),
-        base44.entities.PlanejamentoAdubacao2.filter({ codigo_produtor: codigo }),
-        base44.entities.AplicacaoFoliar.filter({ codigo_produtor: codigo }),
-        base44.entities.CronogramaFoliar.filter({ codigo_produtor: codigo }),
-        base44.entities.PlanejamentoOperacoes.filter({ codigo_produtor: codigo }),
-        base44.entities.PlanejamentoPosColheita.filter({ codigo_produtor: codigo }),
-      ]);
-      const totalVinculos = dependencias.reduce((total, itens) => total + (itens?.length || 0), 0);
-      if (totalVinculos > 0) {
-        throw new Error(`Este produtor possui ${totalVinculos} registro(s) vinculado(s). Inative-o em vez de excluir.`);
-      }
-      return base44.entities.Produtor.delete(produtor.id);
-    },
+    mutationFn: (produtor) => excluirProdutorComSeguranca(base44.entities, produtor),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['produtores'] });
       toast({ title: 'Produtor excluído!' });
@@ -80,8 +70,10 @@ export default function Produtores() {
       return;
     }
     const codigoDuplicado = produtores.some(p => p.id !== editingId && String(p.codigo || '').trim().toUpperCase() === codigo);
-    if (codigoDuplicado) {
-      toast({ title: 'Código de produtor já cadastrado', description: `O código ${codigo} já está em uso.`, variant: 'destructive' });
+    const produtorAtual = editingId ? produtores.find(produtor => produtor.id === editingId) : null;
+    const validacaoCodigo = validarCodigoProdutor({ produtores, produtorAtual, codigo });
+    if (codigoDuplicado || !validacaoCodigo.ok) {
+      toast({ title: 'Código de produtor inválido', description: validacaoCodigo.mensagem || `O código ${codigo} já está em uso.`, variant: 'destructive' });
       return;
     }
     const { id, created_date, updated_date, created_by, ...campos } = form;
@@ -104,7 +96,7 @@ export default function Produtores() {
   };
 
   const openNew = () => {
-    const nextCode = proximoCodigoProdutor(produtores);
+    const nextCode = calcularProximoCodigoProdutorSeguro(produtores);
     setForm({ ...emptyProdutor, codigo: nextCode });
     setEditingId(null);
     setDialogOpen(true);
@@ -167,7 +159,9 @@ export default function Produtores() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(p)}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir o produtor ${p.nome}?`)) deleteMutation.mutate(p); }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        if (window.confirm(`Excluir o produtor ${p.nome}? Apenas cadastros sem histórico podem ser excluídos. Talhões, análises, planejamentos, aplicações, operações, custos, notas fiscais, safristas e lançamentos serão verificados e preservados. Se houver vínculos, utilize Inativar produtor.`)) deleteMutation.mutate(p);
+                      }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>

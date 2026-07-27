@@ -10,6 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  excluirSafristaComSeguranca,
+  atualizarSafristaComSeguranca,
+} from '@/lib/segurancaCadastros';
 
 export default function Safristas() {
   const [search, setSearch] = useState('');
@@ -29,15 +33,15 @@ export default function Safristas() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['safristas'] }); setDialogOpen(false); }
   });
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Safrista.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['safristas'] }); setDialogOpen(false); }
+    mutationFn: ({ id, data }) => {
+      const safristaAtual = safristas.find(safrista => safrista.id === id);
+      return atualizarSafristaComSeguranca(base44.entities, safristaAtual, data, lancamentos);
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['safristas'] }); setDialogOpen(false); },
+    onError: err => toast({ title: 'Alteração bloqueada', description: String(err?.message || err), variant: 'destructive' }),
   });
   const deleteMutation = useMutation({
-    mutationFn: async (safrista) => {
-      const vinculados = lancamentos.filter(l => l.codigo_produtor === safrista.codigo_produtor && l.safrista === safrista.nome);
-      if (vinculados.length) throw new Error(`Há ${vinculados.length} lançamento(s) vinculados. Altere o status para INATIVO.`);
-      return base44.entities.Safrista.delete(safrista.id);
-    },
+    mutationFn: (safrista) => excluirSafristaComSeguranca(base44.entities, safrista, lancamentos),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['safristas'] });
       toast({ title: 'Safrista excluído!' });
@@ -132,7 +136,9 @@ export default function Safristas() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => { setForm({...s}); setEditingId(s.id); setDialogOpen(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir o safrista ${s.nome}?`)) deleteMutation.mutate(s); }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        if (window.confirm(`Excluir o safrista ${s.nome}? Apenas safristas sem lançamentos podem ser excluídos. Lançamentos existentes serão verificados e preservados. Se houver histórico, utilize Inativar.`)) deleteMutation.mutate(s);
+                      }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -152,8 +158,9 @@ export default function Safristas() {
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{produtores.map(p => <SelectItem key={p.id} value={p.codigo}>{p.codigo} — {p.nome}</SelectItem>)}</SelectContent>
               </Select>
+              {editingId && <p className="text-xs text-muted-foreground mt-1">O produtor não deve ser alterado quando houver histórico. Use Inativar para preservar vínculos.</p>}
             </div>
-            <div><Label>Nome</Label><Input disabled={!!editingId} value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /></div>
+            <div><Label>Nome</Label><Input disabled={!!editingId} value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} /><p className="text-xs text-muted-foreground mt-1">O nome é usado nos lançamentos históricos.</p></div>
             <div>
               <Label>Status</Label>
               <Select value={form.status} onValueChange={v => setForm({...form, status: v})}>

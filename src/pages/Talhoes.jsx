@@ -12,6 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Search, Pencil, Trash2, Loader2, Upload } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import ImportarProdutoresTalhoesCSV from '@/components/produtores/ImportarProdutoresTalhoesCSV';
+import {
+  excluirTalhaoComSeguranca,
+  atualizarTalhaoComSeguranca,
+} from '@/lib/segurancaCadastros';
 
 const emptyTalhao = {
   codigo_produtor: null, nome: '', area_ha: '', num_plantas: '', cultivar: '', espacamento: '',
@@ -55,7 +59,10 @@ export default function Talhoes() {
     },
   });
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Talhao.update(id, data),
+    mutationFn: ({ id, data }) => {
+      const talhaoAtual = talhoes.find(talhao => talhao.id === id);
+      return atualizarTalhaoComSeguranca(base44.entities, talhaoAtual, data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['talhoes'] });
       setDialogOpen(false);
@@ -67,28 +74,7 @@ export default function Talhoes() {
     },
   });
   const deleteMutation = useMutation({
-    mutationFn: async (talhao) => {
-      const [analises, analises2040, foliares, planosLegados, planos2, aplicacoes, operacoes, posColheitas, lancamentos, cronogramas] = await Promise.all([
-        base44.entities.AnaliseSolo.filter({ talhao_id: talhao.id }),
-        base44.entities.AnaliseSolo2040.filter({ talhao_id: talhao.id }),
-        base44.entities.AnaliseFoliar.filter({ talhao_id: talhao.id }),
-        base44.entities.BasePlanejamentoAdubacao.filter({ talhao_id: talhao.id }),
-        base44.entities.PlanejamentoAdubacao2.filter({ talhao_id: talhao.id }),
-        base44.entities.AplicacaoFoliar.filter({ talhao_id: talhao.id }),
-        base44.entities.PlanejamentoOperacoes.filter({ talhao_id: talhao.id }),
-        base44.entities.PlanejamentoPosColheita.filter({ talhao_id: talhao.id }),
-        base44.entities.Lancamento.filter({ codigo_produtor: talhao.codigo_produtor, talhao: talhao.nome }),
-        base44.entities.CronogramaFoliar.filter({ codigo_produtor: talhao.codigo_produtor }),
-      ]);
-      const vinculadosDiretos = [analises, analises2040, foliares, planosLegados, planos2, aplicacoes, operacoes, posColheitas, lancamentos]
-        .reduce((total, itens) => total + (itens?.length || 0), 0);
-      const cronogramasVinculados = (cronogramas || []).filter(c => (c.talhao_ids || []).includes(talhao.id)).length;
-      const totalVinculos = vinculadosDiretos + cronogramasVinculados;
-      if (totalVinculos > 0) {
-        throw new Error(`Este talhão possui ${totalVinculos} registro(s) vinculado(s). Altere o status para inativo em vez de excluir.`);
-      }
-      return base44.entities.Talhao.delete(talhao.id);
-    },
+    mutationFn: (talhao) => excluirTalhaoComSeguranca(base44.entities, talhao),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['talhoes'] });
       toast({ title: 'Talhão excluído!' });
@@ -219,7 +205,9 @@ export default function Talhoes() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => { setForm({...t}); setEditingId(t.id); setDialogOpen(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir o talhão ${t.nome}?`)) deleteMutation.mutate(t); }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        if (window.confirm(`Excluir o talhão ${t.nome}? Apenas talhões sem histórico podem ser excluídos. Análises, planejamentos, aplicações, operações, custos e lançamentos serão verificados e preservados. Se houver vínculos, utilize Inativar talhão.`)) deleteMutation.mutate(t);
+                      }}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
