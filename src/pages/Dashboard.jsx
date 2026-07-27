@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Users, TreePine, ClipboardList, AlertTriangle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import StatCard from '@/components/dashboard/StatCard';
 import ColheitaProgressoSection from '@/components/dashboard/ColheitaProgressoSection';
 import AdubacaoSection from '@/components/dashboard/AdubacaoSection';
@@ -9,6 +10,7 @@ import AlertasSection from '@/components/dashboard/AlertasSection';
 import ResumoProdutorSection from '@/components/dashboard/ResumoProdutorSection';
 import CustosPlanejadosSection from '@/components/dashboard/CustosPlanejadosSection';
 import { normalizarPlanosAdubacao, normalizarAplicacoesFoliares } from '@/lib/integracaoPlanejamentos';
+import { coletarSafrasDisponiveis } from '@/lib/dashboardPlanejamento';
 
 function ProdutorAutocomplete({ produtores, value, onChange }) {
   const [query, setQuery] = useState('');
@@ -79,6 +81,7 @@ function ProdutorAutocomplete({ produtores, value, onChange }) {
 
 export default function Dashboard() {
   const [produtorFiltro, setProdutorFiltro] = useState('');
+  const [safraFiltro, setSafraFiltro] = useState('');
 
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
   const { data: talhoes = [] } = useQuery({ queryKey: ['talhoes', 'completo'], queryFn: () => base44.entities.Talhao.list(undefined, 5000) });
@@ -94,22 +97,31 @@ export default function Dashboard() {
 
   const produtorAtivo = produtorFiltro ? produtores.find(p => p.codigo === produtorFiltro) : null;
 
-  // Safra predominante: a mais comum entre os planos/aplicações filtrados
-  const safraAtiva = useMemo(() => {
-    const fonte = produtorFiltro
-      ? planos.filter(p => p.codigo_produtor === produtorFiltro)
-      : planos;
-    if (!fonte.length) return null;
-    const contagem = {};
-    fonte.forEach(p => { if (p.safra) contagem[p.safra] = (contagem[p.safra] || 0) + 1; });
-    return Object.entries(contagem).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-  }, [planos, produtorFiltro]);
+  const safrasDisponiveis = useMemo(() => coletarSafrasDisponiveis({
+    planejamentosAdubacao2: planosAdubacao2,
+    planosLegados,
+    cronogramasFoliares,
+    aplicacoesFoliares: aplicacoesLegadas,
+  }), [planosAdubacao2, planosLegados, cronogramasFoliares, aplicacoesLegadas]);
+
+  useEffect(() => {
+    if (!safrasDisponiveis.length) {
+      if (safraFiltro) setSafraFiltro('');
+      return;
+    }
+    if (!safraFiltro || !safrasDisponiveis.includes(safraFiltro)) {
+      setSafraFiltro(safrasDisponiveis[0]);
+    }
+  }, [safrasDisponiveis, safraFiltro]);
+
+  const safraAtiva = safraFiltro || safrasDisponiveis[0] || '';
 
   // Cards resumo
   const produtoresAtivos = produtores.filter(p => p.status !== 'inativo');
   const talhoesFiltrados = produtorFiltro ? talhoes.filter(t => t.codigo_produtor === produtorFiltro) : talhoes;
   const lancsFiltrados = produtorFiltro ? lancamentos.filter(l => l.codigo_produtor === produtorFiltro) : lancamentos;
-  const analisesMap = Object.fromEntries(analises.map(a => [a.talhao_id, a]));
+  const analisesSafra = safraAtiva ? analises.filter(a => a.safra === safraAtiva) : analises;
+  const analisesMap = Object.fromEntries(analisesSafra.map(a => [a.talhao_id, a]));
   const semAnalise = talhoesFiltrados.filter(t => !analisesMap[t.id]).length;
   const valorTotal = lancsFiltrados.reduce((s, l) => s + (l.valor_total || 0), 0);
 
@@ -121,11 +133,25 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
           <p className="text-muted-foreground mt-1">Visão geral da colheita de café</p>
         </div>
-        <ProdutorAutocomplete
-          produtores={produtores}
-          value={produtorFiltro}
-          onChange={setProdutorFiltro}
-        />
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <ProdutorAutocomplete
+            produtores={produtores}
+            value={produtorFiltro}
+            onChange={setProdutorFiltro}
+          />
+          <Select value={safraAtiva} onValueChange={setSafraFiltro}>
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Safra" />
+            </SelectTrigger>
+            <SelectContent>
+              {safrasDisponiveis.length === 0 ? (
+                <SelectItem value="sem-safra" disabled>Sem safras</SelectItem>
+              ) : safrasDisponiveis.map(safra => (
+                <SelectItem key={safra} value={safra}>{safra}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Resumo propriedade (produtor específico) */}
@@ -180,6 +206,7 @@ export default function Dashboard() {
         talhoes={talhoes}
         planos={planos}
         filtroProdutorCodigo={produtorFiltro}
+        safra={safraAtiva}
       />
 
       {/* Seção Alertas */}

@@ -38,6 +38,12 @@ export default function Planejamento() {
     enabled: !!produtorSel && !!safraSel,
   });
 
+  const { data: cronogramasFoliares = [] } = useQuery({
+    queryKey: ['cronograma_foliar', 'planejamento', produtorSel, safraSel],
+    queryFn: () => base44.entities.CronogramaFoliar.filter({ codigo_produtor: produtorSel, safra: safraSel }),
+    enabled: !!produtorSel && !!safraSel,
+  });
+
   const planejamentosAdubacao = useMemo(
     () => normalizarPlanosAdubacao([], registrosAdubacao2),
     [registrosAdubacao2],
@@ -106,6 +112,8 @@ export default function Planejamento() {
               equip={equip}
               safra={safraSel}
               codigoProdutor={produtorSel}
+              planejamentosAdubacao2={registrosAdubacao2}
+              cronogramasFoliares={cronogramasFoliares}
             />
           </TabsContent>
 
