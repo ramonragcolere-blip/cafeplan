@@ -227,8 +227,41 @@ function criarLinhaCalagemResumo(calagem, talhao) {
     gMetro,
     nutLabels: ['Calagem'],
     isCalagem: true,
+    periodoAplicacao: 'A definir',
     pendenteProduto,
   };
+}
+
+export function formatarPeriodoAplicacao(parcelamento) {
+  const parcelas = Array.isArray(parcelamento?.parcelas) ? parcelamento.parcelas : [];
+  if (parcelas.length === 0) return 'A definir';
+
+  const formatarParcela = (parcela) => {
+    const pct = parcela?.pct != null && parcela.pct !== '' ? `${parcela.pct}%` : 'Percentual a definir';
+    const meses = Array.isArray(parcela?.meses)
+      ? parcela.meses.map(mes => String(mes || '').trim()).filter(Boolean)
+      : [];
+    return `${pct} — ${meses.length > 0 ? meses.join('/') : 'A definir'}`;
+  };
+
+  if (parcelas.length === 1) return formatarParcela(parcelas[0]);
+  return parcelas.map((parcela, indice) => `${indice + 1}ª parcela: ${formatarParcela(parcela)}`).join('\n');
+}
+
+function criarMapaParcelamentosResumo(registrosSalvos = []) {
+  const mapa = {};
+  (registrosSalvos || []).forEach(registro => {
+    if (!registro?.talhao_id) return;
+    const parcelamentos = registro.detalhamento?.parcelamentos || {};
+    if (Object.keys(parcelamentos).length === 0) return;
+    mapa[registro.talhao_id] = { ...(mapa[registro.talhao_id] || {}), ...parcelamentos };
+  });
+  return mapa;
+}
+
+function periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, produtoId) {
+  if (!produtoId) return 'A definir';
+  return formatarPeriodoAplicacao(parcelamentosPorTalhao?.[talhaoId]?.[produtoId]);
 }
 
 export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null }) {
@@ -305,10 +338,11 @@ export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, 
   return Object.values(mapa);
 }
 
-export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null }) {
+export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null, registrosSalvos = [] }) {
   const calagensRecentes = listarCalagensRecentesPorTalhao({ calagens, talhoes, codigoProdutor, safra });
   const calagensMap = {};
   calagensRecentes.forEach(calagem => { calagensMap[calagem.talhao_id] = calagem; });
+  const parcelamentosPorTalhao = criarMapaParcelamentosResumo(registrosSalvos);
 
   const talhaoIds = new Set([
     ...(resultados || []).filter(r => r.rec).map(r => r.talhao.id),
@@ -351,7 +385,17 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
         const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
         const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
         const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-        linhas.push({ produtoNome: produtoPrincipal.nome, produtoId: produtoPrincipal.id, doseKgHa: dosePrincipal, totalKg, gPlanta, gMetro, nutLabels: ['Principal'], isCalagem: false });
+        linhas.push({
+          produtoNome: produtoPrincipal.nome,
+          produtoId: produtoPrincipal.id,
+          doseKgHa: dosePrincipal,
+          totalKg,
+          gPlanta,
+          gMetro,
+          nutLabels: ['Principal'],
+          isCalagem: false,
+          periodoAplicacao: periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, produtoPrincipal.id),
+        });
       }
 
       const complementos = efetivo?.complementos || [];
@@ -361,7 +405,17 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
         const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
         const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
         const nutLabels = (comp.nutrientes || []).map(n => n.label).filter(Boolean);
-        linhas.push({ produtoNome: comp.produto.nome, produtoId: comp.produto.id, doseKgHa: comp.doseKgHa, totalKg, gPlanta, gMetro, nutLabels: nutLabels.length > 0 ? nutLabels : ['Complemento'], isCalagem: false });
+        linhas.push({
+          produtoNome: comp.produto.nome,
+          produtoId: comp.produto.id,
+          doseKgHa: comp.doseKgHa,
+          totalKg,
+          gPlanta,
+          gMetro,
+          nutLabels: nutLabels.length > 0 ? nutLabels : ['Complemento'],
+          isCalagem: false,
+          periodoAplicacao: periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, comp.produto.id),
+        });
       }
     }
 

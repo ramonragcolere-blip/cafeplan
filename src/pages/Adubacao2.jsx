@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle, Save } from 'lucide-react';
+import { Upload, FileUp, Calculator, CheckCircle2, Link2, Clock, Sprout, Loader2, AlertTriangle, Save, Eye } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 import ImportarAgrupado020 from '@/components/adubacao2/ImportarAgrupado020';
 import ImportarAgrupado2040 from '@/components/adubacao2/ImportarAgrupado2040';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
+import ModalVerAnalisesTalhao from '@/components/adubacao2/ModalVerAnalisesTalhao';
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
@@ -253,6 +254,7 @@ export default function Adubacao2() {
   const [resultadosCalculo, setResultadosCalculo] = useState(null);
   const [calculando, setCalculando] = useState(false);
   const [modal2040, setModal2040] = useState(null);
+  const [modalVerAnalises, setModalVerAnalises] = useState(null);
   // PROBLEMA 2: doses editadas na tabela
   const [dosesEditadas, setDosesEditadas] = useState({});
   // PROBLEMA 3: modal detalhe
@@ -748,6 +750,7 @@ export default function Adubacao2() {
     if (field === 'produtor') {
       setProdutorId(value === 'none' ? '' : value);
       setSelecionados([]);
+      setModalVerAnalises(null);
       setAgrupamentosExplicitos([]);
       setResultadosCalculo(null);
       setDosesEditadas({});
@@ -758,6 +761,7 @@ export default function Adubacao2() {
       setProdutosEfetivosExterno({});
     } else {
       setSafra(value);
+      setModalVerAnalises(null);
       setResultadosCalculo(null);
       setDosesEditadas({});
       setProdutividadeLocal({});
@@ -900,7 +904,7 @@ export default function Adubacao2() {
                       <Checkbox checked={selecionados.length === talhoes.length && talhoes.length > 0}
                         onCheckedChange={() => setSelecionados(prev => prev.length === talhoes.length ? [] : talhoes.map(t => t.id))} />
                     </th>
-                    {['Talhão','Área (ha)','Nº plantas','Safra 1 (sc/ha)','Safra 2 (sc/ha)','Média','Análise 0-20','Análise 20-40','Status'].map(h => (
+                    {['Talhão','Área (ha)','Nº plantas','Safra 1 (sc/ha)','Safra 2 (sc/ha)','Média','Análise 0-20','Análise 20-40','Status','Ações'].map(h => (
                       <th key={h} className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -956,6 +960,18 @@ export default function Adubacao2() {
                         </td>
                         <td className="px-3 py-2">
                           <StatusBadge status={status} talhoes={talhoes} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => setModalVerAnalises(talhao)}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Ver análises
+                          </Button>
                         </td>
                       </tr>
                     );
@@ -1069,6 +1085,16 @@ export default function Adubacao2() {
           onClose={() => setModal2040(null)}
         />
       )}
+
+      <ModalVerAnalisesTalhao
+        open={!!modalVerAnalises}
+        onClose={() => setModalVerAnalises(null)}
+        produtor={produtor}
+        talhao={modalVerAnalises}
+        safra={safra}
+        analises={analises}
+        analises2040PorTalhao={analises2040Local}
+      />
 
       {/* PROBLEMA 3: Modal detalhe talhão */}
       {modalDetalhe && (
