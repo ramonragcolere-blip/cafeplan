@@ -1,22 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ajustarDoseLinha,
+  calcularBalancoNutrientes,
+  calcularDoseProdutoPorAlvo,
+  calcularNutrientesFornecidos,
   combinarCatalogoInsumos,
   contarUsoProdutoPlanejamento,
   filtrarProdutosPlanejamento,
   listarNutrientesNaoAtendidos,
   montarLinhasProdutos,
   montarProdutosEfetivosPlanejamento,
+  resolverAcaoProdutoDuplicado,
+  restaurarDoseCalculadaLinha,
   sanitizarPayloadInsumo,
 } from '../src/lib/planejamentoProdutosAdubacao2.js';
 import { consolidarPlanejamentosPorTalhao } from '../src/lib/planejamentoAdubacao2.js';
 import { consolidarComprasAdubacao2, montarGruposResumoAdubacao2 } from '../src/lib/calagemAdubacao2.js';
+import { normalizarPlanosAdubacao } from '../src/lib/integracaoPlanejamentos.js';
 
 const ureia = { id: 'ureia', nome: 'Ureia', _tipo: 'fonte', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0 };
 const kcl = { id: 'kcl', nome: 'KCl', _tipo: 'fonte', n_pct: 0, p2o5_pct: 0, k2o_pct: 60, b_pct: 0 };
 const formuladoA = { id: 'npk-a', nome: '20-00-20 A', fornecedor: 'Fornecedor A', _tipo: 'formulado', n_pct: 20, p2o5_pct: 0, k2o_pct: 20, b_pct: 0 };
 const formuladoB = { id: 'npk-b', nome: '12-00-12 B', fornecedor: 'Fornecedor B', _tipo: 'formulado', n_pct: 12, p2o5_pct: 0, k2o_pct: 12, b_pct: 0 };
+const map = { id: 'map', nome: 'MAP', _tipo: 'fonte', n_pct: 11, p2o5_pct: 52, k2o_pct: 0, b_pct: 0 };
+const acidoBorico = { id: 'boro', nome: 'Ácido bórico', _tipo: 'fonte', n_pct: 0, p2o5_pct: 0, k2o_pct: 0, b_pct: 17 };
 const recNK = { N: 90, P: 0, K: 120, B: 0 };
+const recNPKB = { N: 90, P: 52, K: 120, B: 1.7 };
 const talhao = { id: 't1', nome: 'Talhao 1', area_ha: 2, num_plantas: 1000, espacamento: '3,5x0,7' };
 
 test('fornecedor selecionado nao inclui fontes simples sem fornecedor por padrao', () => {
@@ -254,4 +264,219 @@ test('doses calculadas sao finitas, positivas e sem NaN', () => {
     assert.equal(Number.isFinite(linha.doseKgHa), true);
     assert.equal(linha.doseKgHa > 0, true);
   });
+});
+
+test('editar dose principal guarda dose calculada e dose utilizada', () => {
+  const [linha] = montarLinhasProdutos([ureia], recNPKB);
+  const ajuste = ajustarDoseLinha(linha, 250);
+  const mapa = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNPKB }],
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia],
+    ajustesDosePorTalhao: { t1: { [linha.linhaId]: ajuste } },
+  });
+
+  assert.equal(linha.dose_calculada_kg_ha, 200);
+  assert.equal(mapa.t1.dose_calculada_kg_ha, 200);
+  assert.equal(mapa.t1.dose_utilizada_kg_ha, 250);
+  assert.equal(mapa.t1.dose_ajustada_manualmente, true);
+});
+
+test('editar dose complementar recalcula nutrientes fornecidos', () => {
+  const linhas = montarLinhasProdutos([ureia, kcl], recNK);
+  const comp = linhas.find(l => l.produto.id === 'kcl');
+  const ajuste = ajustarDoseLinha(comp, 250);
+  const mapa = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNK }],
+    todosFiltrados: [ureia, kcl],
+    todosCatalogo: [ureia, kcl],
+    ajustesDosePorTalhao: { t1: { [comp.linhaId]: ajuste } },
+  });
+  const compEfetivo = mapa.t1.complementos.find(c => c.produto.id === 'kcl');
+
+  assert.equal(comp.dose_calculada_kg_ha, 200);
+  assert.equal(compEfetivo.dose_utilizada_kg_ha, 250);
+  assert.equal(Math.round(compEfetivo.nutrientes.find(n => n.label === 'K2O').fornecido), 150);
+});
+
+test('restaurar dose calculada volta ao valor automatico mais recente', () => {
+  const [linha] = montarLinhasProdutos([ureia], recNPKB);
+  const restaurado = restaurarDoseCalculadaLinha({ ...linha, dose_utilizada_kg_ha: 260, dose_ajustada_manualmente: true });
+
+  assert.equal(restaurado.dose_utilizada_kg_ha, 200);
+  assert.equal(restaurado.dose_ajustada_manualmente, false);
+});
+
+test('adicionar e excluir produto manual altera somente a linha manual', () => {
+  const extras = {
+    'manual-1': { produtoId: 'map', doseKgHa: 100, nutriente_alvo: 'p2o5_pct', nutKey: 'p2o5_pct', isManualLivre: true, usoSeparado: true },
+  };
+  const mapaComManual = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNK }],
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia, map],
+    extrasPorTalhao: { t1: extras },
+  });
+  const mapaSemManual = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNK }],
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia, map],
+    extrasPorTalhao: { t1: {} },
+  });
+
+  assert.equal(mapaComManual.t1.complementos.some(c => c.produto.id === 'map'), true);
+  assert.equal(mapaSemManual.t1.produto.id, 'ureia');
+  assert.equal(mapaSemManual.t1.complementos.some(c => c.produto.id === 'map'), false);
+});
+
+test('selecionar nutriente-alvo calcula MAP por P2O5 e contabiliza N secundario', () => {
+  const doseMap = calcularDoseProdutoPorAlvo(map, 'p2o5_pct', recNPKB);
+  const fornecido = calcularNutrientesFornecidos(map, doseMap);
+
+  assert.equal(doseMap, 100);
+  assert.equal(Math.round(fornecido.P), 52);
+  assert.equal(Math.round(fornecido.N), 11);
+});
+
+test('Ureia usa nitrogenio como alvo e MAP usa P2O5 como alvo', () => {
+  const doseUreia = calcularDoseProdutoPorAlvo(ureia, 'n_pct', recNPKB);
+  const doseMap = calcularDoseProdutoPorAlvo(map, 'p2o5_pct', recNPKB);
+
+  assert.equal(doseUreia, 200);
+  assert.equal(doseMap, 100);
+});
+
+test('custos sao recalculados com dose utilizada ajustada', () => {
+  const produtosEfetivos = {
+    t1: { produto: ureia, doseKgHa: 250, dose_utilizada_kg_ha: 250, complementos: [] },
+  };
+  const planos = normalizarPlanosAdubacao([], [{
+    id: 'pl1',
+    talhao_id: 't1',
+    detalhamento: {
+      produtoSugerido: { id: 'ureia', nome: 'Ureia' },
+      doseProdutoHa: 250,
+      dose_calculada_kg_ha: 200,
+      dose_utilizada_kg_ha: 250,
+      dose_ajustada_manualmente: true,
+      precos: { ureia: 4 },
+      parcelamentos: {},
+    },
+  }]);
+  const compras = consolidarComprasAdubacao2({
+    resultados: [{ talhao, rec: recNPKB, produtoSugerido: ureia, doseProdutoHa: 200 }],
+    produtosEfetivos,
+    talhoes: [talhao],
+  });
+
+  assert.equal(planos.find(p => p.produto_id === 'ureia').custo_rha, 1000);
+  assert.equal(compras[0].qtdTotal, 500);
+});
+
+test('parcelamento e persistencia preservam dose manual ao reabrir', () => {
+  const registro = {
+    talhao_id: 't1',
+    detalhamento: {
+      produtoSugerido: { id: 'ureia', nome: 'Ureia' },
+      doseProdutoHa: 250,
+      dose_calculada_kg_ha: 200,
+      dose_utilizada_kg_ha: 250,
+      dose_ajustada_manualmente: true,
+      nutriente_alvo: 'n_pct',
+      parcelamentos: { ureia: { parcelas: [{ pct: 100, meses: ['OUT'] }] } },
+    },
+  };
+  const mapa = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNPKB, produtoSugerido: { ...ureia, dose_calculada_kg_ha: 200, dose_utilizada_kg_ha: 250, dose_ajustada_manualmente: true }, doseProdutoHa: 250, temRegistroSalvo: true }],
+    registrosSalvos: [registro],
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia],
+    ajustesDosePorTalhao: { t1: { 'n_pct:ureia': { dose_calculada_kg_ha: 200, dose_utilizada_kg_ha: 250, dose_ajustada_manualmente: true } } },
+  });
+
+  assert.equal(mapa.t1.dose_utilizada_kg_ha, 250);
+  assert.equal(registro.detalhamento.parcelamentos.ureia.parcelas[0].meses[0], 'OUT');
+});
+
+test('recalculo preserva produtos manuais e substitui somente sugestoes automaticas', () => {
+  const extras = {
+    'manual-map': { produtoId: 'map', doseKgHa: 100, nutriente_alvo: 'p2o5_pct', nutKey: 'p2o5_pct', isManualLivre: true, usoSeparado: true },
+  };
+  const mapaEfetivo = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNPKB, produtoSugerido: null, doseProdutoHa: null, substituirSalvo: true }],
+    registrosSalvos: [{ talhao_id: 't1', detalhamento: { produtoSugerido: { id: 'ureia', nome: 'Ureia' } } }],
+    todosFiltrados: [formuladoA],
+    todosCatalogo: [formuladoA, map],
+    extrasPorTalhao: { t1: extras },
+  });
+
+  assert.equal(mapaEfetivo.t1.produto.id, 'npk-a');
+  assert.equal(mapaEfetivo.t1.complementos.some(c => c.produto.id === 'map' && c.isManualLivre), true);
+});
+
+test('consolidacao de compras e resumo usam dose ajustada e produto manual', () => {
+  const produtosEfetivos = {
+    t1: {
+      produto: ureia,
+      doseKgHa: 250,
+      dose_utilizada_kg_ha: 250,
+      complementos: [{ produto: { id: 'map', nome: 'MAP' }, doseKgHa: 100, dose_utilizada_kg_ha: 100, isManualExtra: true, nutriente_alvo: 'p2o5_pct' }],
+    },
+  };
+  const resultados = [{ talhao, rec: recNPKB, produtoSugerido: ureia, doseProdutoHa: 200, mediaBienal: 30 }];
+  const compras = consolidarComprasAdubacao2({ resultados, produtosEfetivos, talhoes: [talhao] });
+  const resumo = montarGruposResumoAdubacao2({ resultados, produtosEfetivos, talhoes: [talhao] });
+
+  assert.equal(compras.find(c => c.produto.id === 'ureia').qtdTotal, 500);
+  assert.equal(compras.find(c => c.produto.id === 'map').qtdTotal, 200);
+  assert.equal(resumo[0].linhas.find(l => l.produtoId === 'ureia').doseKgHa, 250);
+  assert.equal(resumo[0].linhas.find(l => l.produtoId === 'map').doseKgHa, 100);
+});
+
+test('PDF e integracoes usam dose ajustada normalizada da Adubacao 2.0', () => {
+  const planos = normalizarPlanosAdubacao([], [{
+    id: 'pl1',
+    talhao_id: 't1',
+    detalhamento: {
+      produtoSugerido: { id: 'ureia', nome: 'Ureia' },
+      doseProdutoHa: 250,
+      dose_calculada_kg_ha: 200,
+      dose_utilizada_kg_ha: 250,
+      dose_ajustada_manualmente: true,
+      precos: { ureia: 4 },
+      parcelamentos: { ureia: { parcelas: [{ pct: 100, meses: ['OUT'] }] } },
+    },
+  }]);
+  const plano = planos.find(p => p.produto_id === 'ureia');
+
+  assert.equal(plano.dose_rec_manual, 250);
+  assert.equal(plano.custo_rha, 1000);
+  assert.deepEqual(plano.meses, [['OUT']]);
+});
+
+test('balanco mostra atendido, faltante, excesso e adicao manual sem necessidade', () => {
+  const balanco = calcularBalancoNutrientes({ N: 90, P: 52 }, [
+    { produto: ureia, doseKgHa: 100 },
+    { produto: map, doseKgHa: 150 },
+    { produto: acidoBorico, doseKgHa: 10 },
+  ]);
+
+  assert.equal(balanco.find(b => b.nutriente === 'N').situacao, 'Faltante');
+  assert.equal(balanco.find(b => b.nutriente === 'P').situacao, 'Acima da recomendação');
+  assert.equal(balanco.find(b => b.nutriente === 'B').situacao, 'Adição manual sem necessidade calculada');
+});
+
+test('prevencao de duplicacao silenciosa oferece editar linha existente ou uso separado', () => {
+  const linhas = montarLinhasProdutos([ureia], recNPKB);
+  const acao = resolverAcaoProdutoDuplicado({ produtoId: 'ureia', linhas, manuais: {} });
+  const separado = montarProdutosEfetivosPlanejamento({
+    resultados: [{ talhao, rec: recNPKB }],
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia],
+    extrasPorTalhao: { t1: { 'manual-ureia': { produtoId: 'ureia', doseKgHa: 20, isManualLivre: true, usoSeparado: true } } },
+  });
+
+  assert.equal(acao.duplicado, true);
+  assert.deepEqual(acao.opcoes, ['editar linha existente', 'adicionar uso separado']);
+  assert.equal(separado.t1.complementos.some(c => c.produto.id === 'ureia' && c.usoSeparado), true);
 });

@@ -4,11 +4,17 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, Filter, X } from 'lucide-react';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import {
+  ajustarDoseLinha,
+  calcularBalancoNutrientes,
+  calcularDoseProdutoPorAlvo,
   filtrarProdutosPlanejamento,
   listarNutrientesNaoAtendidos,
   montarLinhasProdutos,
   montarProdutosEfetivosPlanejamento,
+  NUTRIENTES_ALVO_ADUBACAO2,
   origemProdutoCatalogoLabel,
+  resolverAcaoProdutoDuplicado,
+  restaurarDoseCalculadaLinha,
 } from '@/lib/planejamentoProdutosAdubacao2';
 import {
   TODOS_ELEMENTOS_GRID, calcMicros, classBadgeColor, fmt, fmtR,
@@ -24,17 +30,30 @@ import {
 
 // ── Linha manual para elementos extras marcados ───────────────────────────────
 
-function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, value, onChange }) {
+function opcoesAlvoProduto(produto) {
+  const opcoes = NUTRIENTES_ALVO_ADUBACAO2.filter(opcao =>
+    opcao.value === 'dose_manual' || (parseFloat(produto?.[opcao.value]) || 0) > 0
+  );
+  return opcoes.length > 1 ? opcoes : NUTRIENTES_ALVO_ADUBACAO2.filter(opcao => opcao.value === 'dose_manual');
+}
+
+function chaveLinhaProduto(linha) {
+  return linha?.linhaId || `${linha?.nutKey || 'produto'}:${linha?.produto?.id || linha?.produto?.nome || 'sem-produto'}`;
+}
+
+function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, value, onChange, onExcluir, isManualLivre = false }) {
   const produtoId = value?.produtoId || '';
   const [doseManual, setDoseManual] = useState(value?.doseKgHa != null ? value.doseKgHa : '');
+  const nutrienteAlvo = value?.nutriente_alvo || value?.nutKey || nutField || 'dose_manual';
 
   // Sincroniza se o valor vier do banco (carga inicial)
   useEffect(() => {
     setDoseManual(value?.doseKgHa != null ? value.doseKgHa : '');
   }, [value?.doseKgHa]);
 
-  const handleProdutoChange = (id) => onChange({ produtoId: id, doseKgHa: doseManual });
-  const handleDoseChange = (dose) => onChange({ produtoId: produtoId, doseKgHa: dose });
+  const handleProdutoChange = (id) => onChange({ ...value, produtoId: id, doseKgHa: doseManual, nutriente_alvo: nutrienteAlvo, isManualLivre });
+  const handleDoseChange = (dose) => onChange({ ...value, produtoId: produtoId, doseKgHa: dose, nutriente_alvo: nutrienteAlvo, isManualLivre });
+  const handleAlvoChange = (alvo) => onChange({ ...value, produtoId, doseKgHa: doseManual, nutriente_alvo: alvo, nutKey: alvo, isManualLivre });
 
   const [busca, setBusca] = useState('');
   const [dropAberto, setDropAberto] = useState(false);
@@ -154,6 +173,17 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
         <td className="px-3 py-2">
           <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">Manual</span>
         </td>
+        <td className="px-3 py-2">
+          <select
+            value={nutrienteAlvo}
+            onChange={e => handleAlvoChange(e.target.value)}
+            className="h-7 w-36 text-xs border border-input rounded px-2 bg-background"
+          >
+            {opcoesAlvoProduto(produtoSelecionado).map(opcao => (
+              <option key={opcao.value} value={opcao.value}>{opcao.label}</option>
+            ))}
+          </select>
+        </td>
         <td className="px-3 py-2 text-muted-foreground font-mono text-xs">
           {produtoSelecionado && nutField && (parseFloat(produtoSelecionado[nutField]) || 0) > 0
             ? `${elLabel} ${fmt(parseFloat(produtoSelecionado[nutField]), 1)}%`
@@ -186,10 +216,18 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
             </button>
           ) : <span className="text-muted-foreground text-xs">—</span>}
         </td>
+        <td className="px-3 py-2">
+          {onExcluir ? (
+            <button type="button" onClick={onExcluir}
+              className="h-7 px-2 text-xs rounded border border-red-200 text-red-700 bg-red-50 hover:bg-red-100">
+              Excluir
+            </button>
+          ) : <span className="text-muted-foreground text-xs">—</span>}
+        </td>
       </tr>
       {expandidoParc && produtoId && (
         <tr>
-          <td colSpan={9} className="px-3 pb-3 bg-amber-50/20">
+          <td colSpan={11} className="px-3 pb-3 bg-amber-50/20">
             <EditorParcelamento
               parc={parc}
               onChange={p => onParcelamentoChange(produtoId, p)}
@@ -205,14 +243,19 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
 // ── Tabela de Produtos do Talhão ───────────────────────────────────────────────
 
-function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange }) {
+function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange, onDoseChange, onRestaurarDose, onAlvoChange, onAdicionarManual, onExcluirManual }) {
   const [expandidoProd, setExpandidoProd] = useState(null);
 
-  const semLinhas = (!linhas || linhas.length === 0) && (!elementosExtras || elementosExtras.length === 0);
+  const temManuaisLivres = Object.keys(extrasManuais || {}).some(key => String(key).startsWith('manual-'));
+  const semLinhas = (!linhas || linhas.length === 0) && (!elementosExtras || elementosExtras.length === 0) && !temManuaisLivres;
   if (semLinhas) {
     return (
-      <div className="bg-muted/30 border border-dashed border-border rounded-lg px-4 py-3 text-xs text-muted-foreground text-center">
-        Sem produtos sugeridos (verifique se há produtos cadastrados na Base de Insumos).
+      <div className="bg-muted/30 border border-dashed border-border rounded-lg px-4 py-3 text-xs text-muted-foreground text-center space-y-3">
+        <p>Sem produtos sugeridos (verifique se há produtos cadastrados na Base de Insumos).</p>
+        <button type="button" onClick={onAdicionarManual}
+          className="h-8 px-3 text-xs rounded border border-border bg-background hover:bg-muted/60 text-foreground">
+          + Adicionar produto
+        </button>
       </div>
     );
   }
@@ -222,14 +265,14 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-border bg-muted/20">
-            {['Produto','','Nutrientes fornecidos','Dose (kg/ha)','Total (kg)','Preço (R$/kg)','Custo/ha','Custo total','Parcelamento'].map(h => (
+            {['Produto','','Calcular para atender','Nutrientes fornecidos','Dose (kg/ha)','Total (kg)','Preço (R$/kg)','Custo/ha','Custo total','Parcelamento','Ações'].map(h => (
               <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {(linhas || []).map(linha => {
-            const { produto, nutrientes, ehPrincipal, doseKgHa, nutKey, origemUso } = linha;
+            const { produto, nutrientes, ehPrincipal, doseKgHa, nutKey, origemUso, dose_ajustada_manualmente } = linha;
             const preco = precos?.[produto.id];
             const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
             const custoHa = precoNum != null && doseKgHa != null ? precoNum * doseKgHa : null;
@@ -261,8 +304,29 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
                       : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">Complemento</span>
                     }
                   </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={linha.nutriente_alvo || nutKey || 'dose_manual'}
+                      onChange={e => onAlvoChange?.(linha, e.target.value)}
+                      className="h-7 w-36 text-xs border border-input rounded px-2 bg-background"
+                    >
+                      {opcoesAlvoProduto(produto).map(opcao => (
+                        <option key={opcao.value} value={opcao.value}>{opcao.label}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground font-mono">{nutStr || '—'}</td>
-                  <td className="px-3 py-2 tabular-nums text-right">{fmt(doseKgHa, 1)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <input
+                      type="number" min="0" step="0.1"
+                      value={doseKgHa ?? ''}
+                      onChange={e => onDoseChange?.(linha, e.target.value)}
+                      className="w-24 h-7 text-xs text-right border border-input rounded px-2 bg-background tabular-nums"
+                    />
+                    {dose_ajustada_manualmente && (
+                      <div className="mt-1 text-[9px] text-amber-700 whitespace-nowrap">Dose ajustada manualmente</div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 tabular-nums text-right">{fmt(totalKg, 1)}</td>
                   <td className="px-3 py-2">
                     <input
@@ -283,10 +347,18 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
                       <ChevronDown className={`w-3 h-3 transition-transform ${expandido ? 'rotate-180' : ''}`} />
                     </button>
                   </td>
+                  <td className="px-3 py-2">
+                    {dose_ajustada_manualmente ? (
+                      <button type="button" onClick={() => onRestaurarDose?.(linha)}
+                        className="h-7 px-2 text-xs rounded border border-border hover:bg-muted/60 whitespace-nowrap">
+                        Restaurar dose calculada
+                      </button>
+                    ) : <span className="text-muted-foreground text-xs">—</span>}
+                  </td>
                 </tr>
                 {expandido && (
                   <tr>
-                    <td colSpan={9} className="px-3 pb-3">
+                    <td colSpan={11} className="px-3 pb-3">
                       <EditorParcelamento
                         parc={parc}
                         onChange={p => onParcelamentoChange(produto.id, p)}
@@ -316,15 +388,39 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
               onChange={(data) => onExtraChange(el.key, data)}
             />
           ))}
+          {Object.entries(extrasManuais || {}).filter(([key]) => String(key).startsWith('manual-')).map(([key, data]) => (
+            <LinhaElementoExtra
+              key={key}
+              elLabel="Produto adicionado manualmente"
+              nutField={data?.nutriente_alvo === 'dose_manual' ? null : data?.nutriente_alvo}
+              todos={todos}
+              area={area}
+              precos={precos}
+              onPrecoChange={onPrecoChange}
+              parcelamentos={parcelamentos}
+              onParcelamentoChange={onParcelamentoChange}
+              onAplicarParcTodos={onAplicarParcTodos}
+              value={data}
+              onChange={(next) => onExtraChange(key, { ...next, isManualLivre: true, usoSeparado: true })}
+              onExcluir={() => onExcluirManual?.(key)}
+              isManualLivre
+            />
+          ))}
         </tbody>
       </table>
+      <div className="px-3 py-2 border-t border-border bg-muted/10">
+        <button type="button" onClick={onAdicionarManual}
+          className="h-8 px-3 text-xs rounded border border-border hover:bg-muted/60">
+          + Adicionar produto
+        </button>
+      </div>
     </div>
   );
 }
 
 // ── Painel expandido de um talhão ─────────────────────────────────────────────
 
-function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, onMarcadosChange, onTrocasChange, onExtrasChange }) {
+function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, ajustesDoseIniciais, onMarcadosChange, onTrocasChange, onExtrasChange, onAjustesDoseChange }) {
   const { talhao, rec, mediaBienal, analise, analise2040 } = resultado;
   const micros = calcMicros(analise);
   const area = talhao.area_ha || 0;
@@ -343,11 +439,12 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     const init = {};
     (complementosSalvos || []).forEach(c => {
       if (c.isManualExtra && c.produto?.id) {
-        init[c.nutKey] = { produtoId: c.produto.id, doseKgHa: c.doseKgHa };
+        init[c.linhaId || c.nutKey] = { produtoId: c.produto.id, doseKgHa: c.doseKgHa, nutriente_alvo: c.nutriente_alvo || c.nutKey || 'dose_manual', nutKey: c.nutKey, isManualLivre: Boolean(c.isManualLivre), usoSeparado: Boolean(c.usoSeparado) };
       }
     });
     return init;
   });
+  const [ajustesDose, setAjustesDose] = useState(() => ajustesDoseIniciais || {});
 
   // Garante que checkboxes dos extras salvos fiquem marcados ao carregar
   useEffect(() => {
@@ -361,13 +458,51 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     });
   }, [extrasManuais]);
 
-  const handleExtraChange = useCallback((key, data) => {
+  const handleExcluirManual = useCallback((key) => {
     setExtrasManuais(prev => {
-      const next = { ...prev, [key]: data };
+      const next = { ...prev };
+      delete next[key];
       onExtrasChange?.(next);
       return next;
     });
   }, [onExtrasChange]);
+
+  const handleAdicionarManual = useCallback(() => {
+    const key = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setExtrasManuais(prev => {
+      const next = { ...prev, [key]: { produtoId: '', doseKgHa: '', nutriente_alvo: 'dose_manual', nutKey: 'dose_manual', isManualLivre: true, usoSeparado: true } };
+      onExtrasChange?.(next);
+      return next;
+    });
+  }, [onExtrasChange]);
+
+  const atualizarAjusteDose = useCallback((linha, ajuste) => {
+    const chave = chaveLinhaProduto(linha);
+    setAjustesDose(prev => {
+      const next = { ...prev, [chave]: { ...(prev[chave] || {}), ...ajuste, linhaId: chave } };
+      onAjustesDoseChange?.(next);
+      return next;
+    });
+  }, [onAjustesDoseChange]);
+
+  const handleDoseChange = useCallback((linha, valor) => {
+    atualizarAjusteDose(linha, { ...ajustarDoseLinha(linha, valor), nutriente_alvo: linha.nutriente_alvo || linha.nutKey });
+  }, [atualizarAjusteDose]);
+
+  const handleRestaurarDose = useCallback((linha) => {
+    atualizarAjusteDose(linha, { ...restaurarDoseCalculadaLinha(linha), nutriente_alvo: linha.nutriente_alvo || linha.nutKey });
+  }, [atualizarAjusteDose]);
+
+  const handleAlvoChange = useCallback((linha, alvo) => {
+    const doseCalculada = calcularDoseProdutoPorAlvo(linha.produto, alvo, rec);
+    atualizarAjusteDose(linha, {
+      nutriente_alvo: alvo,
+      dose_calculada_kg_ha: doseCalculada,
+      dose_utilizada_kg_ha: doseCalculada ?? linha.dose_utilizada_kg_ha ?? linha.doseKgHa,
+      doseKgHa: doseCalculada ?? linha.dose_utilizada_kg_ha ?? linha.doseKgHa,
+      dose_ajustada_manualmente: false,
+    });
+  }, [rec, atualizarAjusteDose]);
 
   const toggleMarcado = (key) => {
     const vaiAtivar = !marcados[key];
@@ -404,10 +539,32 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['B']) delete recFiltrado.B;
     const prodSalvo = resultado.substituirSalvo ? null : (resultado.produtoSugerido || null);
     const doseSalva = resultado.substituirSalvo ? null : (resultado.doseProdutoHa ?? null);
-    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : (complementosSalvos || null));
-  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos]);
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : (complementosSalvos || null), rec, ajustesDose);
+  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos, ajustesDose]);
 
   const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
+  const balancoNutrientes = useMemo(() => calcularBalancoNutrientes(rec, [
+    ...linhasProdutos,
+    ...Object.values(extrasManuais).map(extra => ({
+      produto: todosSemFiltro.find(produto => produto.id === extra?.produtoId),
+      doseKgHa: extra?.doseKgHa,
+    })),
+  ]), [rec, linhasProdutos, extrasManuais, todosSemFiltro]);
+
+  const handleExtraChange = useCallback((key, data) => {
+    if (data?.produtoId) {
+      const duplicidade = resolverAcaoProdutoDuplicado({ produtoId: data.produtoId, linhas: linhasProdutos, manuais: extrasManuais });
+      if (duplicidade.duplicado && String(key).startsWith('manual-') && typeof window !== 'undefined') {
+        const usarSeparado = window.confirm('Este produto já existe neste talhão. Clique em OK para adicionar como uso separado ou Cancelar para editar a linha existente.');
+        if (!usarSeparado) return;
+      }
+    }
+    setExtrasManuais(prev => {
+      const next = { ...prev, [key]: data };
+      onExtrasChange?.(next);
+      return next;
+    });
+  }, [extrasManuais, linhasProdutos, onExtrasChange]);
 
   // Elementos manuais: micronutrientes e nutrientes cuja recomendação automática é zero.
   const elementosExtrasMarcados = useMemo(() => {
@@ -601,7 +758,36 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
             elementosExtras={elementosExtrasMarcados}
             extrasManuais={extrasManuais}
             onExtraChange={handleExtraChange}
+            onDoseChange={handleDoseChange}
+            onRestaurarDose={handleRestaurarDose}
+            onAlvoChange={handleAlvoChange}
+            onAdicionarManual={handleAdicionarManual}
+            onExcluirManual={handleExcluirManual}
           />
+          {balancoNutrientes.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/20">
+                  <tr>
+                    {['Nutriente', 'Necessidade', 'Fornecido', 'Saldo', 'Situação'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {balancoNutrientes.map(item => (
+                    <tr key={item.nutriente} className="border-t border-border/50">
+                      <td className="px-3 py-2 font-medium">{item.nutriente}</td>
+                      <td className="px-3 py-2 tabular-nums">{item.necessidade != null ? fmt(item.necessidade, 1) : '—'}</td>
+                      <td className="px-3 py-2 tabular-nums">{fmt(item.fornecido, 1)}</td>
+                      <td className="px-3 py-2 tabular-nums">{item.saldo != null ? fmt(item.saldo, 1) : '—'}</td>
+                      <td className="px-3 py-2">{item.situacao}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -811,6 +997,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const [trocasPorTalhao, setTrocasPorTalhao] = useState({});
   const [marcadosPorTalhao, setMarcadosPorTalhao] = useState({});
   const [extrasPorTalhao, setExtrasPorTalhao] = useState({});
+  const [ajustesDosePorTalhao, setAjustesDosePorTalhao] = useState({});
 
   const handleExtrasChange = useCallback((talhaoId, extras) => {
     setExtrasPorTalhao(prev => ({ ...prev, [talhaoId]: extras }));
@@ -825,6 +1012,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     setTrocasPorTalhao({});
     setMarcadosPorTalhao({});
     setExtrasPorTalhao({});
+    setAjustesDosePorTalhao({});
   }, [resultados, todos]);
 
   const toggleExpand = (id) => setExpandidos(prev => {
@@ -849,7 +1037,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     if (substituirSalvos) {
       setTrocasPorTalhao({});
       setMarcadosPorTalhao({});
-      setExtrasPorTalhao({});
+      setAjustesDosePorTalhao({});
       onProdutosEfetivosChange?.({});
     }
     setProdutosCalculo(todosFiltered);
@@ -881,13 +1069,49 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     const trocasAgg = {};
     const marcadosAgg = {};
     const extrasAgg = {};
+    const ajustesAgg = {};
     registrosSalvos.forEach(r => {
       if (r.detalhamento?.trocas) trocasAgg[r.talhao_id] = r.detalhamento.trocas;
       if (r.detalhamento?.marcados) marcadosAgg[r.talhao_id] = r.detalhamento.marcados;
+      if (r.detalhamento?.produtoSugerido?.id) {
+        const key = `n_pct:${r.detalhamento.produtoSugerido.id}`;
+        ajustesAgg[r.talhao_id] = {
+          ...(ajustesAgg[r.talhao_id] || {}),
+          [key]: {
+            linhaId: key,
+            dose_calculada_kg_ha: r.detalhamento.dose_calculada_kg_ha ?? r.detalhamento.doseProdutoHa,
+            dose_utilizada_kg_ha: r.detalhamento.dose_utilizada_kg_ha ?? r.detalhamento.doseProdutoHa,
+            doseKgHa: r.detalhamento.dose_utilizada_kg_ha ?? r.detalhamento.doseProdutoHa,
+            dose_ajustada_manualmente: Boolean(r.detalhamento.dose_ajustada_manualmente),
+            nutriente_alvo: r.detalhamento.nutriente_alvo || 'n_pct',
+          },
+        };
+      }
       const extras = {};
       (r.detalhamento?.complementos || []).forEach(comp => {
+        if (comp?.produto?.id) {
+          const key = comp.linhaId || `${comp.nutKey || comp.nutriente_alvo || 'produto'}:${comp.produto.id}`;
+          ajustesAgg[r.talhao_id] = {
+            ...(ajustesAgg[r.talhao_id] || {}),
+            [key]: {
+              linhaId: key,
+              dose_calculada_kg_ha: comp.dose_calculada_kg_ha ?? comp.doseKgHa,
+              dose_utilizada_kg_ha: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+              doseKgHa: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+              dose_ajustada_manualmente: Boolean(comp.dose_ajustada_manualmente),
+              nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
+            },
+          };
+        }
         if (comp?.isManualExtra && comp?.nutKey && comp?.produto?.id) {
-          extras[comp.nutKey] = { produtoId: comp.produto.id, doseKgHa: comp.doseKgHa };
+          extras[comp.linhaId || comp.nutKey] = {
+            produtoId: comp.produto.id,
+            doseKgHa: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+            nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
+            nutKey: comp.nutKey,
+            isManualLivre: Boolean(comp.isManualLivre),
+            usoSeparado: Boolean(comp.usoSeparado),
+          };
         }
       });
       if (Object.keys(extras).length > 0) extrasAgg[r.talhao_id] = extras;
@@ -909,6 +1133,13 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     if (Object.keys(extrasAgg).length > 0) {
       setExtrasPorTalhao(prev => {
         const merged = { ...extrasAgg };
+        Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
+        return merged;
+      });
+    }
+    if (Object.keys(ajustesAgg).length > 0) {
+      setAjustesDosePorTalhao(prev => {
+        const merged = { ...ajustesAgg };
         Object.keys(prev).forEach(k => { merged[k] = prev[k]; });
         return merged;
       });
@@ -966,6 +1197,10 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     setMarcadosPorTalhao(prev => ({ ...prev, [talhaoId]: marcados }));
   }, []);
 
+  const handleAjustesDoseChange = useCallback((talhaoId, ajustes) => {
+    setAjustesDosePorTalhao(prev => ({ ...prev, [talhaoId]: ajustes }));
+  }, []);
+
   // Expõe trocas, marcados e complementos calculados para o pai usar no handleSalvarTudo
   useEffect(() => {
     if (!onProdutosEfetivosChange || !resultados) return;
@@ -983,11 +1218,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       trocasPorTalhao,
       marcadosPorTalhao,
       extrasPorTalhao,
+      ajustesDosePorTalhao,
       criarMarcacoesPadraoFn: criarMarcacoesPadrao,
       elementos: TODOS_ELEMENTOS_GRID,
     });
     onProdutosEfetivosChange(mapa);
-  }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao]);
+  }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao]);
 
   const metricas = useMemo(() => {
     if (!resultados || resultados.length === 0) return null;
@@ -1212,9 +1448,11 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                             marcadosIniciais={marcadosPorTalhao[r.talhao.id] || null}
                             trocasIniciais={trocasPorTalhao[r.talhao.id] || null}
                             complementosSalvos={r.substituirSalvo ? null : ((registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null)}
+                            ajustesDoseIniciais={ajustesDosePorTalhao[r.talhao.id] || null}
                             onMarcadosChange={(m) => handleMarcadosChange(r.talhao.id, m)}
                             onTrocasChange={(t) => handleTrocasChange(r.talhao.id, t)}
                             onExtrasChange={(e) => handleExtrasChange(r.talhao.id, e)}
+                            onAjustesDoseChange={(a) => handleAjustesDoseChange(r.talhao.id, a)}
                           />
                         </td>
                       </tr>

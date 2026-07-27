@@ -464,7 +464,13 @@ export default function Adubacao2() {
           else if (!isNaN(s1)) mediaBienal = s1;
           else if (!isNaN(s2)) mediaBienal = s2;
         }
-        let produtoSugerido = det.produtoSugerido ? { ...det.produtoSugerido } : null;
+        let produtoSugerido = det.produtoSugerido ? {
+          ...det.produtoSugerido,
+          dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa ?? null,
+          dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
+          dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
+          nutriente_alvo: det.nutriente_alvo || 'n_pct',
+        } : null;
         if (produtoSugerido && todos.length > 0) {
           const prodCatalogo = todos.find(p => p.id === produtoSugerido.id);
           if (prodCatalogo) produtoSugerido = prodCatalogo;
@@ -477,7 +483,11 @@ export default function Adubacao2() {
           analise2040: a2040Map[talhao.id] || null,
           rec: det.rec || null,
           produtoSugerido,
-          doseProdutoHa: det.doseProdutoHa ?? null,
+          doseProdutoHa: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
+          dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa ?? null,
+          dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
+          dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
+          nutriente_alvo: det.nutriente_alvo || 'n_pct',
           temRegistroSalvo: true,
         };
       });
@@ -488,7 +498,25 @@ export default function Adubacao2() {
         const prodEfetivosMap = {};
         resultadosRestaurados.forEach(r => {
           if (r.produtoSugerido && r.doseProdutoHa != null) {
-            prodEfetivosMap[r.talhao.id] = { produto: r.produtoSugerido, doseKgHa: r.doseProdutoHa };
+            const registroRestaurado = registrosPorTalhao[r.talhao.id] || null;
+            prodEfetivosMap[r.talhao.id] = {
+              produto: r.produtoSugerido,
+              doseKgHa: r.dose_utilizada_kg_ha ?? r.doseProdutoHa,
+              dose_calculada_kg_ha: r.dose_calculada_kg_ha ?? r.doseProdutoHa,
+              dose_utilizada_kg_ha: r.dose_utilizada_kg_ha ?? r.doseProdutoHa,
+              dose_ajustada_manualmente: Boolean(r.dose_ajustada_manualmente),
+              nutriente_alvo: r.nutriente_alvo || 'n_pct',
+              complementos: (registroRestaurado?.detalhamento?.complementos || []).map(comp => ({
+                ...comp,
+                doseKgHa: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+                dose_utilizada_kg_ha: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
+                dose_calculada_kg_ha: comp.dose_calculada_kg_ha ?? comp.doseKgHa,
+                dose_ajustada_manualmente: Boolean(comp.dose_ajustada_manualmente),
+                nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
+              })),
+              trocas: registroRestaurado?.detalhamento?.trocas || {},
+              marcados: registroRestaurado?.detalhamento?.marcados || null,
+            };
           }
         });
         if (Object.keys(prodEfetivosMap).length > 0) {
@@ -615,8 +643,15 @@ export default function Adubacao2() {
         let doseProdutoHa = null;
         if (rec && registroSalvo?.detalhamento?.produtoSugerido && !substituirSalvos) {
           const salvo = registroSalvo.detalhamento.produtoSugerido;
-          produtoSugerido = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
-          doseProdutoHa = registroSalvo.detalhamento.doseProdutoHa ?? null;
+          const produtoBase = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
+          produtoSugerido = {
+            ...produtoBase,
+            dose_calculada_kg_ha: registroSalvo.detalhamento.dose_calculada_kg_ha ?? registroSalvo.detalhamento.doseProdutoHa ?? null,
+            dose_utilizada_kg_ha: registroSalvo.detalhamento.dose_utilizada_kg_ha ?? registroSalvo.detalhamento.doseProdutoHa ?? null,
+            dose_ajustada_manualmente: Boolean(registroSalvo.detalhamento.dose_ajustada_manualmente),
+            nutriente_alvo: registroSalvo.detalhamento.nutriente_alvo || 'n_pct',
+          };
+          doseProdutoHa = registroSalvo.detalhamento.dose_utilizada_kg_ha ?? registroSalvo.detalhamento.doseProdutoHa ?? null;
         } else if (rec && listaCalculo.length > 0) {
           const linhas = montarLinhasProdutos(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, {}, null, null, null, rec);
           const principal = linhas.find(l => l.ehPrincipal);
@@ -633,6 +668,10 @@ export default function Adubacao2() {
           rec,
           produtoSugerido,
           doseProdutoHa,
+          dose_calculada_kg_ha: registroSalvo?.detalhamento?.dose_calculada_kg_ha ?? doseProdutoHa,
+          dose_utilizada_kg_ha: registroSalvo?.detalhamento?.dose_utilizada_kg_ha ?? doseProdutoHa,
+          dose_ajustada_manualmente: Boolean(registroSalvo?.detalhamento?.dose_ajustada_manualmente),
+          nutriente_alvo: registroSalvo?.detalhamento?.nutriente_alvo || 'n_pct',
           temRegistroSalvo: !!registroSalvo,
           substituirSalvo: substituirSalvos && !!registroSalvo,
         };
@@ -699,7 +738,11 @@ export default function Adubacao2() {
             if (r.produtoSugerido) return { id: r.produtoSugerido.id, nome: r.produtoSugerido.nome };
             return null;
           })(),
-          doseProdutoHa: produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
+          doseProdutoHa: produtosEfetivosRef.current[talhao.id]?.dose_utilizada_kg_ha ?? produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
+          dose_calculada_kg_ha: produtosEfetivosRef.current[talhao.id]?.dose_calculada_kg_ha ?? r.dose_calculada_kg_ha ?? r.doseProdutoHa,
+          dose_utilizada_kg_ha: produtosEfetivosRef.current[talhao.id]?.dose_utilizada_kg_ha ?? produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
+          dose_ajustada_manualmente: Boolean(produtosEfetivosRef.current[talhao.id]?.dose_ajustada_manualmente),
+          nutriente_alvo: produtosEfetivosRef.current[talhao.id]?.nutriente_alvo || r.nutriente_alvo || 'n_pct',
           // Complementos, trocas e marcados — persistência completa do planejamento
           complementos: produtosEfetivosRef.current[talhao.id]?.complementos || [],
           trocas: produtosEfetivosRef.current[talhao.id]?.trocas || {},

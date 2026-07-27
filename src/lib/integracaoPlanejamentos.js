@@ -22,10 +22,20 @@ function mesesDoParcelamento(parcelamento) {
 
 function produtoNormalizado(produto, fallback = {}) {
   if (!produto && !fallback.produto_nome) return null;
+  const doseKgHa = numero(
+    fallback.dose_utilizada_kg_ha ??
+    fallback.doseKgHa ??
+    fallback.dose_rec_manual ??
+    fallback.dose
+  );
   return {
     id: produto?.id || fallback.produto_id || null,
     nome: produto?.nome || fallback.produto_nome || 'Produto não definido',
-    doseKgHa: numero(fallback.doseKgHa ?? fallback.dose_rec_manual ?? fallback.dose),
+    doseKgHa,
+    dose_calculada_kg_ha: numero(fallback.dose_calculada_kg_ha ?? doseKgHa),
+    dose_utilizada_kg_ha: doseKgHa,
+    dose_ajustada_manualmente: Boolean(fallback.dose_ajustada_manualmente),
+    nutriente_alvo: fallback.nutriente_alvo || null,
   };
 }
 
@@ -43,7 +53,13 @@ export function normalizarPlanosAdubacao(planosLegados = [], planejamentos2 = []
     const parcelamentos = det.parcelamentos || {};
     const produtos = [];
 
-    const principal = produtoNormalizado(det.produtoSugerido, { doseKgHa: det.doseProdutoHa });
+    const principal = produtoNormalizado(det.produtoSugerido, {
+      doseKgHa: det.doseProdutoHa,
+      dose_calculada_kg_ha: det.dose_calculada_kg_ha,
+      dose_utilizada_kg_ha: det.dose_utilizada_kg_ha,
+      dose_ajustada_manualmente: det.dose_ajustada_manualmente,
+      nutriente_alvo: det.nutriente_alvo,
+    });
     if (principal) produtos.push(principal);
 
     (det.complementos || []).forEach(complemento => {
@@ -51,6 +67,10 @@ export function normalizarPlanosAdubacao(planosLegados = [], planejamentos2 = []
         produto_id: complemento?.produto_id,
         produto_nome: complemento?.produto_nome,
         doseKgHa: complemento?.doseKgHa ?? complemento?.dose_kg_ha,
+        dose_calculada_kg_ha: complemento?.dose_calculada_kg_ha,
+        dose_utilizada_kg_ha: complemento?.dose_utilizada_kg_ha,
+        dose_ajustada_manualmente: complemento?.dose_ajustada_manualmente,
+        nutriente_alvo: complemento?.nutriente_alvo,
       });
       if (produto) produtos.push(produto);
     });
