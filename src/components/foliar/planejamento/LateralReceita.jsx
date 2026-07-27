@@ -3,13 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { X, Plus, Trash2, Save } from 'lucide-react';
+import { X, Plus, Trash2, Save, Pencil } from 'lucide-react';
 import { filtrarInsumosPlanejamentoFoliar } from '@/lib/planejamentoFoliar';
 import {
   CUSTO_PENDENTE_FOLIAR,
+  atualizarProdutoReceitaFoliar,
   calcularCustoProdutoFoliarDetalhado,
   formatarDoseNormalizadaFoliar,
   normalizarProdutosAplicacaoFoliar,
+  produtoReceitaFoliarDeInsumo,
+  removerProdutoReceitaFoliar,
 } from '@/lib/unidadesAplicacoesFoliares';
 
 const OBJETIVOS = ['Nutrição', 'Ferrugem', 'Cercosporiose', 'Bicho-mineiro', 'Ácaro', 'Bacteriose', 'Pós-colheita', 'Pré-florada', 'Outro'];
@@ -37,6 +40,7 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
   const [dose, setDose] = useState('');
   const [unidade, setUnidade] = useState('');
   const [addOpen, setAddOpen] = useState(false);
+  const [editandoProduto, setEditandoProduto] = useState(null);
 
   const insumosFiltrados = useMemo(() => {
     return filtrarInsumosPlanejamentoFoliar(insumos, busca);
@@ -63,29 +67,38 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
     if (!ins) return;
     setLocal(prev => ({
       ...prev,
-      produtos: normalizarProdutosAplicacaoFoliar([...prev.produtos, {
-        produto_id: ins.id,
-        produto_nome: ins.nome,
-        dose,
-        unidade,
-        tipo_formulacao: ins.tipo_formulacao || '',
-        grupo: ins.grupo || '',
-        preco: '',
-      }], { volumeCaldaHa: prev.volume_calda_ha }),
+      produtos: [
+        ...prev.produtos,
+        produtoReceitaFoliarDeInsumo(ins, { dose, unidade, preco: '' }, { volumeCaldaHa: prev.volume_calda_ha }),
+      ],
     }));
     setProdutoSel(''); setDose(''); setUnidade(''); setBusca(''); setAddOpen(false);
   };
 
-  const handlePrecoChange = (idx, val) => {
+  const handleProdutoChange = (idx, campo, val) => {
     setLocal(prev => {
-      const p = [...prev.produtos];
-      p[idx] = { ...p[idx], preco: val };
-      return { ...prev, produtos: p };
+      const atualizacao = { [campo]: val };
+      if (campo === 'produto_id') {
+        const ins = insumos.find(item => item.id === val);
+        atualizacao.produto_nome = ins?.nome || '';
+        atualizacao.dose = ins?.dose_producao || '';
+        atualizacao.unidade = ins?.unidade_aplicacao || ins?.unidade_padrao || '';
+        atualizacao.tipo_formulacao = ins?.tipo_formulacao || '';
+        atualizacao.grupo = ins?.grupo || '';
+      }
+      return {
+        ...prev,
+        produtos: atualizarProdutoReceitaFoliar(prev.produtos, idx, atualizacao, {
+          volumeCaldaHa: prev.volume_calda_ha,
+          insumos,
+        }),
+      };
     });
   };
 
   const handleRemoverProduto = (idx) => {
-    setLocal(prev => ({ ...prev, produtos: prev.produtos.filter((_, i) => i !== idx) }));
+    setLocal(prev => ({ ...prev, produtos: removerProdutoReceitaFoliar(prev.produtos, idx) }));
+    setEditandoProduto(null);
   };
 
   // Resumo de custos
@@ -250,50 +263,87 @@ export default function LateralReceita({ aplicacao, insumos, areaTotal, onSalvar
               Nenhum produto adicionado
             </p>
           ) : (
-            <div className="border border-border rounded-lg overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-muted/20 border-b border-border">
-                    {['Produto', 'Dose/ha', 'Total (kg/L)', 'Preço (R$)', 'Custo/ha', ''].map(h => (
-                      <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {local.produtos.map((p, idx) => {
-                    const custo = calcularCustoProdutoFoliarDetalhado(p, {
-                      volumeCaldaHa: local.volume_calda_ha,
-                      areaHa: areaTotal,
-                    });
-                    return (
-                      <tr key={idx} className="border-b border-border/50 last:border-0">
-                        <td className="px-2 py-2 font-medium max-w-[120px]">
-                          <span className="block truncate">{p.produto_nome}</span>
-                          {p.grupo && <span className="text-[10px] text-muted-foreground">{p.grupo}</span>}
-                          {custo.pendente && <span className="block text-[10px] text-amber-700">{CUSTO_PENDENTE_FOLIAR}</span>}
-                        </td>
-                        <td className="px-2 py-2 tabular-nums whitespace-nowrap">
-                          <span className="block">{p.dose || '—'} {p.unidade || ''}</span>
-                          <span className="block text-[10px] text-muted-foreground">{formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: local.volume_calda_ha })}</span>
-                        </td>
-                        <td className="px-2 py-2 tabular-nums">{custo.quantidade_total != null ? custo.quantidade_total.toFixed(2) : '—'}</td>
-                        <td className="px-2 py-2">
-                          <Input type="number" min="0" step="0.01" value={p.preco || ''}
-                            onChange={e => handlePrecoChange(idx, e.target.value)}
-                            placeholder="—" className="h-6 w-16 text-xs text-right tabular-nums" />
-                        </td>
-                        <td className="px-2 py-2 tabular-nums">{custo.custo_ha != null ? fmtR(custo.custo_ha) : '—'}</td>
-                        <td className="px-2 py-2">
-                          <button type="button" onClick={() => handleRemoverProduto(idx)}
-                            className="text-muted-foreground hover:text-destructive transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-2">
+              {local.produtos.map((p, idx) => {
+                const custo = calcularCustoProdutoFoliarDetalhado(p, {
+                  volumeCaldaHa: local.volume_calda_ha,
+                  areaHa: areaTotal,
+                });
+                const editando = editandoProduto === idx;
+                return (
+                  <div key={`${p.produto_id || p.produto_nome || 'produto'}-${idx}`} className="border border-border rounded-lg p-3 space-y-3 bg-background">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{p.produto_nome || 'Produto sem nome'}</p>
+                        {p.grupo && <p className="text-[11px] text-muted-foreground">{p.grupo}</p>}
+                        {custo.pendente && <p className="text-[11px] text-amber-700">{CUSTO_PENDENTE_FOLIAR}</p>}
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <Button type="button" size="sm" variant={editando ? 'secondary' : 'outline'} className="h-7 px-2 text-xs gap-1"
+                          onClick={() => setEditandoProduto(editando ? null : idx)}>
+                          <Pencil className="w-3.5 h-3.5" /> Editar
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive"
+                          onClick={() => handleRemoverProduto(idx)}>
+                          <Trash2 className="w-3.5 h-3.5" /> Excluir
+                        </Button>
+                      </div>
+                    </div>
+
+                    {editando && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="sm:col-span-2">
+                          <Label className="text-[10px] text-muted-foreground mb-0.5 block">Produto</Label>
+                          <Select value={p.produto_id || 'none'} onValueChange={v => handleProdutoChange(idx, 'produto_id', v)}>
+                            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione o produto" /></SelectTrigger>
+                            <SelectContent className="max-h-56">
+                              <SelectItem value="none" disabled>Selecione o produto</SelectItem>
+                              {insumos.map(ins => (
+                                <SelectItem key={ins.id} value={ins.id}>
+                                  {ins.nome}{ins.grupo ? ` — ${ins.grupo}` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground mb-0.5 block">Dose</Label>
+                          <Input value={p.dose ?? ''} onChange={e => handleProdutoChange(idx, 'dose', e.target.value)} className="h-8 text-sm" />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground mb-0.5 block">Unidade</Label>
+                          <Input value={p.unidade ?? ''} onChange={e => handleProdutoChange(idx, 'unidade', e.target.value)} className="h-8 text-sm" />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground mb-0.5 block">Preço (R$)</Label>
+                          <Input type="number" min="0" step="0.01" value={p.preco ?? ''}
+                            onChange={e => handleProdutoChange(idx, 'preco', e.target.value)}
+                            className="h-8 text-sm tabular-nums" />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Dose original</p>
+                        <p className="font-medium tabular-nums">{p.dose || '—'} {p.unidade || ''}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Dose cálculo</p>
+                        <p className="font-medium tabular-nums">{formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: local.volume_calda_ha })}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Quantidade total</p>
+                        <p className="font-medium tabular-nums">{custo.quantidade_total != null ? custo.quantidade_total.toFixed(2) : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Custo/ha</p>
+                        <p className="font-medium tabular-nums">{custo.custo_ha != null ? fmtR(custo.custo_ha) : '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

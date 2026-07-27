@@ -1,4 +1,5 @@
 export const MESES_DASHBOARD = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+export const SAFRA_VAZIA_DASHBOARD = '__sem_safra__';
 
 const MESES_ALIASES = new Map([
   ['JAN', 'JAN'], ['JANEIRO', 'JAN'],
@@ -57,6 +58,18 @@ export function coletarSafrasDisponiveis({
       if (safra) safras.add(safra);
     });
   return [...safras].sort(compararSafrasDesc);
+}
+
+export function resolverSafraDashboard(safraFiltro = '', safrasDisponiveis = []) {
+  if (safraFiltro && safrasDisponiveis.includes(safraFiltro)) return safraFiltro;
+  return safrasDisponiveis[0] || '';
+}
+
+export function opcoesSafraDashboard(safrasDisponiveis = []) {
+  if (!safrasDisponiveis.length) {
+    return [{ value: SAFRA_VAZIA_DASHBOARD, label: 'Sem safras disponíveis', disabled: true }];
+  }
+  return safrasDisponiveis.map(safra => ({ value: safra, label: safra, disabled: false }));
 }
 
 function filtrarTalhoes(talhoes = [], codigoProdutor = '') {
