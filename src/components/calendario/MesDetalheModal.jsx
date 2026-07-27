@@ -63,8 +63,9 @@ function SecaoDetalhe({ icone: Icone, titulo, cor, itens, subtotal }) {
   );
 }
 
-export default function MesDetalheModal({ dados, talhoes, onFechar }) {
+export default function MesDetalheModal({ dados, talhoes, produtores = [], onFechar }) {
   const { mesNome, adubacaoSolo, foliarAdubacao, foliarDefensivo, foliarHerbicida, colheita } = dados;
+  const produtorPorCodigo = Object.fromEntries((produtores || []).map(produtor => [produtor.codigo, produtor]));
 
   // Adubação via solo
   const itensAdubacao = adubacaoSolo.map(p => {
@@ -89,14 +90,26 @@ export default function MesDetalheModal({ dados, talhoes, onFechar }) {
           volumeCaldaHa: aplic.volume_calda_ha,
           areaHa: talhoes.find(t => t.id === aplic.talhao_id)?.area_ha || 0,
         });
+        const produtor = produtorPorCodigo[aplic.codigo_produtor];
+        const periodo = formatarPeriodoAplicacaoFoliar(aplic);
         resultado.push({
           custo,
           pendente: detalhe.pendente,
           linhas: [
             p.produto_nome || 'Produto',
-            [aplic.talhao_nome && `Talhão: ${aplic.talhao_nome}`, p.dose && formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: aplic.volume_calda_ha })].filter(Boolean).join(' · '),
+            [
+              produtor?.nome && `Produtor: ${produtor.nome}`,
+              aplic.safra && `Safra: ${aplic.safra}`,
+              aplic.talhao_nome && `Talhão: ${aplic.talhao_nome}`,
+            ].filter(Boolean).join(' · '),
+            [
+              p.dose && `Dose: ${formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: aplic.volume_calda_ha })}`,
+              aplic.volume_calda_ha != null && aplic.volume_calda_ha !== '' && `Calda: ${aplic.volume_calda_ha} L/ha`,
+              aplic.equipamento && `Equipamento: ${aplic.equipamento}`,
+            ].filter(Boolean).join(' · '),
             aplic.titulo && `Aplicação: ${aplic.titulo}`,
-            formatarPeriodoAplicacaoFoliar(aplic) && `Data/época: ${formatarPeriodoAplicacaoFoliar(aplic)}`,
+            aplic.objetivos?.length && `Objetivos: ${aplic.objetivos.join(', ')}`,
+            periodo && `Data/época: ${periodo}`,
           ].filter(Boolean),
         });
       });

@@ -15,6 +15,14 @@ const fmtMoeda = valor => valor != null && Number.isFinite(Number(valor))
   ? Number(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   : '';
 
+function talhoesDaAplicacao(aplicacao, talhoes) {
+  const ids = new Set([
+    aplicacao.talhao_id,
+    ...(Array.isArray(aplicacao.talhao_ids) ? aplicacao.talhao_ids : []),
+  ].filter(Boolean));
+  return talhoes.filter(talhao => ids.has(talhao.id));
+}
+
 function gerarPDF(produtor, safra, talhoes, analises, aplicacoes) {
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -110,7 +118,11 @@ function gerarPDF(produtor, safra, talhoes, analises, aplicacoes) {
         if (periodo) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal'); doc.text(`Data/época: ${periodo}`, ML + CW * 0.38, y + 4); }
         if (aplic.equipamento) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.text(aplic.equipamento, ML + CW - 2, y + 4, { align: 'right' }); }
         doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal');
+        const talhoesAplicacao = talhoesDaAplicacao(aplic, talhoes);
+        const areaAplicacao = talhoesAplicacao.reduce((total, item) => total + (item.area_ha || 0), 0);
         const detalhesAplicacao = [
+          talhoesAplicacao.length ? `Talhões: ${talhoesAplicacao.map(item => item.nome).join(', ')}` : '',
+          areaAplicacao ? `Área: ${areaAplicacao.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ha` : '',
           aplic.objetivos?.length ? `Objetivos: ${aplic.objetivos.join(', ')}` : '',
           aplic.volume_calda_ha != null && aplic.volume_calda_ha !== '' ? `Calda: ${aplic.volume_calda_ha} L/ha` : '',
         ].filter(Boolean).join(' | ');

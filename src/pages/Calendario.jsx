@@ -7,12 +7,15 @@ import MesCard from '@/components/calendario/MesCard';
 import MesDetalheModal from '@/components/calendario/MesDetalheModal';
 import { calcularPlanejamento } from '@/lib/calcularPlanejamento';
 import { normalizarPlanosAdubacao, normalizarAplicacoesFoliares } from '@/lib/integracaoPlanejamentos';
+import {
+  CATEGORIA_ADUBACAO_FOLIAR,
+  CATEGORIA_PLANTAS_DANINHAS,
+  CATEGORIA_PRAGAS_DOENCAS,
+  classificarCategoriaProdutoFoliar,
+} from '@/lib/unidadesAplicacoesFoliares';
 
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const MESES_NOME = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-
-const GRUPOS_DEFENSIVO = ['Fungicida','Inseticida','Inseticida Biológico','Inseticida de Solo','Acaricida'];
-const GRUPOS_HERBICIDA = ['Herbicida'];
 
 function getMesColheita(dataInicio) {
   if (!dataInicio) return -1;
@@ -110,13 +113,13 @@ export default function Calendario() {
       );
 
       const foliarAdubacao = foliares.filter(a =>
-        (a.produtos || []).some(p => !GRUPOS_DEFENSIVO.includes(p.grupo) && !GRUPOS_HERBICIDA.includes(p.grupo))
+        (a.produtos || []).some(p => classificarCategoriaProdutoFoliar(p) === CATEGORIA_ADUBACAO_FOLIAR)
       );
       const foliarDefensivo = foliares.filter(a =>
-        (a.produtos || []).some(p => GRUPOS_DEFENSIVO.includes(p.grupo))
+        (a.produtos || []).some(p => classificarCategoriaProdutoFoliar(p) === CATEGORIA_PRAGAS_DOENCAS)
       );
       const foliarHerbicida = foliares.filter(a =>
-        (a.produtos || []).some(p => GRUPOS_HERBICIDA.includes(p.grupo))
+        (a.produtos || []).some(p => classificarCategoriaProdutoFoliar(p) === CATEGORIA_PLANTAS_DANINHAS)
       );
 
       // Colheita
@@ -191,6 +194,7 @@ export default function Calendario() {
         <MesDetalheModal
           dados={dadosMesSelecionado}
           talhoes={talhoesFiltrados}
+          produtores={produtores}
           onFechar={() => setMesSelecionado(null)}
         />
       )}

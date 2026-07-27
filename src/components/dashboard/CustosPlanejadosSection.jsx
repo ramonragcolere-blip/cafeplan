@@ -1,10 +1,13 @@
 import React, { useMemo } from 'react';
 import { DollarSign } from 'lucide-react';
 import { calcularCustoAdubacaoHa } from '@/lib/integracaoPlanejamentos';
-import { CUSTO_PENDENTE_FOLIAR, calcularCustoProdutoFoliarDetalhado } from '@/lib/unidadesAplicacoesFoliares';
-
-const GRUPOS_DEFENSIVO = ['Fungicida', 'Inseticida', 'Inseticida Biológico', 'Inseticida de Solo', 'Acaricida'];
-const GRUPOS_HERBICIDA = ['Herbicida'];
+import {
+  CATEGORIA_ADUBACAO_FOLIAR,
+  CATEGORIA_PLANTAS_DANINHAS,
+  CATEGORIA_PRAGAS_DOENCAS,
+  CUSTO_PENDENTE_FOLIAR,
+  calcularCustosFoliaresPorCategoria,
+} from '@/lib/unidadesAplicacoesFoliares';
 
 function calcCustosAdubacaoSolo(planos, talhoes) {
   return planos.reduce((total, plano) => {
@@ -15,27 +18,13 @@ function calcCustosAdubacaoSolo(planos, talhoes) {
 }
 
 function calcCustosFoliar(aplicacoes, talhoes) {
-  let foliar = 0, defensivo = 0, herbicida = 0, pendencias = 0;
-  aplicacoes.forEach(aplic => {
-    const talhao = talhoes.find(t => t.id === aplic.talhao_id);
-    const areaHa = talhao?.area_ha || 0;
-    if (!areaHa) return;
-    (aplic.produtos || []).forEach(p => {
-      const detalhe = calcularCustoProdutoFoliarDetalhado(p, {
-        volumeCaldaHa: aplic.volume_calda_ha,
-        areaHa,
-      });
-      if (!detalhe.valido) {
-        pendencias += 1;
-        return;
-      }
-      const custo = detalhe.custo_total;
-      if (GRUPOS_DEFENSIVO.includes(p.grupo)) defensivo += custo;
-      else if (GRUPOS_HERBICIDA.includes(p.grupo)) herbicida += custo;
-      else foliar += custo;
-    });
-  });
-  return { foliar, defensivo, herbicida, pendencias };
+  const totais = calcularCustosFoliaresPorCategoria(aplicacoes, talhoes);
+  return {
+    foliar: totais[CATEGORIA_ADUBACAO_FOLIAR],
+    defensivo: totais[CATEGORIA_PRAGAS_DOENCAS],
+    herbicida: totais[CATEGORIA_PLANTAS_DANINHAS],
+    pendencias: totais.pendencias,
+  };
 }
 
 function moeda(val) {
