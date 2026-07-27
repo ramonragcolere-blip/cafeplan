@@ -1,5 +1,7 @@
 import { sugerirProdutosInteligente } from './sugerirProdutos2.js';
 
+export const MENSAGEM_FALLBACK_ADUBACAO2 = 'Não foi possível carregar este planejamento. Os dados não foram apagados.';
+
 export const KEY_PARA_LABEL = {
   n_pct: 'N',
   p2o5_pct: 'P2O5',
@@ -53,6 +55,47 @@ export function produtoAtivo(produto) {
   return produto?.ativo !== false;
 }
 
+export function listaSeguraAdubacao2(valor) {
+  if (Array.isArray(valor)) return valor.filter(Boolean);
+  if (valor && typeof valor === 'object') return Object.values(valor).filter(Boolean);
+  return [];
+}
+
+export function objetoSeguroAdubacao2(valor) {
+  return valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {};
+}
+
+export function normalizarProdutoAdubacao2(produto, fallback = {}) {
+  if (!produto && !fallback.produto_id && !fallback.produto_nome) return null;
+  if (produto && typeof produto !== 'object') {
+    return { id: fallback.produto_id || null, nome: String(produto || fallback.produto_nome || 'Produto não definido') };
+  }
+  return {
+    ...(produto || {}),
+    id: produto?.id || fallback.produto_id || null,
+    nome: produto?.nome || fallback.produto_nome || fallback.nome || 'Produto não definido',
+  };
+}
+
+export function normalizarComplementosAdubacao2(complementos = []) {
+  return listaSeguraAdubacao2(complementos)
+    .map(complemento => {
+      if (!complemento || typeof complemento !== 'object') return null;
+      const produto = normalizarProdutoAdubacao2(complemento.produto, complemento);
+      return {
+        ...complemento,
+        produto,
+        doseKgHa: complemento.dose_utilizada_kg_ha ?? complemento.doseKgHa ?? complemento.dose_kg_ha ?? null,
+        dose_calculada_kg_ha: complemento.dose_calculada_kg_ha ?? complemento.doseKgHa ?? complemento.dose_kg_ha ?? null,
+        dose_utilizada_kg_ha: complemento.dose_utilizada_kg_ha ?? complemento.doseKgHa ?? complemento.dose_kg_ha ?? null,
+        dose_ajustada_manualmente: Boolean(complemento.dose_ajustada_manualmente),
+        nutriente_alvo: complemento.nutriente_alvo || complemento.nutKey || 'dose_manual',
+        nutKey: complemento.nutKey || complemento.nutriente_alvo || 'dose_manual',
+      };
+    })
+    .filter(Boolean);
+}
+
 export function produtoTemNutrientePlanejamento(produto) {
   return TEM_NUTRIENTE_KEYS.some(key => (parseFloat(produto?.[key]) || 0) > 0);
 }
@@ -66,7 +109,7 @@ export function filtrarProdutosPlanejamento(todos = [], filtro = {}) {
   const produtoId = filtro.produtoId || '';
   const incluirFontesSemFornecedor = Boolean(filtro.incluirFontesSemFornecedor);
 
-  return (todos || [])
+  return listaSeguraAdubacao2(todos)
     .filter(produtoAtivo)
     .filter(produtoTemNutrientePlanejamento)
     .filter(produto => {
@@ -139,10 +182,12 @@ function criarIdLinha(produto, nutKey, sufixo = '') {
 }
 
 function normalizarLinhaProduto(linha, rec = {}, ajustes = {}) {
+  if (!linha?.produto) return null;
   const chave = linha.linhaId || criarIdLinha(linha.produto, linha.nutKey);
-  const ajuste = ajustes[chave] || ajustes[linha.produto?.id] || {};
+  const ajustesSeguros = objetoSeguroAdubacao2(ajustes);
+  const ajuste = ajustesSeguros[chave] || ajustesSeguros[linha.produto?.id] || {};
   const alvo = ajuste.nutriente_alvo || linha.nutriente_alvo || linha.nutKey || 'dose_manual';
-  const doseCalculada = numeroDose(linha.dose_calculada_kg_ha ?? linha.doseKgHa);
+  const doseCalculada = numeroDose(ajuste.dose_calculada_kg_ha ?? linha.dose_calculada_kg_ha ?? linha.doseKgHa);
   const doseAjustada = numeroDose(ajuste.dose_utilizada_kg_ha ?? ajuste.doseKgHa);
   const doseSalva = numeroDose(linha.dose_utilizada_kg_ha);
   const doseUtilizada = doseAjustada ?? doseSalva ?? doseCalculada;
@@ -184,7 +229,8 @@ export function restaurarDoseCalculadaLinha(linha) {
 export function calcularBalancoNutrientes(rec = {}, linhas = []) {
   const chaves = ['N', 'P', 'K', 'B', 'Mg', 'Ca', 'S', 'Zn', 'Cu', 'Mn', 'Fe'];
   const fornecido = Object.fromEntries(chaves.map(key => [key, 0]));
-  (linhas || []).forEach(linha => {
+  listaSeguraAdubacao2(linhas).forEach(linha => {
+    if (!linha?.produto) return;
     const parcial = calcularNutrientesFornecidos(linha.produto, linha.dose_utilizada_kg_ha ?? linha.doseKgHa);
     chaves.forEach(key => { fornecido[key] += parcial[key] || 0; });
   });
@@ -207,27 +253,32 @@ export function calcularBalancoNutrientes(rec = {}, linhas = []) {
 
 export function resolverAcaoProdutoDuplicado({ produtoId, linhas = [], manuais = [] }) {
   if (!produtoId) return { duplicado: false, acao: 'adicionar' };
-  const existe = (linhas || []).some(linha => linha?.produto?.id === produtoId) ||
-    Object.values(manuais || {}).some(item => item?.produtoId === produtoId);
+  const existe = listaSeguraAdubacao2(linhas).some(linha => linha?.produto?.id === produtoId) ||
+    Object.values(objetoSeguroAdubacao2(manuais)).some(item => item?.produtoId === produtoId);
   return existe
     ? { duplicado: true, acao: 'perguntar', opcoes: ['editar linha existente', 'adicionar uso separado'] }
     : { duplicado: false, acao: 'adicionar' };
 }
 
 function promoverPrincipalSeNecessario(linhas) {
-  if (!linhas.some(linha => linha.ehPrincipal) && linhas.length > 0) {
-    linhas[0] = { ...linhas[0], ehPrincipal: true };
+  const linhasValidas = listaSeguraAdubacao2(linhas);
+  if (!linhasValidas.some(linha => linha.ehPrincipal) && linhasValidas.length > 0) {
+    linhasValidas[0] = { ...linhasValidas[0], ehPrincipal: true };
   }
-  return linhas;
+  return linhasValidas;
 }
 
 export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null, ajustesDose = {}) {
   const _recOrig = recOriginal || rec;
-  if (!rec || !todos?.length) return [];
+  const todosLista = listaSeguraAdubacao2(todos);
+  const trocasSeguras = objetoSeguroAdubacao2(trocas);
+  if (!rec || !todosLista.length) return [];
 
   if (produtoSalvo) {
-    const principal = todos.find(p => p.id === produtoSalvo.id) || produtoSalvo;
-    const produtoTrocado = trocas.n_pct ? todos.find(p => p.id === trocas.n_pct) : null;
+    const produtoSalvoNormalizado = normalizarProdutoAdubacao2(produtoSalvo);
+    const principal = todosLista.find(p => p.id === produtoSalvoNormalizado?.id) || produtoSalvoNormalizado;
+    if (!principal) return [];
+    const produtoTrocado = trocasSeguras.n_pct ? todosLista.find(p => p.id === trocasSeguras.n_pct) : null;
     const prodPrincipal = produtoTrocado || principal;
     const doseKgHa = produtoTrocado
       ? (doseParaNutriente(produtoTrocado, 'n_pct', rec, 'N') ?? doseSalva)
@@ -241,7 +292,8 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
     if ((parseFloat(prodPrincipal.b_pct) || 0) > 0 && rec.B) nutrientesPrincipal.push({ label: 'B', fornecido: cobertos.B });
 
     const mapa = {};
-    mapa[prodPrincipal.id] = normalizarLinhaProduto({
+    const chavePrincipal = prodPrincipal.id || criarIdLinha(prodPrincipal, 'n_pct');
+    mapa[chavePrincipal] = normalizarLinhaProduto({
       linhaId: criarIdLinha(prodPrincipal, 'n_pct'),
       produto: prodPrincipal,
       nutrientes: nutrientesPrincipal,
@@ -255,13 +307,15 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
       origemUso: produtoTrocado ? 'Produto escolhido manualmente' : 'Produto salvo',
     }, rec, ajustesDose);
 
-    if (complementosSalvos?.length > 0) {
-      for (const comp of complementosSalvos) {
-        if (comp.isManualExtra || !comp.produto?.id || comp.produto.id === prodPrincipal.id) continue;
-        const prodComp = todos.find(p => p.id === comp.produto.id) || comp.produto;
-        const prodFinal = trocas[comp.nutKey] ? todos.find(p => p.id === trocas[comp.nutKey]) : prodComp;
-        if (!prodFinal || mapa[prodFinal.id]) continue;
-        mapa[prodFinal.id] = normalizarLinhaProduto({
+    const complementosNormalizados = normalizarComplementosAdubacao2(complementosSalvos);
+    if (complementosNormalizados.length > 0) {
+      for (const comp of complementosNormalizados) {
+        if (comp.isManualExtra || !comp.produto || (comp.produto.id && comp.produto.id === prodPrincipal.id)) continue;
+        const prodComp = todosLista.find(p => p.id === comp.produto.id) || comp.produto;
+        const prodFinal = trocasSeguras[comp.nutKey] ? todosLista.find(p => p.id === trocasSeguras[comp.nutKey]) : prodComp;
+        const chaveComp = prodFinal?.id || criarIdLinha(prodFinal, comp.nutKey);
+        if (!prodFinal || mapa[chaveComp]) continue;
+        mapa[chaveComp] = normalizarLinhaProduto({
           linhaId: comp.linhaId || criarIdLinha(prodFinal, comp.nutKey),
           produto: prodFinal,
           nutrientes: comp.nutrientes || [],
@@ -272,13 +326,14 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
           dose_utilizada_kg_ha: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
           dose_ajustada_manualmente: Boolean(comp.dose_ajustada_manualmente),
           nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
-          origemUso: trocas[comp.nutKey] ? 'Produto escolhido manualmente' : 'Produto salvo',
+          origemUso: trocasSeguras[comp.nutKey] ? 'Produto escolhido manualmente' : 'Produto salvo',
         }, rec, ajustesDose);
       }
     }
 
     const fornecidoTotal = { N: 0, P: 0, K: 0, B: 0 };
     Object.values(mapa).forEach(linha => {
+      if (!linha?.produto) return;
       const d = linha.doseKgHa || 0;
       const fornecido = fornecidoPelo(linha.produto, d);
       fornecidoTotal.N += fornecido.N;
@@ -295,12 +350,12 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
     };
     const temResidual = recResidual.N > 1 || recResidual.P > 1 || recResidual.K > 1 || recResidual.B > 1;
     if (temResidual) {
-      const sugestoesResidual = sugerirProdutosInteligente(todos, recResidual, _recOrig);
+      const sugestoesResidual = sugerirProdutosInteligente(todosLista, recResidual, _recOrig);
       for (const [nutKey, sug] of Object.entries(sugestoesResidual)) {
         if (!sug?.produtoId) continue;
-        const prodId = trocas[nutKey] || sug.produtoId;
+        const prodId = trocasSeguras[nutKey] || sug.produtoId;
         if (prodId === prodPrincipal.id) continue;
-        const prod = todos.find(p => p.id === prodId);
+        const prod = todosLista.find(p => p.id === prodId);
         if (!prod || mapa[prod.id]) continue;
         const doseComp = doseParaNutriente(prod, nutKey, recResidual);
         const pct = parseFloat(prod[nutKey]) || 0;
@@ -316,7 +371,7 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
             dose_calculada_kg_ha: doseComp,
             dose_utilizada_kg_ha: doseComp,
             nutriente_alvo: nutKey,
-            origemUso: trocas[nutKey] ? 'Produto escolhido manualmente' : 'Produto sugerido',
+            origemUso: trocasSeguras[nutKey] ? 'Produto escolhido manualmente' : 'Produto sugerido',
           }, rec, ajustesDose);
         }
       }
@@ -325,14 +380,14 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
     return promoverPrincipalSeNecessario(Object.values(mapa));
   }
 
-  const sugestoes = sugerirProdutosInteligente(todos, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, rec);
-  const principalId = trocas.n_pct || sugestoes.n_pct?.produtoId || null;
+  const sugestoes = sugerirProdutosInteligente(todosLista, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, rec);
+  const principalId = trocasSeguras.n_pct || sugestoes.n_pct?.produtoId || null;
   const mapa = {};
 
   for (const [nutKey, sug] of Object.entries(sugestoes)) {
     if (!sug?.produtoId) continue;
-    const prodId = trocas[nutKey] || sug.produtoId;
-    const prod = todos.find(p => p.id === prodId);
+    const prodId = trocasSeguras[nutKey] || sug.produtoId;
+    const prod = todosLista.find(p => p.id === prodId);
     if (!prod) continue;
     if (!mapa[prod.id]) {
       mapa[prod.id] = {
@@ -342,7 +397,7 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
         ehPrincipal: prod.id === principalId,
         nutKey,
         nutriente_alvo: nutKey,
-        origemUso: trocas[nutKey] ? 'Produto escolhido manualmente' : 'Produto sugerido',
+        origemUso: trocasSeguras[nutKey] ? 'Produto escolhido manualmente' : 'Produto sugerido',
       };
     }
     const doseKgHa = doseParaNutriente(prod, nutKey, rec);
@@ -358,12 +413,13 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
     }
   }
 
-  return promoverPrincipalSeNecessario(Object.values(mapa).map(linha => normalizarLinhaProduto(linha, rec, ajustesDose)));
+  return promoverPrincipalSeNecessario(Object.values(mapa).map(linha => normalizarLinhaProduto(linha, rec, ajustesDose)).filter(Boolean));
 }
 
 export function listarNutrientesNaoAtendidos(rec, linhas = []) {
   const fornecido = { N: 0, P: 0, K: 0, B: 0 };
-  (linhas || []).forEach(linha => {
+  listaSeguraAdubacao2(linhas).forEach(linha => {
+    if (!linha?.produto) return;
     const d = Number(linha?.doseKgHa);
     if (!Number.isFinite(d) || d <= 0) return;
     const parcial = fornecidoPelo(linha.produto, d);
@@ -387,35 +443,44 @@ export function montarProdutosEfetivosPlanejamento({
   criarMarcacoesPadraoFn = () => ({}),
   elementos = [],
 }) {
-  const idsSalvos = new Set((registrosSalvos || []).map(r => r.talhao_id));
+  const resultadosLista = listaSeguraAdubacao2(resultados);
+  const registrosLista = listaSeguraAdubacao2(registrosSalvos);
+  const todosFiltradosLista = listaSeguraAdubacao2(todosFiltrados);
+  const todosCatalogoLista = listaSeguraAdubacao2(todosCatalogo);
+  const trocasSeguras = objetoSeguroAdubacao2(trocasPorTalhao);
+  const marcadosSeguros = objetoSeguroAdubacao2(marcadosPorTalhao);
+  const extrasSeguros = objetoSeguroAdubacao2(extrasPorTalhao);
+  const ajustesSeguros = objetoSeguroAdubacao2(ajustesDosePorTalhao);
+  const idsSalvos = new Set(registrosLista.map(r => r.talhao_id));
   const mapa = {};
 
-  resultados.forEach(r => {
-    if (!r.rec) return;
-    const trocas = trocasPorTalhao[r.talhao.id] || {};
-    const marcados = marcadosPorTalhao[r.talhao.id] || null;
+  resultadosLista.forEach(r => {
+    if (!r?.rec || !r?.talhao?.id) return;
+    const trocas = objetoSeguroAdubacao2(trocasSeguras[r.talhao.id]);
+    const marcados = objetoSeguroAdubacao2(marcadosSeguros[r.talhao.id]);
     const recFiltrado = { ...r.rec };
-    if (marcados) {
+    if (Object.keys(marcados).length > 0) {
       if (!marcados.N) delete recFiltrado.N;
       if (!marcados.P) delete recFiltrado.P;
       if (!marcados.K) delete recFiltrado.K;
       if (!marcados.B) delete recFiltrado.B;
     }
 
+    const compsSalvos = normalizarComplementosAdubacao2(registrosLista.find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos);
     let produto = r.substituirSalvo ? null : (r.produtoSugerido || null);
     let doseKgHa = r.substituirSalvo ? null : (r.doseProdutoHa ?? null);
-    if (!produto && idsSalvos.has(r.talhao.id) && !r.substituirSalvo) return;
+    const extrasTalhao = objetoSeguroAdubacao2(extrasSeguros[r.talhao.id]);
+    if (!produto && idsSalvos.has(r.talhao.id) && !r.substituirSalvo && compsSalvos.length === 0 && Object.keys(extrasTalhao).length === 0) return;
 
-    const compsSalvos = (registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null;
     const linhas = montarLinhasProdutos(
-      todosFiltrados,
+      todosFiltradosLista,
       recFiltrado,
       trocas,
       r.substituirSalvo ? null : produto,
       r.substituirSalvo ? null : doseKgHa,
       r.substituirSalvo ? null : compsSalvos,
       r.rec,
-      ajustesDosePorTalhao[r.talhao.id] || {},
+      objetoSeguroAdubacao2(ajustesSeguros[r.talhao.id]),
     );
     const linhaPrincipal = linhas.find(l => l.ehPrincipal);
     if (linhaPrincipal) {
@@ -424,7 +489,7 @@ export function montarProdutosEfetivosPlanejamento({
     }
 
     const complementos = linhas.filter(l => !l.ehPrincipal).map(l => ({
-      produto: { id: l.produto.id, nome: l.produto.nome },
+      produto: { id: l.produto?.id || null, nome: l.produto?.nome || 'Produto não definido' },
       doseKgHa: l.doseKgHa,
       dose_calculada_kg_ha: l.dose_calculada_kg_ha,
       dose_utilizada_kg_ha: l.dose_utilizada_kg_ha,
@@ -436,10 +501,10 @@ export function montarProdutosEfetivosPlanejamento({
       origemUso: l.origemUso,
     }));
 
-    Object.entries(extrasPorTalhao[r.talhao.id] || {}).forEach(([key, data]) => {
+    Object.entries(extrasTalhao).forEach(([key, data]) => {
       const doseExtra = Number(data?.doseKgHa);
       if (!data?.produtoId || !Number.isFinite(doseExtra) || doseExtra <= 0) return;
-      const prod = todosFiltrados.find(p => p.id === data.produtoId) || todosCatalogo.find(p => p.id === data.produtoId);
+      const prod = todosFiltradosLista.find(p => p.id === data.produtoId) || todosCatalogoLista.find(p => p.id === data.produtoId);
       const permiteUsoSeparado = Boolean(data?.usoSeparado || data?.isManualLivre || String(key).startsWith('manual-'));
       if (prod && (permiteUsoSeparado || !complementos.some(c => c.produto.id === prod.id))) {
         complementos.push({
@@ -471,7 +536,7 @@ export function montarProdutosEfetivosPlanejamento({
         linhaId: linhaPrincipal?.linhaId,
         complementos,
         trocas,
-        marcados: marcados || criarMarcacoesPadraoFn(r.rec, elementos),
+        marcados: Object.keys(marcados).length > 0 ? marcados : criarMarcacoesPadraoFn(r.rec, elementos),
       };
     }
   });
@@ -481,15 +546,15 @@ export function montarProdutosEfetivosPlanejamento({
 
 export function combinarCatalogoInsumos(formulados = [], fontes = []) {
   return [
-    ...(formulados || []).map(produto => ({ ...produto, _tipo: 'formulado', _origemLabel: 'Fertilizante formulado' })),
-    ...(fontes || []).map(produto => ({ ...produto, _tipo: 'fonte', _origemLabel: 'Fonte simples' })),
+    ...listaSeguraAdubacao2(formulados).map(produto => ({ ...produto, _tipo: 'formulado', _origemLabel: 'Fertilizante formulado' })),
+    ...listaSeguraAdubacao2(fontes).map(produto => ({ ...produto, _tipo: 'fonte', _origemLabel: 'Fonte simples' })),
   ];
 }
 
 export function sanitizarPayloadInsumo(tipo, dados = {}) {
   const permitidos = new Set(tipo === 'fonte' ? CAMPOS_FONTE_SIMPLES : CAMPOS_FERTILIZANTE_FORMULADO);
   const payload = {};
-  Object.entries(dados || {}).forEach(([key, value]) => {
+  Object.entries(objetoSeguroAdubacao2(dados)).forEach(([key, value]) => {
     if (!permitidos.has(key)) return;
     if (value === undefined) return;
     payload[key] = value;
@@ -499,9 +564,9 @@ export function sanitizarPayloadInsumo(tipo, dados = {}) {
 
 export function contarUsoProdutoPlanejamento(registros = [], produtoId) {
   if (!produtoId) return 0;
-  return (registros || []).filter(registro => {
+  return listaSeguraAdubacao2(registros).filter(registro => {
     const det = registro?.detalhamento || {};
     if (det.produtoSugerido?.id === produtoId) return true;
-    return (det.complementos || []).some(comp => comp?.produto?.id === produtoId);
+    return normalizarComplementosAdubacao2(det.complementos).some(comp => comp?.produto?.id === produtoId);
   }).length;
 }
