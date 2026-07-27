@@ -4,6 +4,16 @@ import { FileDown, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { FAIXAS, NUTRIENTES_KEYS, classificar, CLASS_LABEL } from './FoliarNutrienteUtils';
 import { aplicacaoFoliarIncluiTalhao } from '@/lib/planejamentoFoliar';
+import {
+  CUSTO_PENDENTE_FOLIAR,
+  calcularCustoProdutoFoliarDetalhado,
+  formatarDoseNormalizadaFoliar,
+  formatarPeriodoAplicacaoFoliar,
+} from '@/lib/unidadesAplicacoesFoliares';
+
+const fmtMoeda = valor => valor != null && Number.isFinite(Number(valor))
+  ? Number(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  : '';
 
 function gerarPDF(produtor, safra, talhoes, analises, aplicacoes) {
 
@@ -90,16 +100,22 @@ function gerarPDF(produtor, safra, talhoes, analises, aplicacoes) {
 
       aplicacoesTalhao.forEach(aplic => {
         const prods = aplic.produtos || [];
-        checkNewPage(12 + prods.length * 6);
+        checkNewPage(24 + prods.length * 9);
 
         doc.setFillColor(...cor.light);
-        doc.rect(ML, y, CW, 7, 'F');
+        doc.rect(ML, y, CW, 14, 'F');
         doc.setTextColor(...cor.primary); doc.setFontSize(8); doc.setFont(undefined, 'bold');
-        const mesesStr = (aplic.meses || []).join(', ');
+        const periodo = formatarPeriodoAplicacaoFoliar(aplic);
         doc.text(aplic.titulo || 'Aplicação', ML + 2, y + 4);
-        if (mesesStr) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal'); doc.text(mesesStr, ML + CW * 0.5, y + 4); }
+        if (periodo) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal'); doc.text(`Data/época: ${periodo}`, ML + CW * 0.38, y + 4); }
         if (aplic.equipamento) { doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.text(aplic.equipamento, ML + CW - 2, y + 4, { align: 'right' }); }
-        y += 8;
+        doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal');
+        const detalhesAplicacao = [
+          aplic.objetivos?.length ? `Objetivos: ${aplic.objetivos.join(', ')}` : '',
+          aplic.volume_calda_ha != null && aplic.volume_calda_ha !== '' ? `Calda: ${aplic.volume_calda_ha} L/ha` : '',
+        ].filter(Boolean).join(' | ');
+        if (detalhesAplicacao) doc.text(detalhesAplicacao, ML + 2, y + 10);
+        y += 15;
 
         if (prods.length === 0) {
           doc.setTextColor(...cor.muted); doc.setFontSize(7); doc.setFont(undefined, 'italic');
@@ -110,12 +126,26 @@ function gerarPDF(produtor, safra, talhoes, analises, aplicacoes) {
             if (pi % 2 === 0) { doc.setFillColor(248, 250, 248); doc.rect(ML, y, CW, 5.5, 'F'); }
             doc.setTextColor(...cor.dark); doc.setFontSize(7.5); doc.setFont(undefined, 'normal');
             doc.text(`${pi + 1}. ${p.produto_nome}`, ML + 3, y + 3.8);
-            const doseStr = p.dose ? `${p.dose} ${p.unidade || ''}` : '';
-            const formStr = p.tipo_formulacao || '';
+            const custo = calcularCustoProdutoFoliarDetalhado(p, {
+              volumeCaldaHa: aplic.volume_calda_ha,
+              areaHa: talhao.area_ha || 0,
+            });
+            const doseStr = p.dose ? `Original: ${p.dose} ${p.unidade || ''}` : '';
+            const normalizadaStr = `Cálculo: ${formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: aplic.volume_calda_ha })}`;
+            const quantidadeStr = custo.quantidade_total != null ? `Qtd.: ${custo.quantidade_total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ${custo.unidade_normalizada?.replace('/ha', '') || ''}` : '';
+            const precoStr = p.preco !== undefined && p.preco !== '' ? `Preço: ${fmtMoeda(p.preco)}` : '';
+            const custoStr = custo.custo_total != null ? `Custo: ${fmtMoeda(custo.custo_total)}` : CUSTO_PENDENTE_FOLIAR;
             doc.setTextColor(...cor.muted); doc.setFontSize(7);
-            doc.text([doseStr, formStr].filter(Boolean).join(' | '), ML + CW * 0.6, y + 3.8);
-            y += 5.5;
+            doc.text([doseStr, normalizadaStr, quantidadeStr, precoStr, custoStr].filter(Boolean).join(' | '), ML + CW * 0.42, y + 3.8);
+            if (p.observacoes) doc.text(`Obs.: ${p.observacoes}`, ML + 3, y + 7.2);
+            y += 8.5;
           });
+        }
+        if (aplic.observacoes) {
+          checkNewPage(5);
+          doc.setTextColor(...cor.muted); doc.setFontSize(7);
+          doc.text(`Observações: ${aplic.observacoes}`, ML + 3, y + 3.8);
+          y += 5;
         }
         y += 3;
       });

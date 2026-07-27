@@ -26,6 +26,18 @@
       "type": "string",
       "description": "\u00c9poca/data limite ex: P\u00f3s-colheita, Jan/Fev"
     },
+    "periodo_aplicacao": {
+      "type": "string",
+      "description": "Per\u00edodo de aplica\u00e7\u00e3o ex: OUT/NOV"
+    },
+    "data_prevista": {
+      "type": "string",
+      "format": "date"
+    },
+    "mes": {
+      "type": "string",
+      "description": "M\u00eas planejado quando n\u00e3o houver data exata"
+    },
     "data_limite": {
       "type": "string",
       "format": "date"

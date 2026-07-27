@@ -1,7 +1,13 @@
 import React from 'react';
 import { X, Sprout, Leaf, Bug, Flower2, Coffee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { calcularCustoAdubacaoHa, calcularCustoProdutoFoliarHa } from '@/lib/integracaoPlanejamentos';
+import { calcularCustoAdubacaoHa } from '@/lib/integracaoPlanejamentos';
+import {
+  CUSTO_PENDENTE_FOLIAR,
+  calcularCustoProdutoFoliarDetalhado,
+  formatarDoseNormalizadaFoliar,
+  formatarPeriodoAplicacaoFoliar,
+} from '@/lib/unidadesAplicacoesFoliares';
 
 const fmt = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -14,13 +20,14 @@ function calcCustoAdubacao(plano, talhoes) {
   return area * custoHa;
 }
 
-// Calcula custo de um produto foliar: dose × área × preço
 function calcCustoFoliar(produto, aplic, talhoes) {
   const talhao = talhoes.find(t => t.id === aplic.talhao_id);
   const area = talhao?.area_ha || 0;
-  const custoHa = calcularCustoProdutoFoliarHa(produto);
-  if (!area || !custoHa) return null;
-  return area * custoHa;
+  const detalhe = calcularCustoProdutoFoliarDetalhado(produto, {
+    volumeCaldaHa: aplic.volume_calda_ha,
+    areaHa: area,
+  });
+  return detalhe.valido ? detalhe.custo_total : null;
 }
 
 function SecaoDetalhe({ icone: Icone, titulo, cor, itens, subtotal }) {
@@ -41,7 +48,7 @@ function SecaoDetalhe({ icone: Icone, titulo, cor, itens, subtotal }) {
             {item.custo != null ? (
               <p className="text-green-700 font-semibold mt-1">{fmt(item.custo)}</p>
             ) : (
-              <p className="text-muted-foreground/60 italic mt-1">Sem custo informado</p>
+              <p className="text-muted-foreground/60 italic mt-1">{item.pendente ? CUSTO_PENDENTE_FOLIAR : 'Sem custo informado'}</p>
             )}
           </div>
         ))}
@@ -78,12 +85,18 @@ export default function MesDetalheModal({ dados, talhoes, onFechar }) {
     lista.forEach(aplic => {
       (aplic.produtos || []).forEach(p => {
         const custo = calcCustoFoliar(p, aplic, talhoes);
+        const detalhe = calcularCustoProdutoFoliarDetalhado(p, {
+          volumeCaldaHa: aplic.volume_calda_ha,
+          areaHa: talhoes.find(t => t.id === aplic.talhao_id)?.area_ha || 0,
+        });
         resultado.push({
           custo,
+          pendente: detalhe.pendente,
           linhas: [
             p.produto_nome || 'Produto',
-            [aplic.talhao_nome && `Talhão: ${aplic.talhao_nome}`, p.dose && `${p.dose} ${p.unidade || ''}`].filter(Boolean).join(' · '),
+            [aplic.talhao_nome && `Talhão: ${aplic.talhao_nome}`, p.dose && formatarDoseNormalizadaFoliar(p, { volumeCaldaHa: aplic.volume_calda_ha })].filter(Boolean).join(' · '),
             aplic.titulo && `Aplicação: ${aplic.titulo}`,
+            formatarPeriodoAplicacaoFoliar(aplic) && `Data/época: ${formatarPeriodoAplicacaoFoliar(aplic)}`,
           ].filter(Boolean),
         });
       });

@@ -61,6 +61,7 @@ export function aplicacaoFoliarIncluiTalhao(aplicacao, talhaoId) {
 const CAMPOS_CRONOGRAMA = [
   'codigo_produtor', 'safra', 'titulo', 'objetivos', 'talhao_ids', 'produtos',
   'status', 'equipamento', 'volume_calda_ha', 'observacoes', 'meses',
+  'data_prevista', 'data_limite', 'mes', 'epoca', 'periodo_aplicacao',
 ];
 
 export function limparPayloadCronogramaFoliar(aplicacao) {

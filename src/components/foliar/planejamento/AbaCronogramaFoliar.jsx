@@ -8,6 +8,11 @@ import CardAplicacao from './CardAplicacao';
 import LateralReceita from './LateralReceita';
 import LateralTalhoes from './LateralTalhoes';
 import { limparPayloadCronogramaFoliar } from '@/lib/planejamentoFoliar';
+import {
+  calcularResumoAplicacaoFoliar,
+  normalizarProdutosAplicacaoFoliar,
+  validarPeriodoAplicacaoFoliar,
+} from '@/lib/unidadesAplicacoesFoliares';
 
 const OBJETIVOS_FILTRO = ['Todos', 'Nutrição', 'Ferrugem', 'Cercosporiose', 'Bicho-mineiro', 'Ácaro', 'Bacteriose', 'Pós-colheita', 'Pré-florada', 'Outro'];
 function gerarTituloSugerido(aplicacoes) {
@@ -33,6 +38,7 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
   const [filtroObj, setFiltroObj] = useState('Todos');
   const [lateralReceita, setLateralReceita] = useState(null); // id da aplicação
   const [lateralTalhoes, setLateralTalhoes] = useState(null); // id da aplicação
+  const [rascunhoReceita, setRascunhoReceita] = useState(null);
 
   // Query de cronogramas
   const { data: cronogramas = [] } = useQuery({
@@ -79,14 +85,9 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
     let pendencias = 0;
     aplicacoesProdutor.forEach(a => {
       (a.talhao_ids || []).forEach(id => areaSet.add(id));
-      const area = talhoesProdutor.filter(t => (a.talhao_ids || []).includes(t.id)).reduce((s, t) => s + (t.area_ha || 0), 0);
-      const custoHa = (a.produtos || []).reduce((s, p) => {
-        const d = parseFloat(String(p.dose || '').replace(',', '.')) || 0;
-        const pr = parseFloat(String(p.preco || '').replace(',', '.')) || 0;
-        return s + (d && pr ? d * pr : 0);
-      }, 0);
-      custoTotal += custoHa * area;
-      if (!a.talhao_ids?.length || !a.produtos?.length) pendencias++;
+      const resumo = calcularResumoAplicacaoFoliar(a, talhoesProdutor);
+      custoTotal += resumo.custoTotal;
+      if (!a.talhao_ids?.length || !a.produtos?.length || resumo.pendencias > 0) pendencias++;
     });
     const areaTotal = talhoesProdutor.filter(t => areaSet.has(t.id)).reduce((s, t) => s + (t.area_ha || 0), 0);
     return { total, areaTotal, custoTotal, pendencias };
@@ -95,7 +96,8 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
   const handleNovaAplicacao = useCallback(() => {
     if (!produtor || !safra) return;
     const titulo = gerarTituloSugerido(aplicacoesProdutor);
-    createMutation.mutate({
+    setRascunhoReceita({
+      id: '__nova_aplicacao__',
       codigo_produtor: produtor.codigo,
       safra,
       titulo,
@@ -103,18 +105,40 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
       talhao_ids: [],
       produtos: [],
       status: 'planejado',
-    }, {
-      onSuccess: () => toast({ title: 'Nova aplicação criada!', description: titulo }),
     });
+    setLateralReceita('__nova_aplicacao__');
   }, [produtor, safra, aplicacoesProdutor]);
 
   const handleSalvarReceita = useCallback(async (id, dados) => {
-    const existente = aplicacoesProdutor.find(a => a.id === id);
+    const existente = id === '__nova_aplicacao__'
+      ? rascunhoReceita
+      : aplicacoesProdutor.find(a => a.id === id);
     if (!existente) return;
-    await updateMutation.mutateAsync({ id, d: limparPayloadCronogramaFoliar({ ...existente, ...dados }) });
-    toast({ title: 'Receita salva!' });
+    const payload = limparPayloadCronogramaFoliar({
+      ...existente,
+      ...dados,
+      produtos: normalizarProdutosAplicacaoFoliar(dados.produtos || existente.produtos || [], {
+        volumeCaldaHa: dados.volume_calda_ha ?? existente.volume_calda_ha,
+      }),
+    });
+    if (!validarPeriodoAplicacaoFoliar(payload)) {
+      toast({
+        title: 'Informe a data ou época da aplicação',
+        description: 'Use data prevista, data-limite, mês ou período de aplicação antes de salvar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (id === '__nova_aplicacao__') {
+      await createMutation.mutateAsync(payload);
+      toast({ title: 'Aplicação criada!' });
+    } else {
+      await updateMutation.mutateAsync({ id, d: payload });
+      toast({ title: 'Receita salva!' });
+    }
     setLateralReceita(null);
-  }, [aplicacoesProdutor]);
+    setRascunhoReceita(null);
+  }, [aplicacoesProdutor, rascunhoReceita]);
 
   const handleSalvarTalhoes = useCallback(async (id, talhaoIds) => {
     const existente = aplicacoesProdutor.find(a => a.id === id);
@@ -130,10 +154,13 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
       ...aplic,
       titulo,
       status: 'planejado',
+      produtos: normalizarProdutosAplicacaoFoliar(aplic.produtos || [], { volumeCaldaHa: aplic.volume_calda_ha }),
     }), { onSuccess: () => toast({ title: 'Aplicação duplicada!', description: titulo }) });
   }, [aplicacoesProdutor]);
 
-  const aplicacaoLateralReceita = lateralReceita ? aplicacoesProdutor.find(a => a.id === lateralReceita) : null;
+  const aplicacaoLateralReceita = lateralReceita === '__nova_aplicacao__'
+    ? rascunhoReceita
+    : lateralReceita ? aplicacoesProdutor.find(a => a.id === lateralReceita) : null;
   const aplicacaoLateralTalhoes = lateralTalhoes ? aplicacoesProdutor.find(a => a.id === lateralTalhoes) : null;
 
   const areaLateralReceita = useMemo(() => {
@@ -222,7 +249,7 @@ export default function AbaCronogramaFoliar({ produtor, safra, talhoes, insumos 
             insumos={insumos}
             areaTotal={areaLateralReceita}
             onSalvar={(dados) => handleSalvarReceita(lateralReceita, dados)}
-            onCancelar={() => setLateralReceita(null)}
+            onCancelar={() => { setLateralReceita(null); setRascunhoReceita(null); }}
           />
         </>
       )}
