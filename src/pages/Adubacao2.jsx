@@ -778,6 +778,13 @@ export function Adubacao2Conteudo() {
       const talhao = r.talhao;
       const locProd = produtividadeLocal[talhao.id] || {};
       const loc2040 = analises2040Local[talhao.id] || null;
+      const efetivoTalhao = produtosEfetivosRef.current[talhao.id];
+      const produtoPrincipalSalvo = !produtoNuloAdubacao2(efetivoTalhao?.produto)
+        ? efetivoTalhao.produto
+        : (!produtoNuloAdubacao2(r.produtoSugerido) ? r.produtoSugerido : null);
+      const dosePrincipalSalva = produtoPrincipalSalvo
+        ? (efetivoTalhao?.dose_utilizada_kg_ha ?? efetivoTalhao?.doseKgHa ?? r.doseProdutoHa)
+        : null;
       const payload = {
         codigo_produtor: produtor.codigo,
         safra,
@@ -790,22 +797,17 @@ export function Adubacao2Conteudo() {
         detalhamento: {
           rec: r.rec,
           mediaBienal: r.mediaBienal,
-          produtoSugerido: (() => {
-            const efetivo = produtosEfetivosRef.current[talhao.id];
-            if (efetivo?.produto) return { id: efetivo.produto.id, nome: efetivo.produto.nome };
-            if (r.produtoSugerido) return { id: r.produtoSugerido.id, nome: r.produtoSugerido.nome };
-            return null;
-          })(),
-          doseProdutoHa: produtosEfetivosRef.current[talhao.id]?.dose_utilizada_kg_ha ?? produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
-          dose_calculada_kg_ha: produtosEfetivosRef.current[talhao.id]?.dose_calculada_kg_ha ?? r.dose_calculada_kg_ha ?? r.doseProdutoHa,
-          dose_utilizada_kg_ha: produtosEfetivosRef.current[talhao.id]?.dose_utilizada_kg_ha ?? produtosEfetivosRef.current[talhao.id]?.doseKgHa ?? r.doseProdutoHa,
-          dose_ajustada_manualmente: Boolean(produtosEfetivosRef.current[talhao.id]?.dose_ajustada_manualmente),
-          nutriente_alvo: produtosEfetivosRef.current[talhao.id]?.nutriente_alvo || r.nutriente_alvo || 'n_pct',
+          produtoSugerido: produtoPrincipalSalvo ? { id: produtoPrincipalSalvo.id, nome: produtoPrincipalSalvo.nome } : null,
+          doseProdutoHa: dosePrincipalSalva,
+          dose_calculada_kg_ha: produtoPrincipalSalvo ? (efetivoTalhao?.dose_calculada_kg_ha ?? r.dose_calculada_kg_ha ?? r.doseProdutoHa) : null,
+          dose_utilizada_kg_ha: dosePrincipalSalva,
+          dose_ajustada_manualmente: Boolean(produtoPrincipalSalvo && efetivoTalhao?.dose_ajustada_manualmente),
+          nutriente_alvo: produtoPrincipalSalvo ? (efetivoTalhao?.nutriente_alvo || r.nutriente_alvo || 'n_pct') : null,
           // Complementos, trocas e marcados — persistência completa do planejamento
-          complementos: produtosEfetivosRef.current[talhao.id]?.complementos || [],
-          trocas: produtosEfetivosRef.current[talhao.id]?.trocas || {},
-          marcados: produtosEfetivosRef.current[talhao.id]?.marcados || null,
-          produtos_ocultos: produtosEfetivosRef.current[talhao.id]?.produtos_ocultos || [],
+          complementos: efetivoTalhao?.complementos || [],
+          trocas: efetivoTalhao?.trocas || {},
+          marcados: efetivoTalhao?.marcados || null,
+          produtos_ocultos: efetivoTalhao?.produtos_ocultos || [],
           precos,
           parcelamentos: parcelamentos[talhao.id] || {},
         },

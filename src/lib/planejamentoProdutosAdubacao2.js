@@ -200,8 +200,43 @@ function nutrientesDaDose(produto, dose, rec = {}) {
     .filter(Boolean);
 }
 
+export function listarNutrientesFornecidosAdubacao2(produto, dose) {
+  const fornecido = calcularNutrientesFornecidos(produto, dose);
+  return Object.entries(KEY_PARA_LABEL)
+    .map(([nutKey, label]) => {
+      const valor = fornecido[LABEL_PARA_REC[label] || label] || 0;
+      const temComposicao = (parseFloat(produto?.[nutKey]) || 0) > 0;
+      return temComposicao && valor > 0 ? { label, fornecido: valor, unidade: 'kg/ha' } : null;
+    })
+    .filter(Boolean);
+}
+
+export function formatarNutrientesFornecidosAdubacao2(produto, dose) {
+  const itens = listarNutrientesFornecidosAdubacao2(produto, dose);
+  return itens
+    .map(item => `${item.label} ${item.fornecido.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg/ha`)
+    .join(' · ');
+}
+
 function criarIdLinha(produto, nutKey, sufixo = '') {
   return `${nutKey || 'produto'}:${produto?.id || produto?.nome || 'sem-produto'}${sufixo ? `:${sufixo}` : ''}`;
+}
+
+function chavesProdutoOculto(item) {
+  if (typeof item === 'string') return [item];
+  if (!item || typeof item !== 'object') return [];
+  const alvo = item.nutriente_alvo || item.nutKey || '';
+  const chaves = [];
+  if (item.linhaId) chaves.push(item.linhaId);
+  if (item.linhaId || alvo) chaves.push(`${item.linhaId || ''}|${item.produtoId || ''}|${alvo}`);
+  if (!item.linhaId && !alvo && item.produtoId) chaves.push(item.produtoId);
+  return chaves;
+}
+
+function linhaEstaOculta(linha, ocultosSet) {
+  const alvo = linha?.nutriente_alvo || linha?.nutKey || '';
+  return ocultosSet.has(linha?.linhaId) ||
+    ocultosSet.has(`${linha?.linhaId || ''}|${linha?.produto?.id || ''}|${alvo}`);
 }
 
 function normalizarLinhaProduto(linha, rec = {}, ajustes = {}) {
@@ -496,9 +531,7 @@ export function montarProdutosEfetivosPlanejamento({
     let doseKgHa = r.substituirSalvo ? null : (r.doseProdutoHa ?? null);
     const extrasTalhao = objetoSeguroAdubacao2(extrasSeguros[r.talhao.id]);
     const produtosOcultosTalhao = listaSeguraAdubacao2(ocultosSeguros[r.talhao.id]);
-    const ocultosSet = new Set(produtosOcultosTalhao.flatMap(item =>
-      typeof item === 'string' ? [item] : [item?.linhaId, item?.produtoId]
-    ).filter(Boolean));
+    const ocultosSet = new Set(produtosOcultosTalhao.flatMap(chavesProdutoOculto).filter(Boolean));
     if (!produto && idsSalvos.has(r.talhao.id) && !r.substituirSalvo && compsSalvos.length === 0 && Object.keys(extrasTalhao).length === 0) return;
 
     const linhas = montarLinhasProdutos(
@@ -510,7 +543,7 @@ export function montarProdutosEfetivosPlanejamento({
       r.substituirSalvo ? null : compsSalvos,
       r.rec,
       objetoSeguroAdubacao2(ajustesSeguros[r.talhao.id]),
-    ).filter(linha => !ocultosSet.has(linha.linhaId) && !ocultosSet.has(linha.produto?.id));
+    ).filter(linha => !linhaEstaOculta(linha, ocultosSet));
     const linhaPrincipal = linhas.find(l => l.ehPrincipal);
     if (linhaPrincipal) {
       produto = linhaPrincipal.produto;
@@ -536,7 +569,8 @@ export function montarProdutosEfetivosPlanejamento({
     Object.entries(extrasTalhao).forEach(([key, data]) => {
       const doseExtra = Number(data?.doseKgHa);
       if (!data?.produtoId || data.produtoId === '0' || !Number.isFinite(doseExtra) || doseExtra <= 0) return;
-      if (ocultosSet.has(key) || ocultosSet.has(data.produtoId)) return;
+      const alvoExtra = data?.nutriente_alvo || data?.nutKey || key || 'dose_manual';
+      if (ocultosSet.has(key) || ocultosSet.has(`${key}|${data.produtoId || ''}|${alvoExtra}`) || ocultosSet.has(data.produtoId)) return;
       const prod = todosFiltradosLista.find(p => p.id === data.produtoId) || todosCatalogoLista.find(p => p.id === data.produtoId);
       const permiteUsoSeparado = Boolean(data?.usoSeparado || data?.isManualLivre || String(key).startsWith('manual-'));
       const complementoExistente = complementos.find(c => c.produto.id === prod?.id);

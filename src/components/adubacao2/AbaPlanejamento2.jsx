@@ -8,6 +8,7 @@ import {
   calcularBalancoNutrientes,
   calcularDoseProdutoPorAlvo,
   filtrarProdutosPlanejamento,
+  formatarNutrientesFornecidosAdubacao2,
   listarNutrientesNaoAtendidos,
   listaSeguraAdubacao2,
   montarLinhasProdutos,
@@ -16,6 +17,8 @@ import {
   normalizarComplementosAdubacao2,
   objetoSeguroAdubacao2,
   origemProdutoCatalogoLabel,
+  produtoNuloAdubacao2,
+  produtoValidoAdubacao2,
   resolverAcaoProdutoDuplicado,
   restaurarDoseCalculadaLinha,
 } from '@/lib/planejamentoProdutosAdubacao2';
@@ -44,7 +47,36 @@ function chaveLinhaProduto(linha) {
   return linha?.linhaId || `${linha?.nutKey || 'produto'}:${linha?.produto?.id || linha?.produto?.nome || 'sem-produto'}`;
 }
 
-function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, value, onChange, onExcluir, isManualLivre = false }) {
+function chaveProdutoOculto(item) {
+  if (typeof item === 'string') return item;
+  return [
+    item?.linhaId || '',
+    item?.produtoId || '',
+    item?.nutriente_alvo || item?.nutKey || '',
+  ].join('|');
+}
+
+function chavesProdutoOculto(item) {
+  if (typeof item === 'string') return [item];
+  if (!item || typeof item !== 'object') return [];
+  const alvo = item.nutriente_alvo || item.nutKey || '';
+  const chaves = [];
+  if (item.linhaId) chaves.push(item.linhaId);
+  if (item.linhaId || alvo) chaves.push(chaveProdutoOculto(item));
+  if (!item.linhaId && !alvo && item.produtoId) chaves.push(item.produtoId);
+  return chaves;
+}
+
+function linhaEstaOculta(linha, ocultosSet) {
+  const item = {
+    linhaId: chaveLinhaProduto(linha),
+    produtoId: linha?.produto?.id,
+    nutriente_alvo: linha?.nutriente_alvo || linha?.nutKey || '',
+  };
+  return ocultosSet.has(item.linhaId) || ocultosSet.has(chaveProdutoOculto(item));
+}
+
+function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, value, onChange, onExcluir, onRemoverPlanejamento, isManualLivre = false }) {
   const produtoId = value?.produtoId || '';
   const [doseManual, setDoseManual] = useState(value?.doseKgHa != null ? value.doseKgHa : '');
   const nutrienteAlvo = value?.nutriente_alvo || value?.nutKey || nutField || 'dose_manual';
@@ -54,7 +86,13 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
     setDoseManual(value?.doseKgHa != null ? value.doseKgHa : '');
   }, [value?.doseKgHa]);
 
-  const handleProdutoChange = (id) => onChange({ ...value, produtoId: id, doseKgHa: doseManual, nutriente_alvo: nutrienteAlvo, isManualLivre });
+  const handleProdutoChange = (id) => {
+    if (!id || id === '0') {
+      onChange({ ...value, produtoId: '', doseKgHa: '', nutriente_alvo: nutrienteAlvo, nutKey: nutrienteAlvo, isManualLivre });
+      return;
+    }
+    onChange({ ...value, produtoId: id, doseKgHa: doseManual, nutriente_alvo: nutrienteAlvo, isManualLivre });
+  };
   const handleDoseChange = (dose) => onChange({ ...value, produtoId: produtoId, doseKgHa: dose, nutriente_alvo: nutrienteAlvo, isManualLivre });
   const handleAlvoChange = (alvo) => onChange({ ...value, produtoId, doseKgHa: doseManual, nutriente_alvo: alvo, nutKey: alvo, isManualLivre });
 
@@ -90,7 +128,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
   // Produtos com o nutriente específico; fallback: todos os produtos se lista vazia
   const produtosDoNutriente = useMemo(() => {
-    const sorted = listaSeguraAdubacao2(todos).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    const sorted = listaSeguraAdubacao2(todos).filter(produtoValidoAdubacao2).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
     if (!nutField) return sorted;
     // Produtos com teor ficam no topo; os demais ficam abaixo mas aparecem sempre
     const comNutriente = sorted.filter(p => (parseFloat(p[nutField]) || 0) > 0);
@@ -100,7 +138,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
   const semProdutosEspecificos = useMemo(() => {
     if (!nutField) return false;
-    return listaSeguraAdubacao2(todos).filter(p => (parseFloat(p[nutField]) || 0) > 0).length === 0;
+    return listaSeguraAdubacao2(todos).filter(produtoValidoAdubacao2).filter(p => (parseFloat(p[nutField]) || 0) > 0).length === 0;
   }, [todos, nutField]);
 
   const produtosFiltrados = useMemo(() => {
@@ -109,7 +147,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
     return produtosDoNutriente.filter(p => (p.nome || '').toLowerCase().includes(q));
   }, [produtosDoNutriente, busca]);
 
-  const produtoSelecionado = listaSeguraAdubacao2(todos).find(p => p.id === produtoId) || null;
+  const produtoSelecionado = listaSeguraAdubacao2(todos).filter(produtoValidoAdubacao2).find(p => p.id === produtoId) || null;
   const doseNum = doseManual !== '' ? parseFloat(doseManual) : null;
   const preco = produtoId ? precos?.[produtoId] : null;
   const precoNum = preco != null && preco !== '' ? parseFloat(preco) : null;
@@ -188,8 +226,8 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
           </select>
         </td>
         <td className="px-3 py-2 text-muted-foreground font-mono text-xs">
-          {produtoSelecionado && nutField && (parseFloat(produtoSelecionado[nutField]) || 0) > 0
-            ? `${elLabel} ${fmt(parseFloat(produtoSelecionado[nutField]), 1)}%`
+          {produtoSelecionado && doseNum != null
+            ? formatarNutrientesFornecidosAdubacao2(produtoSelecionado, doseNum)
             : '—'}
         </td>
         <td className="px-3 py-2 text-right">
@@ -220,12 +258,21 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
           ) : <span className="text-muted-foreground text-xs">—</span>}
         </td>
         <td className="px-3 py-2">
-          {onExcluir ? (
-            <button type="button" onClick={onExcluir}
-              className="h-7 px-2 text-xs rounded border border-red-200 text-red-700 bg-red-50 hover:bg-red-100">
-              Excluir
-            </button>
-          ) : <span className="text-muted-foreground text-xs">—</span>}
+          <div className="flex flex-col gap-1">
+            {onExcluir && (
+              <button type="button" onClick={onExcluir}
+                className="h-7 px-2 text-xs rounded border border-red-200 text-red-700 bg-red-50 hover:bg-red-100">
+                Excluir
+              </button>
+            )}
+            {produtoId && (
+              <button type="button" onClick={onRemoverPlanejamento}
+                className="h-7 px-2 text-xs rounded border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 whitespace-nowrap">
+                Remover do planejamento
+              </button>
+            )}
+            {!onExcluir && !produtoId && <span className="text-muted-foreground text-xs">—</span>}
+          </div>
         </td>
       </tr>
       {expandidoParc && produtoId && (
@@ -288,7 +335,8 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
             const custoTotal = custoHa != null && area ? custoHa * area : null;
             const parc = parcelamentosObj?.[produto.id] || null;
             const expandido = expandidoProd === produto.id;
-            const nutStr = listaSeguraAdubacao2(nutrientes).map(n => `${n.label} ${fmt(n.fornecido, 1)}`).join(' · ');
+            const nutStr = formatarNutrientesFornecidosAdubacao2(produto, doseKgHa) ||
+              listaSeguraAdubacao2(nutrientes).map(n => `${n.label} ${fmt(n.fornecido, 1)} kg/ha`).join(' · ');
 
             return (
               <React.Fragment key={produto.id}>
@@ -386,23 +434,34 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
             );
           })}
           {/* Linhas de elementos extras (Zn, Cu, Mn, Mg, Fe, MO) marcados no grid */}
-          {elementosExtrasLista.map(el => (
-            <LinhaElementoExtra
-              key={`extra-${el.key}`}
-              elLabel={el.label}
-              nutField={el.nutField}
-              todos={todos}
-              area={area}
-              precos={precos}
-              onPrecoChange={onPrecoChange}
-              parcelamentos={parcelamentos}
-              onParcelamentoChange={onParcelamentoChange}
-              onAplicarParcTodos={onAplicarParcTodos}
-              value={extrasObj?.[el.key]}
-              onChange={(data) => onExtraChange(el.key, data)}
-            />
-          ))}
-          {Object.entries(extrasObj).filter(([key]) => String(key).startsWith('manual-')).map(([key, data]) => (
+          {elementosExtrasLista.map(el => {
+            const valor = extrasObj?.[el.key];
+            const produtoZero = valor?.produtoId === 0 || valor?.produtoId === '0' || valor?.produtoNome === 0 || valor?.produtoNome === '0';
+            const valorSeguro = produtoZero
+              ? { ...valor, produtoId: '', doseKgHa: '' }
+              : valor;
+            return (
+              <LinhaElementoExtra
+                key={`extra-${el.key}`}
+                elLabel={el.label}
+                nutField={el.nutField}
+                todos={todos}
+                area={area}
+                precos={precos}
+                onPrecoChange={onPrecoChange}
+                parcelamentos={parcelamentos}
+                onParcelamentoChange={onParcelamentoChange}
+                onAplicarParcTodos={onAplicarParcTodos}
+                value={valorSeguro}
+                onChange={(data) => onExtraChange(el.key, data)}
+                onRemoverPlanejamento={() => handleRemoverExtra(el.key, valorSeguro, false)}
+              />
+            );
+          })}
+          {Object.entries(extrasObj).filter(([key, data]) =>
+            String(key).startsWith('manual-') &&
+            !(data?.produtoId === 0 || data?.produtoId === '0' || data?.produtoNome === 0 || data?.produtoNome === '0')
+          ).map(([key, data]) => (
             <LinhaElementoExtra
               key={key}
               elLabel="Produto adicionado manualmente"
@@ -417,6 +476,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
               value={data}
               onChange={(next) => onExtraChange(key, { ...next, isManualLivre: true, usoSeparado: true })}
               onExcluir={() => onExcluirManual?.(key)}
+              onRemoverPlanejamento={() => handleRemoverExtra(key, data, true)}
               isManualLivre
             />
           ))}
@@ -483,6 +543,18 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     });
   }, [onExtrasChange]);
 
+  const registrarProdutoOculto = useCallback((item) => {
+    if (!item?.linhaId && !item?.produtoId) return;
+    setProdutosOcultos(prev => {
+      const prevLista = listaSeguraAdubacao2(prev);
+      const chave = chaveProdutoOculto(item);
+      if (prevLista.some(o => chaveProdutoOculto(o) === chave || o === item.linhaId)) return prevLista;
+      const next = [...prevLista, item];
+      onProdutosOcultosChange?.(next);
+      return next;
+    });
+  }, [onProdutosOcultosChange]);
+
   const handleAdicionarManual = useCallback(() => {
     const key = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setExtrasManuais(prev => {
@@ -525,15 +597,39 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     const linhaId = chaveLinhaProduto(linha);
     const produtoId = linha?.produto?.id || null;
     const item = { linhaId, produtoId, produtoNome: linha?.produto?.nome || '', nutriente_alvo: linha?.nutriente_alvo || linha?.nutKey || 'dose_manual' };
-    setProdutosOcultos(prev => {
-      const prevLista = listaSeguraAdubacao2(prev);
-      if (prevLista.some(o => o?.linhaId === linhaId || o === linhaId)) return prevLista;
-      const next = [...prevLista, item];
-      onProdutosOcultosChange?.(next);
-      return next;
+    registrarProdutoOculto(item);
+    if (produtoId) onParcelamentoChange?.(produtoId, null);
+    if (produtoId) onPrecoChange?.(produtoId, '');
+  }, [onParcelamentoChange, onPrecoChange, registrarProdutoOculto]);
+
+  const handleRemoverExtra = useCallback((key, data, isManualLivre = false) => {
+    const produtoId = data?.produtoId || null;
+    registrarProdutoOculto({
+      linhaId: key,
+      produtoId,
+      produtoNome: listaSeguraAdubacao2(todosSemFiltro).find(produto => produto.id === produtoId)?.nome || '',
+      nutriente_alvo: data?.nutriente_alvo || data?.nutKey || key || 'dose_manual',
     });
     if (produtoId) onParcelamentoChange?.(produtoId, null);
-  }, [onProdutosOcultosChange, onParcelamentoChange]);
+    if (produtoId) onPrecoChange?.(produtoId, '');
+    setExtrasManuais(prev => {
+      const next = { ...objetoSeguroAdubacao2(prev) };
+      if (isManualLivre || String(key).startsWith('manual-')) {
+        delete next[key];
+      } else {
+        next[key] = {
+          produtoId: '',
+          doseKgHa: '',
+          nutriente_alvo: data?.nutriente_alvo || data?.nutKey || key || 'dose_manual',
+          nutKey: data?.nutKey || key,
+          isManualLivre: false,
+          usoSeparado: false,
+        };
+      }
+      onExtrasChange?.(next);
+      return next;
+    });
+  }, [onExtrasChange, onParcelamentoChange, onPrecoChange, registrarProdutoOculto, todosSemFiltro]);
 
   const handleRestaurarOcultos = useCallback(() => {
     setProdutosOcultos([]);
@@ -577,11 +673,9 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['B']) delete recFiltrado.B;
     const prodSalvo = resultado.substituirSalvo ? null : (resultado.produtoSugerido || null);
     const doseSalva = resultado.substituirSalvo ? null : (resultado.doseProdutoHa ?? null);
-    const ocultosSet = new Set(listaSeguraAdubacao2(produtosOcultos).flatMap(item =>
-      typeof item === 'string' ? [item] : [item?.linhaId, item?.produtoId]
-    ).filter(Boolean));
+    const ocultosSet = new Set(listaSeguraAdubacao2(produtosOcultos).flatMap(chavesProdutoOculto).filter(Boolean));
     return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : normalizarComplementosAdubacao2(complementosSalvos), rec, ajustesDose)
-      .filter(linha => !ocultosSet.has(chaveLinhaProduto(linha)) && !ocultosSet.has(linha?.produto?.id));
+      .filter(linha => !linhaEstaOculta(linha, ocultosSet));
   }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos, ajustesDose, produtosOcultos]);
 
   const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
@@ -595,6 +689,14 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
 
   const handleExtraChange = useCallback((key, data) => {
     const extrasObj = objetoSeguroAdubacao2(extrasManuais);
+    if (!data?.produtoId || produtoNuloAdubacao2({ id: data.produtoId })) {
+      setExtrasManuais(prev => {
+        const next = { ...objetoSeguroAdubacao2(prev), [key]: { ...data, produtoId: '', doseKgHa: '' } };
+        onExtrasChange?.(next);
+        return next;
+      });
+      return;
+    }
     if (data?.produtoId) {
       const duplicidade = resolverAcaoProdutoDuplicado({ produtoId: data.produtoId, linhas: linhasProdutos, manuais: extrasObj });
       if (duplicidade.duplicado && String(key).startsWith('manual-') && typeof window !== 'undefined') {

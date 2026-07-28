@@ -17,6 +17,7 @@ import {
   formatarPrecoUnitarioCalagem,
   lerDadosAnaliseCalagem,
   lerMetadadosCalagem,
+  lerPrecoCalagem,
   normalizarNumeroCalagem,
   normalizarUnidadePrecoCalagem,
   podeSalvarRecomendacaoCalagem,
@@ -256,8 +257,9 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
         setNivel(metaSalva);
       }
       setProdutoId(reg.produto_id || null);
-      setPrecoUnitario(reg.preco_unitario != null ? String(reg.preco_unitario) : '');
-      setUnidadePreco(normalizarUnidadePrecoCalagem(reg.unidade_preco));
+      const precoSalvo = lerPrecoCalagem(reg);
+      setPrecoUnitario(precoSalvo.precoUnitario != null ? String(precoSalvo.precoUnitario) : '');
+      setUnidadePreco(precoSalvo.unidadePreco);
       setRegistroId(reg.id);
       registroIdRef.current = reg.id;
     }
@@ -376,6 +378,8 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
         v_atual: v1,
         dose_por_planta_g: resultado?.gPlanta ?? null,
         dose_por_metro_g: resultado?.gMetro ?? null,
+        preco_unitario: precoNum ?? null,
+        unidade_preco: normalizarUnidadePrecoCalagem(unidadePreco),
       }),
     });
   };
@@ -384,7 +388,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const registroAtual = selecionarRegistroCalagem(registrosSalvos);
   const temRegistro = !!registroAtual;
   const doseSalva = registroAtual?.dose_kg_ha;
-  const precoSalvo = registroAtual?.preco_unitario;
+  const precoSalvo = lerPrecoCalagem(registroAtual);
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${expandido ? 'border-lime-300 shadow-sm' : 'border-border'}`}>
@@ -406,9 +410,9 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
               Salvo: {doseSalva} kg/ha
             </span>
           )}
-          {analise && temRegistro && precoSalvo != null && (
+          {analise && temRegistro && precoSalvo.precoUnitario != null && (
             <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 font-medium">
-              {formatarPrecoUnitarioCalagem(precoSalvo, registroAtual?.unidade_preco)}
+              {formatarPrecoUnitarioCalagem(precoSalvo.precoUnitario, precoSalvo.unidadePreco)}
             </span>
           )}
           {analise && !temRegistro && (
