@@ -3,6 +3,7 @@ import {
   calcularCustoProdutoFoliarDetalhado,
   normalizarProdutosAplicacaoFoliar,
 } from './unidadesAplicacoesFoliares.js';
+import { calcularCustoGessagem } from './gessagemAdubacao2.js';
 
 export const MESES_PLANEJAMENTO = MESES_DASHBOARD;
 
@@ -43,7 +44,7 @@ function produtoNormalizado(produto, fallback = {}) {
  * Converte o formato novo do Adubação 2.0 em linhas compatíveis com calendário,
  * dashboard e visão geral. Os registros legados são preservados.
  */
-export function normalizarPlanosAdubacao(planosLegados = [], planejamentos2 = []) {
+export function normalizarPlanosAdubacao(planosLegados = [], planejamentos2 = [], gessagens = []) {
   const legados = planosLegados.map(plano => ({ ...plano, _origem: 'legado' }));
   const novos = [];
 
@@ -112,7 +113,32 @@ export function normalizarPlanosAdubacao(planosLegados = [], planejamentos2 = []
     });
   });
 
-  return [...legados, ...novos];
+  const planosGessagem = (gessagens || [])
+    .filter(registro => registro?.talhao_id)
+    .map(registro => {
+      const custo = calcularCustoGessagem({
+        doseKgHa: registro.dose_final_kg_ha,
+        areaHa: 1,
+        precoUnitario: registro.preco_unitario,
+        unidadePreco: registro.unidade_preco,
+      });
+      return {
+        ...registro,
+        id: `${registro.id || registro.talhao_id}:gessagem2`,
+        _origem: 'gessagem2',
+        nutriente_key: 'gessagem',
+        produto_id: registro.produto_id,
+        produto_nome: registro.produto_nome || 'Gessagem',
+        dose_rec_manual: numero(registro.dose_final_kg_ha),
+        preco: numero(registro.preco_unitario),
+        unidade_preco: registro.unidade_preco || 't',
+        custo_rha: registro.custo_ha != null ? numero(registro.custo_ha) : (custo.custoHa || 0),
+        meses: [[]],
+        status: registro.status || 'planejado',
+      };
+    });
+
+  return [...legados, ...novos, ...planosGessagem];
 }
 
 /**

@@ -3,6 +3,7 @@ import { LayoutList, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { formatarPrecoUnitarioCalagem, montarGruposResumoAdubacao2 } from '@/lib/calagemAdubacao2';
+import { formatarPrecoUnitarioGessagem } from '@/lib/gessagemAdubacao2';
 
 const PRINT_STYLES = `
 @media print {
@@ -33,10 +34,11 @@ const PRINT_STYLES = `
 function ordemConsolidado(nomeProd) {
   const n = (nomeProd || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (/calcari/.test(n)) return 1;
-  if (/sulfato.de.magnesio|kieserit/.test(n)) return 2;
-  if (/\d{1,2}-\d{1,2}-\d{1,2}/.test(n)) return 3;
-  if (/sulfato.de.zinco|acido.borico|ulexita|sulfato.de.manganes|borac/.test(n)) return 4;
-  return 5;
+  if (/gesso/.test(n)) return 2;
+  if (/sulfato.de.magnesio|kieserit/.test(n)) return 3;
+  if (/\d{1,2}-\d{1,2}-\d{1,2}/.test(n)) return 4;
+  if (/sulfato.de.zinco|acido.borico|ulexita|sulfato.de.manganes|borac/.test(n)) return 5;
+  return 6;
 }
 
 function formatQtd(kg) {
@@ -47,12 +49,13 @@ function formatQtd(kg) {
 
 function formatarPrecoResumo(item) {
   if (item?.isCalagem) return formatarPrecoUnitarioCalagem(item.preco, item.unidadePreco);
+  if (item?.isGessagem) return formatarPrecoUnitarioGessagem(item.preco, item.unidadePreco);
   if (item?.preco == null) return '—';
   return `${item.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg`;
 }
 
 function custoItemConsolidado(item) {
-  if (item?.isCalagem) return item.custoTotal != null && item.custoTotal > 0 ? item.custoTotal : null;
+  if (item?.isCalagem || item?.isGessagem) return item.custoTotal != null ? item.custoTotal : null;
   return item.preco && item.totalKg ? item.totalKg * item.preco : null;
 }
 
@@ -62,6 +65,7 @@ function formatarMoeda(valor) {
 
 function precoLinhaResumo(linha, precosMap) {
   if (linha?.isCalagem) return formatarPrecoUnitarioCalagem(linha.precoUnitario, linha.unidadePreco);
+  if (linha?.isGessagem) return formatarPrecoUnitarioGessagem(linha.precoUnitario, linha.unidadePreco);
   const preco = linha?.precoUnitario != null ? linha.precoUnitario : (linha?.produtoId ? Number(precosMap[linha.produtoId]) : null);
   return Number.isFinite(preco) ? `${preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg` : '—';
 }
@@ -88,12 +92,13 @@ function custoTotalLinhaResumo(linha, precosMap) {
  *  - todos: lista de fertilizantes+fontesSimples
  *  - produtosEfetivos: mapa { [talhaoId]: { produto, doseKgHa, complementos, precos? } }
  *  - calagens: array de registros BaseRecomendacaoCalagem do produtor/safra
+ *  - gessagens: array de registros BaseRecomendacaoGessagem do produtor/safra
  *  - talhoes: lista de talhoes
  *  - produtor: objeto produtor
  *  - safra: string
  *  - registrosSalvos: array de PlanejamentoAdubacao2 (contém detalhamento.precos)
  */
-export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra, registrosSalvos = [], precosAtuais = {} }) {
+export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], gessagens = [], talhoes = [], produtor, safra, registrosSalvos = [], precosAtuais = {} }) {
   // Mapa de preços salvos por produto (de todos os registros)
   const precosMap = useMemo(() => {
     const m = {};
@@ -111,13 +116,14 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     todos,
     produtosEfetivos,
     calagens,
+    gessagens,
     talhoes,
     codigoProdutor: produtor?.codigo,
     safra,
     sugerirProdutos: sugerirProdutosInteligente,
     registrosSalvos,
     precosAtuais,
-  }), [resultados, todos, produtosEfetivos, calagens, talhoes, produtor, safra, registrosSalvos, precosAtuais]);
+  }), [resultados, todos, produtosEfetivos, calagens, gessagens, talhoes, produtor, safra, registrosSalvos, precosAtuais]);
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
@@ -137,11 +143,17 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
             unidadePreco: l.unidadePreco || 'kg',
             custoTotal: 0,
             isCalagem: Boolean(l.isCalagem),
+            isGessagem: Boolean(l.isGessagem),
           });
         }
         const item = map.get(key);
         item.totalKg += l.totalKg || 0;
         if (l.isCalagem) {
+          item.custoTotal += l.custoTotal || 0;
+          if (item.preco == null && l.precoUnitario != null) item.preco = l.precoUnitario;
+          item.unidadePreco = l.unidadePreco || item.unidadePreco;
+        }
+        if (l.isGessagem) {
           item.custoTotal += l.custoTotal || 0;
           if (item.preco == null && l.precoUnitario != null) item.preco = l.precoUnitario;
           item.unidadePreco = l.unidadePreco || item.unidadePreco;
@@ -335,6 +347,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                          <td className="px-4 py-2.5 text-xs">
                            {linha.isCalagem ? (
                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">Calagem</span>
+                           ) : linha.isGessagem ? (
+                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-100 text-sky-800 border border-sky-300">Gessagem</span>
                            ) : (
                              <span className="text-muted-foreground">{linha.nutLabels?.join(', ') || '—'}</span>
                            )}
