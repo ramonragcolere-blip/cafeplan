@@ -16,10 +16,12 @@ import {
 import {
   calcularDoseProdutoPorAlvo,
   calcularBalancoNutrientes,
+  combinarCatalogoInsumos,
   formatarNutrientesFornecidosAdubacao2,
   listarNutrientesFornecidosAdubacao2,
   montarLinhasProdutos,
   montarProdutosEfetivosPlanejamento,
+  normalizarComposicaoProdutoAdubacao2,
   produtoNuloAdubacao2,
 } from '../src/lib/planejamentoProdutosAdubacao2.js';
 import { readFileSync } from 'node:fs';
@@ -466,6 +468,109 @@ test('BR Solo 66 consolidado para B e Zn sem dupla contagem e com nutriente-alvo
   assert.equal(calcularDoseProdutoPorAlvo(brSolo66, 'zn_pct', { Zn: 6 }), 100);
 });
 
+test('BR Solo 66 carrega composicao canonica de B e Zn sem depender do nome', () => {
+  const produtoTexto = {
+    id: 'br66',
+    nome: 'Produto comercial qualquer 66',
+    composicao_texto: 'Garantias: 6% B e 6% Zn',
+    outros_nutrientes: '',
+  };
+  const normalizado = normalizarComposicaoProdutoAdubacao2(produtoTexto);
+  const [catalogo] = combinarCatalogoInsumos([produtoTexto], []);
+
+  assert.equal(normalizado.b_pct, 6);
+  assert.equal(normalizado.zn_pct, 6);
+  assert.equal(catalogo.b_pct, 6);
+  assert.equal(catalogo.zn_pct, 6);
+});
+
+test('fallback textual aceita Boro/Zinco antes ou depois do percentual e preserva numero existente', () => {
+  const textoAntes = normalizarComposicaoProdutoAdubacao2({
+    id: 'txt1',
+    nome: 'Fonte texto',
+    composicao_texto: 'Boro 6% / Zinco 6%',
+  });
+  const textoDepois = normalizarComposicaoProdutoAdubacao2({
+    id: 'txt2',
+    nome: 'Fonte texto',
+    outros_nutrientes: '6% B; 6% Zn',
+  });
+  const comNumero = normalizarComposicaoProdutoAdubacao2({
+    id: 'num',
+    nome: 'Fonte numero',
+    b_pct: 5,
+    zn_pct: 4,
+    composicao_texto: '6% B e 6% Zn',
+  });
+  const semTextoClaro = normalizarComposicaoProdutoAdubacao2({
+    id: 'nome',
+    nome: 'BR Solo Zinco e Boro 66',
+  });
+
+  assert.equal(textoAntes.b_pct, 6);
+  assert.equal(textoAntes.zn_pct, 6);
+  assert.equal(textoDepois.b_pct, 6);
+  assert.equal(textoDepois.zn_pct, 6);
+  assert.equal(comNumero.b_pct, 5);
+  assert.equal(comNumero.zn_pct, 4);
+  assert.equal(semTextoClaro.b_pct, undefined);
+  assert.equal(semTextoClaro.zn_pct, undefined);
+});
+
+test('BR Solo 66 fornece B e Zn em kg por hectare para doses de 100 e 130 kg/ha', () => {
+  const brSolo66 = normalizarComposicaoProdutoAdubacao2({
+    id: 'br66',
+    nome: 'BR Solo Zinco e Boro 66',
+    composicao_texto: 'B 6% Zn 6%',
+  });
+  const nutrientes100 = listarNutrientesFornecidosAdubacao2(brSolo66, 100);
+  const nutrientes130 = listarNutrientesFornecidosAdubacao2(brSolo66, 130);
+  const balanco = calcularBalancoNutrientes({ B: 6, Zn: 6 }, [{ produto: brSolo66, doseKgHa: 100 }]);
+  const compras = consolidarComprasAdubacao2({
+    resultados: [{ talhao: talhoesBase[0], rec: { B: 6, Zn: 6 }, produtoSugerido: brSolo66, doseProdutoHa: 100 }],
+    produtosEfetivos: { t1: { produto: brSolo66, doseKgHa: 100, complementos: [] } },
+    talhoes: talhoesBase,
+  });
+
+  assert.equal(nutrientes100.find(n => n.label === 'B').fornecido, 6);
+  assert.equal(nutrientes100.find(n => n.label === 'Zn').fornecido, 6);
+  assert.equal(nutrientes130.find(n => n.label === 'B').fornecido, 7.8);
+  assert.equal(nutrientes130.find(n => n.label === 'Zn').fornecido, 7.8);
+  assert.equal(formatarNutrientesFornecidosAdubacao2(brSolo66, 100), 'B 6,0 kg/ha · Zn 6,0 kg/ha');
+  assert.equal(balanco.find(n => n.nutriente === 'B').fornecido, 6);
+  assert.equal(balanco.find(n => n.nutriente === 'Zn').fornecido, 6);
+  assert.equal(compras.length, 1);
+  assert.equal(compras[0].qtdTotal, 200);
+});
+
+test('Detalhamento por Talhao calcula custo por hectare de fertilizante e preserva calagem', () => {
+  const ureia = { id: 'ureia', nome: 'Ureia', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0 };
+  const grupos = montarGruposResumoAdubacao2({
+    resultados: [{ talhao: talhoesBase[0], rec: { N: 90 }, produtoSugerido: ureia, doseProdutoHa: 100 }],
+    produtosEfetivos: { t1: { produto: ureia, doseKgHa: 100, complementos: [] } },
+    registrosSalvos: [{ talhao_id: 't1', detalhamento: { precos: { ureia: 6.10 } } }],
+    calagens: [{
+      id: 'c1',
+      talhao_id: 't1',
+      produto_id: 'calc1',
+      produto_nome: 'Calcario A',
+      dose_kg_ha: 1000,
+      dose_total_kg: 2000,
+      preco_unitario: 500,
+      unidade_preco: 't',
+    }],
+    talhoes: talhoesBase,
+  });
+
+  const fertilizante = grupos[0].linhas.find(l => l.produtoId === 'ureia');
+  const calagem = grupos[0].linhas.find(l => l.isCalagem);
+  assert.equal(fertilizante.precoUnitario, 6.10);
+  assert.equal(fertilizante.custoHa, 610);
+  assert.equal(fertilizante.custoTotal, 1220);
+  assert.equal(calagem.custoHa, 500);
+  assert.equal(calagem.custoTotal, 1000);
+});
+
 test('PDF compras e resumo respeitam produtos ocultos sem duplicar quantidade nem custo', () => {
   const brSolo66 = { id: 'br66', nome: 'BR Solo 66', b_pct: 6, zn_pct: 6, n_pct: 0, p2o5_pct: 0, k2o_pct: 0, _tipo: 'fonte' };
   const resultados = [{ talhao: talhoesBase[0], rec: { B: 6, Zn: 6 }, produtoSugerido: brSolo66, doseProdutoHa: 100 }];
@@ -512,9 +617,29 @@ test('PDF recupera layout anterior e mantem dados funcionais da PR 19', () => {
 
   assert.match(componente, /body \{ font-family: Arial, sans-serif; font-size: 13px; margin: 24px; \}/);
   assert.match(componente, /h2 \{ font-size: 15px; margin-bottom: 4px; \}/);
-  assert.match(componente, /table \{ width: 100%; border-collapse: collapse; margin-bottom: 8px; \}/);
-  assert.match(componente, /th, td \{ border: 1px solid #ccc; padding: 6px 8px; \}/);
+  assert.match(componente, /table \{ width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; \}/);
+  assert.match(componente, /th, td \{ border: 1px solid #ccc; padding: 6px 8px; vertical-align: top; overflow-wrap: anywhere; \}/);
   assert.match(componente, /Preço unitário/);
   assert.match(componente, /Custo\/ha/);
   assert.match(componente, /formatarPrecoUnitarioCalagem/);
+});
+
+test('PDF usa detalhamento compacto sem Custo total nem Nutrientes e mantem tela normal', () => {
+  const componente = readFileSync(new URL('../src/components/adubacao2/AbaResumoGeral2.jsx', import.meta.url), 'utf8');
+  const inicioTela = componente.indexOf("id=\"resumo2-detalhe-tabela\"");
+  const inicioPrint = componente.indexOf("id=\"resumo2-detalhe-print-tabela\"");
+  const trechoTela = componente.slice(inicioTela, inicioPrint);
+  const trechoPrint = componente.slice(inicioPrint);
+
+  assert.match(trechoTela, /'Custo total'/);
+  assert.match(trechoTela, /'Nutrientes'/);
+  assert.match(trechoPrint, /\['Produto', 'Qtd\. total', 'g\/planta', 'g\/metro', 'Preço unitário', 'Custo\/ha', 'Período de aplicação'\]/);
+  assert.doesNotMatch(trechoPrint, /'Custo total'/);
+  assert.doesNotMatch(trechoPrint, /'Nutrientes'/);
+  assert.match(componente, /document\.getElementById\('resumo2-detalhe-print-tabela'\)/);
+  assert.match(componente, /\.resumo2-screen-detail \{ display: none !important; \}/);
+  assert.match(componente, /\.resumo2-print-only \{ display: block !important; \}/);
+  assert.match(componente, /\.row-talhao td \{ background: #d9f2df !important; font-weight: 700; \}/);
+  assert.doesNotMatch(componente, /talhao-cor-/);
+  assert.doesNotMatch(componente, /#dbeafe|#fef3c7|#ede9fe/);
 });

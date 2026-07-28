@@ -11,12 +11,20 @@ const PRINT_STYLES = `
   #resumo2-print-area * { visibility: visible; }
   #resumo2-print-area { position: fixed; top: 0; left: 0; width: 100%; }
   .resumo2-print-btn { display: none !important; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .resumo2-screen-detail { display: none !important; }
+  .resumo2-print-only { display: block !important; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10.5px; }
   th { background-color: #e8f5e9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; padding: 6px 8px; border-bottom: 1px solid #ccc; }
-  td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+  td { padding: 5px 8px; border-bottom: 1px solid #eee; overflow-wrap: anywhere; }
   .print-row-alt { background-color: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-row-talhao { background-color: #d9f2df !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
   .print-row-talhao + tr { break-before: avoid; page-break-before: avoid; }
+  .col-produto { width: 26%; }
+  .col-qtd { width: 12%; }
+  .col-g { width: 10%; }
+  .col-preco { width: 13%; }
+  .col-custo { width: 12%; }
+  .col-periodo { width: 17%; }
 }
 `;
 
@@ -48,6 +56,30 @@ function custoItemConsolidado(item) {
   return item.preco && item.totalKg ? item.totalKg * item.preco : null;
 }
 
+function formatarMoeda(valor) {
+  return valor != null ? valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—';
+}
+
+function precoLinhaResumo(linha, precosMap) {
+  if (linha?.isCalagem) return formatarPrecoUnitarioCalagem(linha.precoUnitario, linha.unidadePreco);
+  const preco = linha?.precoUnitario != null ? linha.precoUnitario : (linha?.produtoId ? Number(precosMap[linha.produtoId]) : null);
+  return Number.isFinite(preco) ? `${preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg` : '—';
+}
+
+function custoHaLinhaResumo(linha, precosMap) {
+  if (linha?.custoHa != null) return linha.custoHa;
+  if (linha?.isCalagem) return null;
+  const preco = linha?.produtoId ? Number(precosMap[linha.produtoId]) : null;
+  return Number.isFinite(preco) && linha?.doseKgHa != null ? linha.doseKgHa * preco : null;
+}
+
+function custoTotalLinhaResumo(linha, precosMap) {
+  if (linha?.custoTotal != null) return linha.custoTotal;
+  if (linha?.isCalagem) return null;
+  const preco = linha?.produtoId ? Number(precosMap[linha.produtoId]) : null;
+  return Number.isFinite(preco) && linha?.totalKg != null ? linha.totalKg * preco : null;
+}
+
 // ── Componente ────────────────────────────────────────────────────────────────
 
 /**
@@ -61,7 +93,7 @@ function custoItemConsolidado(item) {
  *  - safra: string
  *  - registrosSalvos: array de PlanejamentoAdubacao2 (contém detalhamento.precos)
  */
-export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra, registrosSalvos = [] }) {
+export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], talhoes = [], produtor, safra, registrosSalvos = [], precosAtuais = {} }) {
   // Mapa de preços salvos por produto (de todos os registros)
   const precosMap = useMemo(() => {
     const m = {};
@@ -69,8 +101,9 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
       const precos = r.detalhamento?.precos || {};
       Object.assign(m, precos);
     });
+    Object.assign(m, precosAtuais || {});
     return m;
-  }, [registrosSalvos]);
+  }, [registrosSalvos, precosAtuais]);
 
   // Constrói grupos por talhão (adubação principal + complementares + calagem)
   const grupos = useMemo(() => montarGruposResumoAdubacao2({
@@ -83,7 +116,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     safra,
     sugerirProdutos: sugerirProdutosInteligente,
     registrosSalvos,
-  }), [resultados, todos, produtosEfetivos, calagens, talhoes, produtor, safra, registrosSalvos]);
+    precosAtuais,
+  }), [resultados, todos, produtosEfetivos, calagens, talhoes, produtor, safra, registrosSalvos, precosAtuais]);
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
@@ -145,7 +179,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
       <div className="flex justify-end mb-3 resumo2-print-btn">
         <Button variant="outline" size="sm" className="gap-2" onClick={() => {
           const consolidadoHtml = document.getElementById('resumo2-consolidado-tabela')?.innerHTML || '';
-          const detalheHtml = document.getElementById('resumo2-detalhe-tabela')?.innerHTML || '';
+          const detalheHtml = document.getElementById('resumo2-detalhe-print-tabela')?.innerHTML || '';
           if (!consolidadoHtml && !detalheHtml) return;
           const janela = window.open('', '_blank');
           janela.document.write(`
@@ -155,14 +189,20 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               h2 { font-size: 15px; margin-bottom: 4px; }
               h3 { font-size: 13px; margin: 18px 0 6px; color: #333; }
               p.sub { font-size: 12px; color: #555; margin-bottom: 16px; }
-              table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-              th, td { border: 1px solid #ccc; padding: 6px 8px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
+              th, td { border: 1px solid #ccc; padding: 6px 8px; vertical-align: top; overflow-wrap: anywhere; }
               th { background: #f0f0f0; font-weight: 700; }
               th, .row-talhao td, .row-alt td, .row-total td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .row-talhao td { background: #d9f2df !important; font-weight: 700; }
               .row-talhao + tr { break-before: avoid; page-break-before: avoid; }
               .row-alt td { background: #f5f5f5; }
               .row-total td { background: #fff3cd; font-weight: 700; }
+              .col-produto { width: 26%; }
+              .col-qtd { width: 12%; }
+              .col-g { width: 10%; }
+              .col-preco { width: 13%; }
+              .col-custo { width: 12%; }
+              .col-periodo { width: 17%; }
             </style>
             </head><body>
             <h2>Planejamento de Adubação — Resumo Geral</h2>
@@ -237,7 +277,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
         </div>
 
         {/* Detalhamento por Talhão */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden resumo2-screen-detail">
           <div className="overflow-x-auto" id="resumo2-detalhe-tabela">
             <table className="w-full text-sm">
               <thead>
@@ -282,10 +322,10 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                            {linha.isCalagem ? formatarPrecoUnitarioCalagem(linha.precoUnitario, linha.unidadePreco) : (linha.produtoId && precosMap[linha.produtoId] ? `${Number(precosMap[linha.produtoId]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg` : '—')}
                          </td>
                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                           {linha.isCalagem && linha.custoHa != null ? linha.custoHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                           {formatarMoeda(custoHaLinhaResumo(linha, precosMap))}
                          </td>
                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                           {linha.isCalagem && linha.custoTotal != null ? linha.custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                           {formatarMoeda(custoTotalLinhaResumo(linha, precosMap))}
                          </td>
                          <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-pre-line min-w-[150px]">
                            {(linha.periodoAplicacao || 'A definir').split('\n').map((parte, idx) => (
@@ -307,6 +347,51 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               </tbody>
             </table>
           </div>
+        </div>
+
+        <div className="hidden resumo2-print-only" id="resumo2-detalhe-print-tabela">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/40 border-b border-border">
+                {['Produto', 'Qtd. total', 'g/planta', 'g/metro', 'Preço unitário', 'Custo/ha', 'Período de aplicação'].map(h => (
+                  <th key={h} className={`px-3 py-2 font-semibold text-xs text-muted-foreground uppercase tracking-wide ${h === 'Produto' || h === 'Período de aplicação' ? 'text-left' : 'text-right'}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grupos.map(({ talhao, linhas }) => {
+                const partes = [talhao.nome];
+                if (talhao.area_ha) partes.push(`${talhao.area_ha} ha`);
+                if (talhao.num_plantas) partes.push(`${talhao.num_plantas.toLocaleString()} plantas`);
+                if (talhao.espacamento) partes.push(talhao.espacamento);
+                return (
+                  <React.Fragment key={`print-${talhao.id}`}>
+                    <tr className="row-talhao print-row-talhao">
+                      <td colSpan={7} className="px-3 py-2 font-bold text-foreground text-sm">
+                        {partes.join(' · ')}
+                      </td>
+                    </tr>
+                    {linhas.map((linha, li) => (
+                     <tr key={`print-${talhao.id}-${li}`}
+                       className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
+                       <td className="px-3 py-2 font-medium text-foreground col-produto">{linha.produtoNome}</td>
+                       <td className="px-3 py-2 text-right font-semibold tabular-nums col-qtd">{linha.totalKg != null ? formatQtd(linha.totalKg) : '—'}</td>
+                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground col-g">{linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}</td>
+                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground col-g">{linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}</td>
+                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground col-preco">{precoLinhaResumo(linha, precosMap)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground col-custo">{formatarMoeda(custoHaLinhaResumo(linha, precosMap))}</td>
+                       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-line col-periodo">
+                         {(linha.periodoAplicacao || 'A definir').split('\n').map((parte, idx) => (
+                           <div key={idx}>{parte}</div>
+                         ))}
+                       </td>
+                     </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
       </div>
