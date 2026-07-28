@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 import {
   ajustarDoseLinha,
   calcularBalancoNutrientes,
@@ -36,6 +38,7 @@ const talhao = { id: 't1', nome: 'Talhao 1', area_ha: 2, num_plantas: 1000, espa
 const talhao2 = { id: 't2', nome: 'Talhao 2', area_ha: 3, num_plantas: 1200, espacamento: '3,5x0,7' };
 const analiseBase = { talhao_id: 't1', safra: '2026/2027', fosforo: 8, potassio: 50, boro: 0.3 };
 const analiseBase2 = { talhao_id: 't2', safra: '2026/2027', fosforo: 14, potassio: 130, boro: 0.9 };
+const fonteAdubacao2 = readFileSync(new URL('../src/pages/Adubacao2.jsx', import.meta.url), 'utf8');
 
 test('fornecedor selecionado nao inclui fontes simples sem fornecedor por padrao', () => {
   const filtrados = filtrarProdutosPlanejamento([formuladoA, formuladoB, ureia], {
@@ -315,6 +318,25 @@ test('calculo global continua calculando todos os talhoes', () => {
   assert.equal(resultados.length, 2);
   assert.equal(resultados.every(r => r.rec), true);
   assert.deepEqual(resultados.map(r => r.talhao.id), ['t1', 't2']);
+});
+
+test('aba de analises renderiza botao de calculo individual por talhao', () => {
+  assert.match(fonteAdubacao2, /Calcular talh[aã]o/);
+  assert.match(fonteAdubacao2, /handleCalcularTalhao\(talhao\.id,\s*todos/);
+  assert.match(fonteAdubacao2, /Calculator className="w-3\.5 h-3\.5"/);
+});
+
+test('calculo individual na tabela mostra carregamento somente na linha selecionada', () => {
+  assert.match(fonteAdubacao2, /const carregandoTalhao = calculandoTalhaoId === talhao\.id/);
+  assert.match(fonteAdubacao2, /Calculando\.\.\./);
+  assert.match(fonteAdubacao2, /disabled=\{!podeCacularTalhao \|\| carregandoTalhao\}/);
+});
+
+test('aba de analises expoe politica de recalculo individual', () => {
+  assert.match(fonteAdubacao2, /Pol[ií]tica de rec[aá]lculo/);
+  assert.match(fonteAdubacao2, /Manter produtos salvos/);
+  assert.match(fonteAdubacao2, /Substituir somente sugest[oõ]es autom[aá]ticas/);
+  assert.match(fonteAdubacao2, /politicaRecalculoTalhao === 'substituir_automaticos'/);
 });
 
 test('ausencia de produtos compativeis nao cria recomendacao fora do filtro', () => {
