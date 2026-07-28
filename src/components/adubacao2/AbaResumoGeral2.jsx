@@ -408,6 +408,9 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                            {linha.pendenteProduto && (
                              <span className="block text-[10px] font-semibold text-amber-700 mt-0.5">Selecione o corretivo para salvar e enviar às compras</span>
                            )}
+                           {linha.isGessagem && linha.observacaoTecnica && (
+                             <span className="block text-[10px] font-normal text-muted-foreground mt-0.5">{linha.observacaoTecnica}</span>
+                           )}
                          </td>
                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                            {linha.totalKg != null ? linha.totalKg.toLocaleString('pt-BR') : '—'}
@@ -419,7 +422,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
                          </td>
                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                           {linha.isCalagem ? formatarPrecoUnitarioCalagem(linha.precoUnitario, linha.unidadePreco) : (linha.produtoId && precosMap[linha.produtoId] ? `${Number(precosMap[linha.produtoId]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg` : '—')}
+                           {precoLinhaResumo(linha, precosMap)}
                          </td>
                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
                            {formatarMoeda(custoHaLinhaResumo(linha, precosMap))}
@@ -436,7 +439,10 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                            {linha.isCalagem ? (
                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">Calagem</span>
                            ) : linha.isGessagem ? (
-                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-100 text-sky-800 border border-sky-300">Gessagem</span>
+                             <span className="text-muted-foreground">
+                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-100 text-sky-800 border border-sky-300 mr-1">Gessagem</span>
+                               {linha.nutLabels?.join(', ') || '—'}
+                             </span>
                            ) : (
                              <span className="text-muted-foreground">{linha.nutLabels?.join(', ') || '—'}</span>
                            )}
@@ -476,7 +482,12 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                     {linhas.map((linha, li) => (
                      <tr key={`print-${talhao.id}-${li}`}
                        className={`border-b border-border/50 ${li % 2 === 0 ? 'bg-white' : 'bg-muted/20 print-row-alt'}`}>
-                       <td className="px-3 py-2 font-medium text-foreground col-produto">{linha.produtoNome}</td>
+                       <td className="px-3 py-2 font-medium text-foreground col-produto">
+                         {linha.produtoNome}
+                         {linha.isGessagem && linha.observacaoTecnica && (
+                           <span style={{ display: 'block', fontSize: '9px', fontWeight: 400, color: '#555', marginTop: '2px' }}>{linha.observacaoTecnica}</span>
+                         )}
+                       </td>
                        <td className="px-3 py-2 text-right font-semibold tabular-nums col-qtd">{linha.totalKg != null ? formatQtd(linha.totalKg) : '—'}</td>
                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground col-g">{linha.gPlanta != null ? `${linha.gPlanta.toLocaleString('pt-BR')} g` : '—'}</td>
                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground col-g">{linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}</td>
