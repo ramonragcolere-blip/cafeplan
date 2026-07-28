@@ -15,6 +15,9 @@ import {
 } from '../src/lib/calagemAdubacao2.js';
 import {
   calcularDoseProdutoPorAlvo,
+  calcularBalancoNutrientes,
+  formatarNutrientesFornecidosAdubacao2,
+  listarNutrientesFornecidosAdubacao2,
   montarLinhasProdutos,
   montarProdutosEfetivosPlanejamento,
   produtoNuloAdubacao2,
@@ -352,13 +355,13 @@ test('produto id 0 e nome 0 sao reconhecidos como nulos e ignorados visualmente'
   assert.equal(compras.length, 0);
 });
 
-test('produto 0 fica ausente do PDF e cores dos talhoes existem no HTML de impressao', () => {
+test('produto 0 fica ausente do PDF e somente linha do talhao recebe cor fixa no HTML de impressao', () => {
   const componente = readFileSync(new URL('../src/components/adubacao2/AbaResumoGeral2.jsx', import.meta.url), 'utf8');
 
-  assert.match(componente, /talhao-cor-0/);
-  assert.match(componente, /talhao-cor-1/);
-  assert.match(componente, /talhao-cor-2/);
-  assert.match(componente, /talhao-cor-3/);
+  assert.doesNotMatch(componente, /talhao-cor-/);
+  assert.doesNotMatch(componente, /#dbeafe|#fef3c7|#ede9fe/);
+  assert.match(componente, /\.print-row-talhao \{ background-color: #d9f2df !important;/);
+  assert.match(componente, /\.row-talhao td \{ background: #d9f2df !important; font-weight: 700; \}/);
   assert.match(componente, /-webkit-print-color-adjust: exact/);
   assert.match(componente, /print-color-adjust: exact/);
   assert.match(componente, /Preço unitário/);
@@ -381,6 +384,54 @@ test('ocultar produto automatico remove de compras resumo e permanece no payload
   assert.equal(resumo.length, 0);
 });
 
+test('remover produto principal, complemento automatico e produto livre respeita produtos ocultos', () => {
+  const ureia = { id: 'ureia', nome: 'Ureia', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
+  const boro = { id: 'boro', nome: 'Acido borico', n_pct: 0, p2o5_pct: 0, k2o_pct: 0, b_pct: 17, _tipo: 'fonte' };
+  const map = { id: 'map', nome: 'MAP', n_pct: 11, p2o5_pct: 52, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
+  const resultados = [{ talhao: talhoesBase[0], rec: { N: 90, B: 1.7 }, produtoSugerido: ureia, doseProdutoHa: 200 }];
+  const produtosEfetivos = montarProdutosEfetivosPlanejamento({
+    resultados,
+    todosFiltrados: [ureia, boro, map],
+    todosCatalogo: [ureia, boro, map],
+    extrasPorTalhao: { t1: { 'manual-map': { produtoId: 'map', doseKgHa: 100, isManualLivre: true, usoSeparado: true } } },
+    produtosOcultosPorTalhao: {
+      t1: [
+        { linhaId: 'n_pct:ureia', produtoId: 'ureia' },
+        { linhaId: 'b_pct:boro', produtoId: 'boro' },
+        { linhaId: 'manual-map', produtoId: 'map' },
+      ],
+    },
+  });
+
+  assert.equal(produtosEfetivos.t1.produto, null);
+  assert.equal(produtosEfetivos.t1.complementos.length, 0);
+  assert.equal(produtosEfetivos.t1.produtos_ocultos.length, 3);
+});
+
+test('remover produto selecionado em cards Zn e Mg mantem cards marcados e oculta produto', () => {
+  const sulfatoZn = { id: 'zn', nome: 'Sulfato de zinco', zn_pct: 20, mg_pct: 0, n_pct: 0, p2o5_pct: 0, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
+  const sulfatoMg = { id: 'mg', nome: 'Sulfato de magnesio', mg_pct: 9, zn_pct: 0, n_pct: 0, p2o5_pct: 0, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
+  const resultados = [{ talhao: talhoesBase[0], rec: { N: 0 }, produtoSugerido: null, doseProdutoHa: null }];
+  const produtosEfetivos = montarProdutosEfetivosPlanejamento({
+    resultados,
+    todosFiltrados: [sulfatoZn, sulfatoMg],
+    todosCatalogo: [sulfatoZn, sulfatoMg],
+    marcadosPorTalhao: { t1: { Zn: true, Mg: true } },
+    extrasPorTalhao: {
+      t1: {
+        Zn: { produtoId: 'zn', doseKgHa: 10, nutriente_alvo: 'zn_pct', nutKey: 'zn_pct' },
+        Mg: { produtoId: 'mg', doseKgHa: 20, nutriente_alvo: 'mg_pct', nutKey: 'mg_pct' },
+      },
+    },
+    produtosOcultosPorTalhao: { t1: [{ linhaId: 'Zn', produtoId: 'zn' }, { linhaId: 'Mg', produtoId: 'mg' }] },
+  });
+
+  assert.equal(produtosEfetivos.t1.marcados.Zn, true);
+  assert.equal(produtosEfetivos.t1.marcados.Mg, true);
+  assert.equal(produtosEfetivos.t1.complementos.length, 0);
+  assert.equal(produtosEfetivos.t1.produtos_ocultos.length, 2);
+});
+
 test('restaurar produto oculto devolve produto automatico a compras e resumo', () => {
   const ureia = { id: 'ureia', nome: 'Ureia', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
   const resultados = [{ talhao: talhoesBase[0], rec: { N: 90 }, produtoSugerido: ureia, doseProdutoHa: 200 }];
@@ -399,12 +450,19 @@ test('BR Solo 66 consolidado para B e Zn sem dupla contagem e com nutriente-alvo
   const brSolo66 = { id: 'br66', nome: 'BR Solo 66', b_pct: 6, zn_pct: 6, n_pct: 0, p2o5_pct: 0, k2o_pct: 0, _tipo: 'fonte' };
   const linhas = montarLinhasProdutos([brSolo66], { B: 6, Zn: 6 }, {}, brSolo66, 100, null, { B: 6, Zn: 6 });
   const linha = linhas[0];
+  const nutrientes = listarNutrientesFornecidosAdubacao2(brSolo66, 100);
+  const balanco = calcularBalancoNutrientes({ B: 6, Zn: 6 }, [{ produto: brSolo66, doseKgHa: 100 }]);
 
   assert.equal(linhas.length, 1);
   assert.equal(linha.produto.id, 'br66');
   assert.equal(linha.doseKgHa, 100);
   assert.equal(linha.nutrientes.some(n => n.label === 'B'), true);
   assert.equal(linha.nutrientes.some(n => n.label === 'Zn'), true);
+  assert.equal(nutrientes.find(n => n.label === 'B').fornecido, 6);
+  assert.equal(nutrientes.find(n => n.label === 'Zn').fornecido, 6);
+  assert.equal(formatarNutrientesFornecidosAdubacao2(brSolo66, 100), 'B 6,0 kg/ha · Zn 6,0 kg/ha');
+  assert.equal(balanco.find(n => n.nutriente === 'B').situacao, 'Atendido');
+  assert.equal(balanco.find(n => n.nutriente === 'Zn').situacao, 'Atendido');
   assert.equal(calcularDoseProdutoPorAlvo(brSolo66, 'zn_pct', { Zn: 6 }), 100);
 });
 
@@ -423,4 +481,40 @@ test('PDF compras e resumo respeitam produtos ocultos sem duplicar quantidade ne
   assert.equal(montarGruposResumoAdubacao2({ resultados, produtosEfetivos: visivel, talhoes: talhoesBase })[0].linhas.length, 1);
   assert.equal(consolidarComprasAdubacao2({ resultados, produtosEfetivos: oculto, talhoes: talhoesBase }).length, 0);
   assert.equal(montarGruposResumoAdubacao2({ resultados, produtosEfetivos: oculto, talhoes: talhoesBase }).length, 0);
+});
+
+test('schema e fallback de observacoes restauram preco da calagem apos reabrir ou atualizar', () => {
+  const schema = readFileSync(new URL('../base44/entities/BaseRecomendacaoCalagem.jsonc', import.meta.url), 'utf8');
+  assert.match(schema, /"preco_unitario"/);
+  assert.match(schema, /"unidade_preco"/);
+
+  const grupos = montarGruposResumoAdubacao2({
+    resultados: [],
+    calagens: [{
+      id: 'c-meta',
+      talhao_id: 't1',
+      produto_id: 'calc1',
+      produto_nome: 'Calcario A',
+      dose_kg_ha: 1000,
+      dose_total_kg: 2000,
+      observacoes: JSON.stringify({ _tipo: 'calagem_adubacao2', preco_unitario: 500, unidade_preco: 't' }),
+    }],
+    talhoes: talhoesBase,
+  });
+
+  assert.equal(grupos[0].linhas[0].precoUnitario, 500);
+  assert.equal(grupos[0].linhas[0].unidadePreco, 't');
+  assert.equal(grupos[0].linhas[0].custoTotal, 1000);
+});
+
+test('PDF recupera layout anterior e mantem dados funcionais da PR 19', () => {
+  const componente = readFileSync(new URL('../src/components/adubacao2/AbaResumoGeral2.jsx', import.meta.url), 'utf8');
+
+  assert.match(componente, /body \{ font-family: Arial, sans-serif; font-size: 13px; margin: 24px; \}/);
+  assert.match(componente, /h2 \{ font-size: 15px; margin-bottom: 4px; \}/);
+  assert.match(componente, /table \{ width: 100%; border-collapse: collapse; margin-bottom: 8px; \}/);
+  assert.match(componente, /th, td \{ border: 1px solid #ccc; padding: 6px 8px; \}/);
+  assert.match(componente, /Preço unitário/);
+  assert.match(componente, /Custo\/ha/);
+  assert.match(componente, /formatarPrecoUnitarioCalagem/);
 });

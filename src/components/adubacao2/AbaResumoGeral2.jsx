@@ -15,12 +15,8 @@ const PRINT_STYLES = `
   th { background-color: #e8f5e9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; padding: 6px 8px; border-bottom: 1px solid #ccc; }
   td { padding: 5px 8px; border-bottom: 1px solid #eee; }
   .print-row-alt { background-color: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .print-row-talhao { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; break-after: avoid; page-break-after: avoid; border-top: 2px solid #44624a !important; color: #1f2937 !important; }
+  .print-row-talhao { background-color: #d9f2df !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
   .print-row-talhao + tr { break-before: avoid; page-break-before: avoid; }
-  .talhao-cor-0 td { background-color: #d9f2df !important; }
-  .talhao-cor-1 td { background-color: #dbeafe !important; }
-  .talhao-cor-2 td { background-color: #fef3c7 !important; }
-  .talhao-cor-3 td { background-color: #ede9fe !important; }
 }
 `;
 
@@ -163,12 +159,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               th, td { border: 1px solid #ccc; padding: 6px 8px; }
               th { background: #f0f0f0; font-weight: 700; }
               th, .row-talhao td, .row-alt td, .row-total td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .row-talhao td { font-weight: 700; border-top: 2px solid #44624a; color: #1f2937; break-after: avoid; page-break-after: avoid; }
+              .row-talhao td { background: #d9f2df !important; font-weight: 700; }
               .row-talhao + tr { break-before: avoid; page-break-before: avoid; }
-              .talhao-cor-0 td { background: #d9f2df !important; }
-              .talhao-cor-1 td { background: #dbeafe !important; }
-              .talhao-cor-2 td { background: #fef3c7 !important; }
-              .talhao-cor-3 td { background: #ede9fe !important; }
               .row-alt td { background: #f5f5f5; }
               .row-total td { background: #fff3cd; font-weight: 700; }
             </style>
@@ -256,14 +248,14 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                 </tr>
               </thead>
               <tbody>
-                {grupos.map(({ talhao, linhas }, gi) => {
+                {grupos.map(({ talhao, linhas }) => {
                   const partes = [talhao.nome];
                   if (talhao.area_ha) partes.push(`${talhao.area_ha} ha`);
                   if (talhao.num_plantas) partes.push(`${talhao.num_plantas.toLocaleString()} plantas`);
                   if (talhao.espacamento) partes.push(talhao.espacamento);
                   return (
                     <React.Fragment key={talhao.id}>
-                      <tr className={`row-talhao talhao-cor-${gi % 4} border-b border-primary/20 print-row-talhao`}>
+                      <tr className="row-talhao bg-primary/10 border-b border-primary/20 print-row-talhao">
                         <td colSpan={9} className="px-4 py-2.5 font-bold text-foreground text-sm">
                           {partes.join(' · ')}
                         </td>

@@ -1,4 +1,4 @@
-import { produtoNuloAdubacao2 } from './planejamentoProdutosAdubacao2.js';
+import { formatarNutrientesFornecidosAdubacao2, produtoNuloAdubacao2 } from './planejamentoProdutosAdubacao2.js';
 
 export const NIVEIS_CALAGEM = {
   Mínimo: { ca: 3.0, mg: 1.0, k: 0.33, label: 'Mínimo' },
@@ -122,6 +122,15 @@ export function formatarPrecoUnitarioCalagem(preco, unidade = 't') {
   if (valor == null || valor < 0) return '—';
   const sufixo = normalizarUnidadePrecoCalagem(unidade) === 'kg' ? '/kg' : '/t';
   return `${valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${sufixo}`;
+}
+
+export function lerPrecoCalagem(registro) {
+  const metadados = lerMetadadosCalagem(registro);
+  const preco = normalizarNumeroCalagem(registro?.preco_unitario);
+  const precoMeta = normalizarNumeroCalagem(metadados.preco_unitario);
+  const precoUnitario = preco ?? precoMeta;
+  const unidadePreco = normalizarUnidadePrecoCalagem(registro?.unidade_preco || metadados.unidade_preco || 't');
+  return { precoUnitario, unidadePreco };
 }
 
 export function calcularCustoCalagem({ doseKgHa, doseTotalKg, precoUnitario, unidadePreco = 't', talhao = null }) {
@@ -261,8 +270,8 @@ function criarLinhaCalagemResumo(calagem, talhao) {
   const custo = calcularCustoCalagem({
     doseKgHa,
     doseTotalKg: totalKg,
-    precoUnitario: calagem.preco_unitario,
-    unidadePreco: calagem.unidade_preco,
+    precoUnitario: lerPrecoCalagem(calagem).precoUnitario,
+    unidadePreco: lerPrecoCalagem(calagem).unidadePreco,
     talhao,
   });
 
@@ -374,8 +383,8 @@ export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, 
     const custo = calcularCustoCalagem({
       doseKgHa,
       doseTotalKg: totalKg,
-      precoUnitario: calagem.preco_unitario,
-      unidadePreco: calagem.unidade_preco,
+      precoUnitario: lerPrecoCalagem(calagem).precoUnitario,
+      unidadePreco: lerPrecoCalagem(calagem).unidadePreco,
       talhao,
     });
     const chave = produtoId ? `id:${produtoId}` : `nome:${normalizarChaveProdutoCalagem(produtoNome)}`;
@@ -463,7 +472,7 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
           totalKg,
           gPlanta,
           gMetro,
-          nutLabels: ['Principal'],
+          nutLabels: [formatarNutrientesFornecidosAdubacao2(produtoPrincipal, dosePrincipal)].filter(Boolean),
           isCalagem: false,
           periodoAplicacao: periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, produtoPrincipal.id),
         });
@@ -475,7 +484,8 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
         const totalKg = area > 0 ? Math.round(comp.doseKgHa * area) : null;
         const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
         const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
-        const nutLabels = (comp.nutrientes || []).map(n => n.label).filter(Boolean);
+        const nutStr = formatarNutrientesFornecidosAdubacao2(comp.produto, comp.doseKgHa);
+        const nutLabels = nutStr ? [nutStr] : (comp.nutrientes || []).map(n => n.label).filter(Boolean);
         linhas.push({
           produtoNome: comp.produto.nome,
           produtoId: comp.produto.id,

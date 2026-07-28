@@ -58,6 +58,14 @@
       "type": "number",
       "description": "Dose total no talh\u00e3o (kg)"
     },
+    "preco_unitario": {
+      "type": "number",
+      "description": "Pre\u00e7o unit\u00e1rio informado pelo usu\u00e1rio"
+    },
+    "unidade_preco": {
+      "type": "string",
+      "description": "Unidade do pre\u00e7o: t ou kg"
+    },
     "observacoes": {
       "type": "string",
       "description": "Observa\u00e7\u00f5es livres"
