@@ -14,6 +14,7 @@ import ImportarAgrupado020 from '@/components/adubacao2/ImportarAgrupado020';
 import ImportarAgrupado2040 from '@/components/adubacao2/ImportarAgrupado2040';
 import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
 import ModalVerAnalisesTalhao from '@/components/adubacao2/ModalVerAnalisesTalhao';
+import AbaGraficosAnalisesSolo2 from '@/components/adubacao2/AbaGraficosAnalisesSolo2';
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaGessagem2 from '@/components/adubacao2/AbaGessagem2';
@@ -49,6 +50,7 @@ const PROTOCOLOS = ['Protocolo Ramon', '5ª Aproximação MG', 'Boletim 100 IAC'
 const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 const ABAS = [
   { id: 'analises',     label: 'Análises e Importação' },
+  { id: 'graficos',     label: 'Gráficos' },
   { id: 'calagem',      label: 'Calagem' },
   { id: 'gessagem',     label: 'Gessagem' },
   { id: 'planejamento', label: 'Planejamento' },
@@ -328,6 +330,10 @@ export function Adubacao2Conteudo() {
   const produtor = produtores.find(p => p.id === produtorId) || null;
   const talhoes = useMemo(() => todosTalhoes.filter(t => t.codigo_produtor === produtor?.codigo), [todosTalhoes, produtor]);
   const analises = useMemo(() => todasAnalises.filter(a => a.safra === safra && talhoes.some(t => t.id === a.talhao_id)), [todasAnalises, safra, talhoes]);
+  const analisesProdutorTodasSafras = useMemo(() =>
+    todasAnalises.filter(a => talhoes.some(t => t.id === a.talhao_id)),
+    [todasAnalises, talhoes]
+  );
   const GRUPOS_DEFENSIVO = /herbicida|inseticida|fungicida|acaricida|nematicida|adjuvante|bactericida|glifosato|glufosinato|mancozebe|limpador|detector/i;
 
   const todos = useMemo(() => [
@@ -388,6 +394,34 @@ export function Adubacao2Conteudo() {
     gessagensDb.filter(g => g.codigo_produtor === produtor?.codigo && g.safra === safra),
     [gessagensDb, produtor, safra]
   );
+
+  const analises2040Historicas = useMemo(() => {
+    const mapa = new Map();
+    listaSeguraAdubacao2(planejamentosDb)
+      .filter(r => r.codigo_produtor === produtor?.codigo && r.analise2040 && r.talhao_id && r.safra)
+      .forEach(r => {
+        mapa.set(`${r.talhao_id}|${r.safra}`, {
+          ...r.analise2040,
+          codigo_produtor: r.codigo_produtor,
+          talhao_id: r.talhao_id,
+          talhao_nome: r.talhao_nome,
+          safra: r.safra,
+          profundidade: '20-40',
+        });
+      });
+    Object.entries(analises2040Local).forEach(([talhaoId, dados]) => {
+      if (!dados) return;
+      mapa.set(`${talhaoId}|${safra}`, {
+        ...dados,
+        codigo_produtor: produtor?.codigo,
+        talhao_id: talhaoId,
+        talhao_nome: talhoes.find(t => t.id === talhaoId)?.nome,
+        safra,
+        profundidade: '20-40',
+      });
+    });
+    return Array.from(mapa.values());
+  }, [planejamentosDb, produtor, analises2040Local, safra, talhoes]);
 
   // Registros salvos para produtor+safra. Se o banco já tiver duplicados,
   // usa o registro mais recente de cada talhão para evitar restauração inconsistente.
@@ -1113,6 +1147,18 @@ export function Adubacao2Conteudo() {
         </div>
       )}
 
+      {/* ── Aba: Gráficos ── */}
+      {abaAtiva === 'graficos' && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <AbaGraficosAnalisesSolo2
+            talhoes={talhoes}
+            analises020={analisesProdutorTodasSafras}
+            analises2040={analises2040Historicas}
+            safraAtual={safra}
+          />
+        </div>
+      )}
+
       {/* ── Aba: Gessagem ── */}
       {abaAtiva === 'gessagem' && (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -1189,6 +1235,8 @@ export function Adubacao2Conteudo() {
             talhoes={talhoes}
             produtor={produtor}
             safra={safra}
+            analises020={analisesProdutorTodasSafras}
+            analises2040={analises2040Historicas}
             registrosSalvos={registrosSalvos}
             precosAtuais={precosExterno}
           />
