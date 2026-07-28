@@ -30,6 +30,10 @@
       "type": "string",
       "description": "Nome da fonte corretiva"
     },
+    "cao_calcario_pct": {
+      "type": "number",
+      "description": "Fotografia do CaO do calcario/corretivo usado no calculo (%)"
+    },
     "ca_atual": {
       "type": "number",
       "description": "Ca atual (cmolc/dm\u00b3)"

@@ -88,6 +88,10 @@
       "type": "number",
       "description": "Ca %"
     },
+    "cao_pct": {
+      "type": "number",
+      "description": "CaO % (oxido de calcio; nao confundir com Ca elemental)"
+    },
     "mg_pct": {
       "type": "number",
       "description": "Mg %"
