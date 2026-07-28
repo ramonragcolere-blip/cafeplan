@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { LayoutList, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
-import { montarGruposResumoAdubacao2 } from '@/lib/calagemAdubacao2';
+import { formatarPrecoUnitarioCalagem, montarGruposResumoAdubacao2 } from '@/lib/calagemAdubacao2';
 
 const PRINT_STYLES = `
 @media print {
@@ -15,7 +15,12 @@ const PRINT_STYLES = `
   th { background-color: #e8f5e9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; padding: 6px 8px; border-bottom: 1px solid #ccc; }
   td { padding: 5px 8px; border-bottom: 1px solid #eee; }
   .print-row-alt { background-color: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .print-row-talhao { background-color: #c8e6c9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
+  .print-row-talhao { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; break-after: avoid; page-break-after: avoid; border-top: 2px solid #44624a !important; color: #1f2937 !important; }
+  .print-row-talhao + tr { break-before: avoid; page-break-before: avoid; }
+  .talhao-cor-0 td { background-color: #d9f2df !important; }
+  .talhao-cor-1 td { background-color: #dbeafe !important; }
+  .talhao-cor-2 td { background-color: #fef3c7 !important; }
+  .talhao-cor-3 td { background-color: #ede9fe !important; }
 }
 `;
 
@@ -34,6 +39,17 @@ function formatQtd(kg) {
   if (kg == null) return '—';
   if (kg >= 1000) return `${(kg / 1000).toFixed(2).replace('.', ',')} t`;
   return `${kg.toLocaleString('pt-BR')} kg`;
+}
+
+function formatarPrecoResumo(item) {
+  if (item?.isCalagem) return formatarPrecoUnitarioCalagem(item.preco, item.unidadePreco);
+  if (item?.preco == null) return '—';
+  return `${item.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg`;
+}
+
+function custoItemConsolidado(item) {
+  if (item?.isCalagem) return item.custoTotal != null && item.custoTotal > 0 ? item.custoTotal : null;
+  return item.preco && item.totalKg ? item.totalKg * item.preco : null;
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
@@ -84,9 +100,22 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
         const key = normKey(l.produtoNome);
         if (!map.has(key)) {
           const precoSalvo = l.produtoId ? parseFloat(precosMap[l.produtoId]) || null : null;
-          map.set(key, { produtoNome: l.produtoNome, totalKg: 0, preco: precoSalvo });
+          map.set(key, {
+            produtoNome: l.produtoNome,
+            totalKg: 0,
+            preco: l.isCalagem ? l.precoUnitario : precoSalvo,
+            unidadePreco: l.unidadePreco || 'kg',
+            custoTotal: 0,
+            isCalagem: Boolean(l.isCalagem),
+          });
         }
-        map.get(key).totalKg += l.totalKg || 0;
+        const item = map.get(key);
+        item.totalKg += l.totalKg || 0;
+        if (l.isCalagem) {
+          item.custoTotal += l.custoTotal || 0;
+          if (item.preco == null && l.precoUnitario != null) item.preco = l.precoUnitario;
+          item.unidadePreco = l.unidadePreco || item.unidadePreco;
+        }
       });
     });
     return Array.from(map.values()).sort((a, b) => {
@@ -133,7 +162,13 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
               th, td { border: 1px solid #ccc; padding: 6px 8px; }
               th { background: #f0f0f0; font-weight: 700; }
-              .row-talhao td { background: #c8e6c9; font-weight: 700; }
+              th, .row-talhao td, .row-alt td, .row-total td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .row-talhao td { font-weight: 700; border-top: 2px solid #44624a; color: #1f2937; break-after: avoid; page-break-after: avoid; }
+              .row-talhao + tr { break-before: avoid; page-break-before: avoid; }
+              .talhao-cor-0 td { background: #d9f2df !important; }
+              .talhao-cor-1 td { background: #dbeafe !important; }
+              .talhao-cor-2 td { background: #fef3c7 !important; }
+              .talhao-cor-3 td { background: #ede9fe !important; }
               .row-alt td { background: #f5f5f5; }
               .row-total td { background: #fff3cd; font-weight: 700; }
             </style>
@@ -165,20 +200,20 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/40 border-b border-border">
-                  {['Produto', 'Quantidade total', 'Preço unit. (R$/kg)', 'Custo total (R$)'].map(h => (
+                  {['Produto', 'Quantidade total', 'Preço unitário', 'Custo total (R$)'].map(h => (
                     <th key={h} className={`px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Produto' ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {consolidado.map((item, i) => {
-                  const custo = item.preco && item.totalKg ? item.totalKg * item.preco : null;
+                  const custo = custoItemConsolidado(item);
                   return (
                     <tr key={i} className={`border-b border-border/50 ${i % 2 === 0 ? 'bg-white' : 'bg-muted/20'}`}>
                       <td className="px-4 py-2.5 font-medium">{item.produtoNome}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{formatQtd(item.totalKg)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                        {item.preco ? item.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                        {formatarPrecoResumo(item)}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         {custo != null ? custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
@@ -187,7 +222,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                   );
                 })}
                 {(() => {
-                  const totalGeral = consolidado.reduce((acc, item) => acc + (item.preco && item.totalKg ? item.totalKg * item.preco : 0), 0);
+                  const totalGeral = consolidado.reduce((acc, item) => acc + (custoItemConsolidado(item) || 0), 0);
                   return totalGeral > 0 ? (
                     <tr className="bg-amber-50 border-t-2 border-amber-200">
                       <td colSpan={3} className="px-4 py-2.5 font-bold text-amber-800 uppercase tracking-wide text-xs">Total Geral</td>
@@ -215,21 +250,21 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/40 border-b border-border">
-                  {['Produto', 'Qtd. total (kg)', 'g / planta', 'g / metro', 'Período de aplicação', 'Nutrientes'].map(h => (
+                  {['Produto', 'Qtd. total (kg)', 'g / planta', 'g / metro', 'Preço unitário', 'Custo/ha', 'Custo total', 'Período de aplicação', 'Nutrientes'].map(h => (
                     <th key={h} className={`px-4 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Produto' || h === 'Período de aplicação' || h === 'Nutrientes' ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {grupos.map(({ talhao, linhas }) => {
+                {grupos.map(({ talhao, linhas }, gi) => {
                   const partes = [talhao.nome];
                   if (talhao.area_ha) partes.push(`${talhao.area_ha} ha`);
                   if (talhao.num_plantas) partes.push(`${talhao.num_plantas.toLocaleString()} plantas`);
                   if (talhao.espacamento) partes.push(talhao.espacamento);
                   return (
                     <React.Fragment key={talhao.id}>
-                      <tr className="bg-primary/10 border-b border-primary/20 print-row-talhao">
-                        <td colSpan={6} className="px-4 py-2.5 font-bold text-primary text-sm">
+                      <tr className={`row-talhao talhao-cor-${gi % 4} border-b border-primary/20 print-row-talhao`}>
+                        <td colSpan={9} className="px-4 py-2.5 font-bold text-foreground text-sm">
                           {partes.join(' · ')}
                         </td>
                       </tr>
@@ -250,6 +285,15 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
                          </td>
                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
                            {linha.gMetro != null ? `${linha.gMetro.toLocaleString('pt-BR')} g` : '—'}
+                         </td>
+                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                           {linha.isCalagem ? formatarPrecoUnitarioCalagem(linha.precoUnitario, linha.unidadePreco) : (linha.produtoId && precosMap[linha.produtoId] ? `${Number(precosMap[linha.produtoId]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg` : '—')}
+                         </td>
+                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                           {linha.isCalagem && linha.custoHa != null ? linha.custoHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                         </td>
+                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                           {linha.isCalagem && linha.custoTotal != null ? linha.custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
                          </td>
                          <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-pre-line min-w-[150px]">
                            {(linha.periodoAplicacao || 'A definir').split('\n').map((parte, idx) => (

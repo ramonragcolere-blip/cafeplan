@@ -11,15 +11,19 @@ import {
   atualizarListaCalagens,
   calcCalagemElevacao,
   calcCalagemVpct,
+  calcularCustoCalagem,
   calcularDistribuicaoCalagem,
   criarObservacoesCalagem,
+  formatarPrecoUnitarioCalagem,
   lerDadosAnaliseCalagem,
   lerMetadadosCalagem,
   normalizarNumeroCalagem,
+  normalizarUnidadePrecoCalagem,
   podeSalvarRecomendacaoCalagem,
   precisaCorretivoParaCalagemPositiva,
   selecionarRegistroCalagem,
 } from '@/lib/calagemAdubacao2';
+import { produtoValidoAdubacao2 } from '@/lib/planejamentoProdutosAdubacao2';
 
 // ── Seletor de produto corretivo com portal ───────────────────────────────────
 function SeletorCorretivo({ produto, corretivos, onChange }) {
@@ -154,6 +158,47 @@ function CardsResultado({ resultado }) {
   );
 }
 
+function EditorPrecoCalagem({ precoUnitario, unidadePreco, onPrecoChange, onUnidadeChange, custoCalagem, precoInvalido }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end rounded-xl border border-border bg-muted/20 p-3">
+      <div>
+        <Label className="text-xs mb-1 block">Preço unitário</Label>
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Ex: 500"
+          value={precoUnitario}
+          onChange={e => onPrecoChange(e.target.value)}
+          className="h-8 text-xs"
+        />
+        {precoInvalido && (
+          <p className="mt-1 text-[10px] font-medium text-destructive">Informe preço positivo ou deixe vazio.</p>
+        )}
+      </div>
+      <div>
+        <Label className="text-xs mb-1 block">Unidade</Label>
+        <select
+          value={unidadePreco}
+          onChange={e => onUnidadeChange(e.target.value)}
+          className="h-8 w-full text-xs border border-input rounded px-2 bg-background"
+        >
+          <option value="t">R$/tonelada</option>
+          <option value="kg">R$/kg</option>
+        </select>
+      </div>
+      <div className="rounded-lg border border-lime-100 bg-white px-3 py-2">
+        <p className="text-[10px] text-muted-foreground">Custo por hectare</p>
+        <p className="text-sm font-bold tabular-nums">{custoCalagem?.custoHa != null ? custoCalagem.custoHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}</p>
+      </div>
+      <div className="rounded-lg border border-lime-100 bg-white px-3 py-2">
+        <p className="text-[10px] text-muted-foreground">Custo total do talhão</p>
+        <p className="text-sm font-bold tabular-nums text-lime-800">{custoCalagem?.custoTotal != null ? custoCalagem.custoTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}</p>
+      </div>
+    </div>
+  );
+}
+
 // ── Card de calagem por talhão ────────────────────────────────────────────────
 function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const [expandido, setExpandido] = useState(false);
@@ -162,6 +207,8 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const [produtoId, setProdutoId] = useState(null);
   const [v2, setV2] = useState('');
   const [prntManual, setPrntManual] = useState('');
+  const [precoUnitario, setPrecoUnitario] = useState('');
+  const [unidadePreco, setUnidadePreco] = useState('t');
   const carregadoRef = useRef(false);
   const registroIdRef = useRef(null);
   const filaSalvamentoRef = useRef(Promise.resolve());
@@ -190,6 +237,8 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
     setProdutoId(null);
     setV2('');
     setPrntManual('');
+    setPrecoUnitario('');
+    setUnidadePreco('t');
   }, [ctxKey]);
 
   useEffect(() => {
@@ -207,6 +256,8 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
         setNivel(metaSalva);
       }
       setProdutoId(reg.produto_id || null);
+      setPrecoUnitario(reg.preco_unitario != null ? String(reg.preco_unitario) : '');
+      setUnidadePreco(normalizarUnidadePrecoCalagem(reg.unidade_preco));
       setRegistroId(reg.id);
       registroIdRef.current = reg.id;
     }
@@ -288,9 +339,19 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
     };
   }, [resultadoBase, talhao]);
   const precisaCorretivoParaSalvar = precisaCorretivoParaCalagemPositiva({ doseKgHa: resultado?.doseFinalHa, produto });
+  const precoNum = normalizarNumeroCalagem(precoUnitario);
+  const precoInvalido = precoUnitario !== '' && (precoNum == null || precoNum < 0);
+  const custoCalagem = useMemo(() => calcularCustoCalagem({
+    doseKgHa: resultado?.doseFinalHa,
+    doseTotalKg: resultado?.totalKg,
+    precoUnitario,
+    unidadePreco,
+    talhao,
+  }), [resultado?.doseFinalHa, resultado?.totalKg, precoUnitario, unidadePreco, talhao]);
 
   const handleSalvar = () => {
     if (!podeSalvarRecomendacaoCalagem({ resultado, produto })) return;
+    if (precoInvalido) return;
     salvar({
       codigo_produtor: codigoProdutor, safra,
       talhao_id: talhaoId,
@@ -305,6 +366,8 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
       deficit_mg: resultadoElevacao?.defMg ?? null,
       dose_kg_ha: resultado?.doseFinalHa ?? null,
       dose_total_kg: resultado?.totalKg ?? null,
+      preco_unitario: precoNum ?? null,
+      unidade_preco: normalizarUnidadePrecoCalagem(unidadePreco),
       observacoes: criarObservacoesCalagem({
         protocolo,
         v2_desejado: protocolo === 'vpct' ? normalizarNumeroCalagem(v2) : null,
@@ -321,6 +384,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const registroAtual = selecionarRegistroCalagem(registrosSalvos);
   const temRegistro = !!registroAtual;
   const doseSalva = registroAtual?.dose_kg_ha;
+  const precoSalvo = registroAtual?.preco_unitario;
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${expandido ? 'border-lime-300 shadow-sm' : 'border-border'}`}>
@@ -340,6 +404,11 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
           {analise && temRegistro && doseSalva != null && (
             <span className="text-[10px] bg-lime-100 text-lime-700 border border-lime-200 rounded-full px-2 py-0.5 font-medium">
               Salvo: {doseSalva} kg/ha
+            </span>
+          )}
+          {analise && temRegistro && precoSalvo != null && (
+            <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 font-medium">
+              {formatarPrecoUnitarioCalagem(precoSalvo, registroAtual?.unidade_preco)}
             </span>
           )}
           {analise && !temRegistro && (
@@ -432,6 +501,14 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                   </div>
 
                   <SeletorCorretivo produto={produto} corretivos={corretivos} onChange={setProdutoId} />
+                  <EditorPrecoCalagem
+                    precoUnitario={precoUnitario}
+                    unidadePreco={unidadePreco}
+                    onPrecoChange={setPrecoUnitario}
+                    onUnidadeChange={setUnidadePreco}
+                    custoCalagem={custoCalagem}
+                    precoInvalido={precoInvalido}
+                  />
 
                   {precisaCorretivoParaSalvar && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium">
@@ -471,7 +548,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                   )}
 
                   <div className="flex justify-end">
-                    <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null || precisaCorretivoParaSalvar} className="gap-2">
+                    <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null || precisaCorretivoParaSalvar || precoInvalido} className="gap-2">
                       {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       Salvar
                     </Button>
@@ -531,6 +608,14 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                       </div>
 
                       <SeletorCorretivo produto={produto} corretivos={corretivos} onChange={setProdutoId} />
+                      <EditorPrecoCalagem
+                        precoUnitario={precoUnitario}
+                        unidadePreco={unidadePreco}
+                        onPrecoChange={setPrecoUnitario}
+                        onUnidadeChange={setUnidadePreco}
+                        custoCalagem={custoCalagem}
+                        precoInvalido={precoInvalido}
+                      />
 
                       {precisaCorretivoParaSalvar && (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium">
@@ -572,7 +657,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
                       )}
 
                       <div className="flex justify-end">
-                        <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null || precisaCorretivoParaSalvar} className="gap-2">
+                        <Button size="sm" variant="outline" onClick={handleSalvar} disabled={salvando || resultado?.doseFinalHa == null || precisaCorretivoParaSalvar || precoInvalido} className="gap-2">
                           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                           Salvar
                         </Button>
@@ -594,7 +679,7 @@ export default function AbaCalagem2({ talhoes, analises, safra, codigoProdutor, 
   const corretivos = useMemo(() => {
     const ferts = (fertilizantes || []).map(f => ({ ...f, _tipo: 'formulado' }));
     const fontes = (fontesSimples || []).map(f => ({ ...f, _tipo: 'fonte' }));
-    return [...ferts, ...fontes].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    return [...ferts, ...fontes].filter(produtoValidoAdubacao2).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
   }, [fertilizantes, fontesSimples]);
 
   if (!codigoProdutor) {
