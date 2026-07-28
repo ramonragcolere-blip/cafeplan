@@ -1,0 +1,146 @@
+{
+  "name": "BaseRecomendacaoGessagem",
+  "type": "object",
+  "properties": {
+    "codigo_produtor": {
+      "type": "string",
+      "description": "Código do produtor"
+    },
+    "safra": {
+      "type": "string",
+      "description": "Safra agrícola"
+    },
+    "talhao_id": {
+      "type": "string",
+      "description": "ID do talhão"
+    },
+    "talhao_nome": {
+      "type": "string",
+      "description": "Nome do talhão"
+    },
+    "ca_2040": {
+      "type": "number",
+      "description": "Ca em 20-40 cm (cmolc/dm³)"
+    },
+    "al_2040": {
+      "type": "number",
+      "description": "Al em 20-40 cm (cmolc/dm³)"
+    },
+    "saturacao_aluminio": {
+      "type": "number",
+      "description": "m% em 20-40 cm"
+    },
+    "magnesio_2040": {
+      "type": "number",
+      "description": "Mg em 20-40 cm (cmolc/dm³)"
+    },
+    "potassio_2040": {
+      "type": "number",
+      "description": "K em 20-40 cm (mg/dm³)"
+    },
+    "argila_pct": {
+      "type": "number",
+      "description": "Teor de argila (%)"
+    },
+    "dose_calcario_kg_ha": {
+      "type": "number",
+      "description": "Dose de calcário considerada no método Lopes (kg/ha)"
+    },
+    "cao_calcario_pct": {
+      "type": "number",
+      "description": "CaO do calcário (%)"
+    },
+    "cao_gesso_pct": {
+      "type": "number",
+      "description": "CaO do gesso (%)"
+    },
+    "indicada": {
+      "type": "boolean",
+      "description": "Indica se a análise 20-40 cm recomenda gessagem"
+    },
+    "motivos": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Critérios que indicaram gessagem"
+    },
+    "faixa_5a_min_t_ha": {
+      "type": "number",
+      "description": "Faixa mínima da 5ª Aproximação (t/ha)"
+    },
+    "faixa_5a_max_t_ha": {
+      "type": "number",
+      "description": "Faixa máxima da 5ª Aproximação (t/ha)"
+    },
+    "dose_lopes_kg_ha": {
+      "type": "number",
+      "description": "Dose calculada pelo método Lopes (kg/ha)"
+    },
+    "calcario_ajustado_kg_ha": {
+      "type": "number",
+      "description": "Calcário ajustado no método Lopes (kg/ha)"
+    },
+    "dose_sugerida_kg_ha": {
+      "type": "number",
+      "description": "Dose técnica sugerida (kg/ha)"
+    },
+    "dose_final_kg_ha": {
+      "type": "number",
+      "description": "Dose final escolhida pelo técnico (kg/ha)"
+    },
+    "produto_id": {
+      "type": "string",
+      "description": "ID da fonte de gesso"
+    },
+    "produto_nome": {
+      "type": "string",
+      "description": "Nome da fonte de gesso"
+    },
+    "preco_unitario": {
+      "type": "number",
+      "description": "Preço unitário informado pelo usuário"
+    },
+    "unidade_preco": {
+      "type": "string",
+      "description": "Unidade do preço: t ou kg"
+    },
+    "quantidade_total_kg": {
+      "type": "number",
+      "description": "Quantidade total no talhão (kg)"
+    },
+    "custo_ha": {
+      "type": "number",
+      "description": "Custo por hectare"
+    },
+    "custo_total": {
+      "type": "number",
+      "description": "Custo total do talhão"
+    },
+    "ca_fornecido_kg_ha": {
+      "type": "number",
+      "description": "Ca fornecido pelo gesso (kg/ha)"
+    },
+    "s_fornecido_kg_ha": {
+      "type": "number",
+      "description": "S fornecido pelo gesso (kg/ha)"
+    },
+    "orientacao": {
+      "type": "string",
+      "description": "Orientação de aplicação"
+    },
+    "alerta_lixiviacao": {
+      "type": "string",
+      "description": "Alerta técnico sobre Mg e K"
+    },
+    "observacoes": {
+      "type": "string",
+      "description": "Observações livres"
+    }
+  },
+  "required": [
+    "codigo_produtor",
+    "safra",
+    "talhao_id"
+  ]
+}

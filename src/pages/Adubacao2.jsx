@@ -16,6 +16,7 @@ import ModalDetalheTalhao from '@/components/adubacao2/ModalDetalheTalhao';
 import ModalVerAnalisesTalhao from '@/components/adubacao2/ModalVerAnalisesTalhao';
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
+import AbaGessagem2 from '@/components/adubacao2/AbaGessagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
 import { consolidarPlanejamentosPorTalhao, criarMarcacoesPadrao } from '@/lib/planejamentoAdubacao2';
 import { TODOS_ELEMENTOS_GRID } from '@/components/adubacao2/PainelTalhaoHelpers';
@@ -49,6 +50,7 @@ const SAFRAS = ['2024/2025', '2025/2026', '2026/2027', '2027/2028'];
 const ABAS = [
   { id: 'analises',     label: 'Análises e Importação' },
   { id: 'calagem',      label: 'Calagem' },
+  { id: 'gessagem',     label: 'Gessagem' },
   { id: 'planejamento', label: 'Planejamento' },
   { id: 'compras',      label: 'Consolidação de Compras' },
   { id: 'resumo',       label: 'Resumo Geral' },
@@ -235,17 +237,18 @@ function ImportarManual2040({ talhao, analise2040Existente, onSalvar, onClose })
 }
 
 // ── Aba Consolidação de Compras ────────────────────────────────────────────────
-function AbaCompras2({ resultados, produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor, safra }) {
+function AbaCompras2({ resultados, produtosEfetivos = {}, calagens = [], gessagens = [], talhoes = [], codigoProdutor, safra }) {
   const linhas = useMemo(() => consolidarComprasAdubacao2({
     resultados,
     produtosEfetivos,
     calagens,
+    gessagens,
     talhoes,
     codigoProdutor,
     safra,
-  }), [resultados, produtosEfetivos, calagens, talhoes, codigoProdutor, safra]);
+  }), [resultados, produtosEfetivos, calagens, gessagens, talhoes, codigoProdutor, safra]);
 
-  if (linhas.length === 0 && (!resultados || resultados.length === 0) && (!calagens || calagens.length === 0)) {
+  if (linhas.length === 0 && (!resultados || resultados.length === 0) && (!calagens || calagens.length === 0) && (!gessagens || gessagens.length === 0)) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
         Clique em "Calcular recomendação para todos" na aba Análises para gerar a consolidação.
@@ -272,7 +275,7 @@ function AbaCompras2({ resultados, produtosEfetivos = {}, calagens = [], talhoes
         </thead>
         <tbody>
           {linhas.map((l, i) => (
-            <tr key={l.produto.id || `${l.produto.nome}-${i}`} className={`border-b border-border/50 last:border-0 ${i%2===0?'':'bg-muted/5'} ${l.isCalagem ? 'bg-amber-50/60' : ''}`}>
+            <tr key={l.produto.id || `${l.produto.nome}-${i}`} className={`border-b border-border/50 last:border-0 ${i%2===0?'':'bg-muted/5'} ${l.isCalagem ? 'bg-amber-50/60' : ''} ${l.isGessagem ? 'bg-sky-50/60' : ''}`}>
               <td className="px-4 py-3 font-medium">{l.produto.nome}</td>
               <td className="px-4 py-3 text-xs text-muted-foreground">{l.talhoes.join(', ')}</td>
               <td className="px-4 py-3 text-right tabular-nums">{l.qtdTotal > 0 ? Math.round(l.qtdTotal).toLocaleString('pt-BR') : '—'}</td>
@@ -341,6 +344,11 @@ export function Adubacao2Conteudo() {
     queryFn: () => base44.entities.BaseRecomendacaoCalagem.list(undefined, 5000),
   });
 
+  const { data: gessagensDb = [] } = useQuery({
+    queryKey: ['gessagem_recomendacoes'],
+    queryFn: () => base44.entities.BaseRecomendacaoGessagem.list(undefined, 5000),
+  });
+
   // Query itens de notas fiscais do produtor (para pré-preencher preços)
   const { data: itensNotas = [] } = useQuery({
     queryKey: ['itens_nota_fiscal_produtor', produtorId],
@@ -374,6 +382,11 @@ export function Adubacao2Conteudo() {
   const calagensProdutor = useMemo(() =>
     calagensDb.filter(c => c.codigo_produtor === produtor?.codigo && c.safra === safra),
     [calagensDb, produtor, safra]
+  );
+
+  const gessagensProdutor = useMemo(() =>
+    gessagensDb.filter(g => g.codigo_produtor === produtor?.codigo && g.safra === safra),
+    [gessagensDb, produtor, safra]
   );
 
   // Registros salvos para produtor+safra. Se o banco já tiver duplicados,
@@ -1100,6 +1113,21 @@ export function Adubacao2Conteudo() {
         </div>
       )}
 
+      {/* ── Aba: Gessagem ── */}
+      {abaAtiva === 'gessagem' && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <AbaGessagem2
+            talhoes={talhoes}
+            analises2040PorTalhao={analises2040Local}
+            calagens={calagensProdutor}
+            safra={safra}
+            codigoProdutor={produtor?.codigo}
+            fertilizantes={fertilizantes}
+            fontesSimples={fontesSimples}
+          />
+        </div>
+      )}
+
       {/* ── Aba: Planejamento ── */}
       {abaAtiva === 'planejamento' && (
         <AbaPlanejamento2
@@ -1141,6 +1169,7 @@ export function Adubacao2Conteudo() {
             dosesEditadas={dosesEditadas}
             produtosEfetivos={produtosEfetivosExterno}
             calagens={calagensProdutor}
+            gessagens={gessagensProdutor}
             talhoes={talhoes}
             codigoProdutor={produtor?.codigo}
             safra={safra}
@@ -1156,6 +1185,7 @@ export function Adubacao2Conteudo() {
             todos={todos}
             produtosEfetivos={produtosEfetivosExterno}
             calagens={calagensProdutor}
+            gessagens={gessagensProdutor}
             talhoes={talhoes}
             produtor={produtor}
             safra={safra}

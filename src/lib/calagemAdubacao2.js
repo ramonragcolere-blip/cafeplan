@@ -1,4 +1,9 @@
 import { formatarNutrientesFornecidosAdubacao2, produtoNuloAdubacao2 } from './planejamentoProdutosAdubacao2.js';
+import {
+  consolidarGessagensPorProduto,
+  listarGessagensRecentesPorTalhao,
+  montarLinhaGessagemResumo,
+} from './gessagemAdubacao2.js';
 
 export const NIVEIS_CALAGEM = {
   Mínimo: { ca: 3.0, mg: 1.0, k: 0.33, label: 'Mínimo' },
@@ -334,7 +339,7 @@ function periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, produtoId) {
   return formatarPeriodoAplicacao(parcelamentosPorTalhao?.[talhaoId]?.[produtoId]);
 }
 
-export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null }) {
+export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, calagens = [], gessagens = [], talhoes = [], codigoProdutor = null, safra = null }) {
   const mapa = {};
 
   (resultados || []).forEach(r => {
@@ -421,19 +426,25 @@ export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, 
     mapa[chave].unidadePreco = custo.unidadePreco;
   });
 
+  consolidarGessagensPorProduto({ mapa, gessagens, talhoes, codigoProdutor, safra });
+
   return Object.values(mapa);
 }
 
-export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null, registrosSalvos = [], precosAtuais = {} }) {
+export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], gessagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null, registrosSalvos = [], precosAtuais = {} }) {
   const calagensRecentes = listarCalagensRecentesPorTalhao({ calagens, talhoes, codigoProdutor, safra });
   const calagensMap = {};
   calagensRecentes.forEach(calagem => { calagensMap[calagem.talhao_id] = calagem; });
+  const gessagensRecentes = listarGessagensRecentesPorTalhao({ gessagens, talhoes, codigoProdutor, safra });
+  const gessagensMap = {};
+  gessagensRecentes.forEach(gessagem => { gessagensMap[gessagem.talhao_id] = gessagem; });
   const parcelamentosPorTalhao = criarMapaParcelamentosResumo(registrosSalvos);
   const precosPorProduto = { ...criarMapaPrecosResumo(registrosSalvos), ...(precosAtuais || {}) };
 
   const talhaoIds = new Set([
     ...(resultados || []).filter(r => r.rec).map(r => r.talhao.id),
     ...calagens.map(c => c.talhao_id),
+    ...gessagens.map(g => g.talhao_id),
   ]);
 
   return Array.from(talhaoIds).map(talhaoId => {
@@ -523,6 +534,10 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
     const calagem = calagensMap[talhaoId];
     const linhaCalagem = criarLinhaCalagemResumo(calagem, talhao);
     if (linhaCalagem) linhas.push(linhaCalagem);
+
+    const gessagem = gessagensMap[talhaoId];
+    const linhaGessagem = montarLinhaGessagemResumo({ gessagem, talhao });
+    if (linhaGessagem) linhas.push(linhaGessagem);
 
     if (linhas.length === 0) return null;
     return { talhao, linhas };

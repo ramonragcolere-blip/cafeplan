@@ -44,9 +44,15 @@ export default function Planejamento() {
     enabled: !!produtorSel && !!safraSel,
   });
 
+  const { data: recomendacoesGessagem = [] } = useQuery({
+    queryKey: ['gessagem_recomendacoes', 'planejamento', produtorSel, safraSel],
+    queryFn: () => base44.entities.BaseRecomendacaoGessagem.filter({ codigo_produtor: produtorSel, safra: safraSel }),
+    enabled: !!produtorSel && !!safraSel,
+  });
+
   const planejamentosAdubacao = useMemo(
-    () => normalizarPlanosAdubacao([], registrosAdubacao2),
-    [registrosAdubacao2],
+    () => normalizarPlanosAdubacao([], registrosAdubacao2, recomendacoesGessagem),
+    [registrosAdubacao2, recomendacoesGessagem],
   );
 
   const produtor = produtores.find(p => p.codigo === produtorSel) || null;
