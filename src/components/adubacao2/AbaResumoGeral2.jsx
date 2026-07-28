@@ -1,9 +1,17 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutList, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import { formatarPrecoUnitarioCalagem, montarGruposResumoAdubacao2 } from '@/lib/calagemAdubacao2';
 import { formatarPrecoUnitarioGessagem } from '@/lib/gessagemAdubacao2';
+import {
+  NUTRIENTES_GRAFICOS_SOLO,
+  PROFUNDIDADES_ANALISE_SOLO,
+  gerarSvgAdequacaoSolo,
+  gerarSvgEvolucaoSolo,
+  montarAdequacaoSafraAtual,
+  montarSerieEvolucaoAnalises,
+} from '@/lib/graficosAnalisesSoloAdubacao2';
 
 const PRINT_STYLES = `
 @media print {
@@ -20,6 +28,8 @@ const PRINT_STYLES = `
   .print-row-alt { background-color: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-row-talhao { background-color: #d9f2df !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
   .print-row-talhao + tr { break-before: avoid; page-break-before: avoid; }
+  .resumo2-evolucao-print { break-inside: avoid; page-break-inside: avoid; }
+  .resumo2-evolucao-print svg { max-width: 100%; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .col-produto { width: 26%; }
   .col-qtd { width: 12%; }
   .col-g { width: 10%; }
@@ -84,6 +94,14 @@ function custoTotalLinhaResumo(linha, precosMap) {
   return Number.isFinite(preco) && linha?.totalKg != null ? linha.totalKg * preco : null;
 }
 
+function coletarSafrasAnalisesResumo(analises020 = [], analises2040 = [], talhaoId = null) {
+  return [...new Set([...analises020, ...analises2040]
+    .filter(analise => !talhaoId || analise?.talhao_id === talhaoId)
+    .map(analise => analise?.safra)
+    .filter(Boolean))]
+    .sort();
+}
+
 // ── Componente ────────────────────────────────────────────────────────────────
 
 /**
@@ -96,9 +114,16 @@ function custoTotalLinhaResumo(linha, precosMap) {
  *  - talhoes: lista de talhoes
  *  - produtor: objeto produtor
  *  - safra: string
+ *  - analises020: análises 0-20 do produtor
+ *  - analises2040: análises 20-40 do produtor
  *  - registrosSalvos: array de PlanejamentoAdubacao2 (contém detalhamento.precos)
  */
-export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], gessagens = [], talhoes = [], produtor, safra, registrosSalvos = [], precosAtuais = {} }) {
+export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = {}, calagens = [], gessagens = [], talhoes = [], produtor, safra, analises020 = [], analises2040 = [], registrosSalvos = [], precosAtuais = {} }) {
+  const [graficoTalhaoId, setGraficoTalhaoId] = useState('');
+  const [graficoProfundidade, setGraficoProfundidade] = useState('0-20');
+  const [graficoNutriente, setGraficoNutriente] = useState('magnesio');
+  const [graficoSafras, setGraficoSafras] = useState([]);
+
   // Mapa de preços salvos por produto (de todos os registros)
   const precosMap = useMemo(() => {
     const m = {};
@@ -124,6 +149,49 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
     registrosSalvos,
     precosAtuais,
   }), [resultados, todos, produtosEfetivos, calagens, gessagens, talhoes, produtor, safra, registrosSalvos, precosAtuais]);
+
+  useEffect(() => {
+    const primeiroTalhao = grupos[0]?.talhao?.id || talhoes[0]?.id || '';
+    setGraficoTalhaoId(prev => talhoes.some(t => t.id === prev) ? prev : primeiroTalhao);
+  }, [grupos, talhoes]);
+
+  const safrasGraficosDisponiveis = useMemo(() => coletarSafrasAnalisesResumo(analises020, analises2040, graficoTalhaoId), [analises020, analises2040, graficoTalhaoId]);
+
+  useEffect(() => {
+    setGraficoSafras(prev => {
+      const validas = prev.filter(item => safrasGraficosDisponiveis.includes(item));
+      if (validas.length > 0) return validas;
+      if (safra && safrasGraficosDisponiveis.includes(safra)) return [safra];
+      return safrasGraficosDisponiveis.slice(-3);
+    });
+  }, [safrasGraficosDisponiveis, safra]);
+
+  const adequacaoGrafico = useMemo(() => montarAdequacaoSafraAtual({
+    analises020,
+    analises2040,
+    talhaoId: graficoTalhaoId,
+    safra,
+    profundidade: graficoProfundidade,
+  }), [analises020, analises2040, graficoTalhaoId, safra, graficoProfundidade]);
+
+  const serieGrafico = useMemo(() => montarSerieEvolucaoAnalises({
+    analises020,
+    analises2040,
+    talhaoId: graficoTalhaoId,
+    nutriente: graficoNutriente,
+    profundidade: graficoProfundidade,
+    safras: graficoSafras,
+  }), [analises020, analises2040, graficoTalhaoId, graficoNutriente, graficoProfundidade, graficoSafras]);
+
+  const svgAdequacao = useMemo(() => gerarSvgAdequacaoSolo(adequacaoGrafico, { largura: 680 }), [adequacaoGrafico]);
+  const svgEvolucao = useMemo(() => gerarSvgEvolucaoSolo(serieGrafico, { largura: 680, altura: 240 }), [serieGrafico]);
+  const talhaoGrafico = talhoes.find(t => t.id === graficoTalhaoId) || null;
+
+  const alternarSafraGrafico = (safraItem) => {
+    setGraficoSafras(prev => prev.includes(safraItem)
+      ? prev.filter(item => item !== safraItem)
+      : [...prev, safraItem].sort());
+  };
 
   // Consolidado por produto (soma todos os talhões)
   const consolidado = useMemo(() => {
@@ -192,7 +260,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
         <Button variant="outline" size="sm" className="gap-2" onClick={() => {
           const consolidadoHtml = document.getElementById('resumo2-consolidado-tabela')?.innerHTML || '';
           const detalheHtml = document.getElementById('resumo2-detalhe-print-tabela')?.innerHTML || '';
-          if (!consolidadoHtml && !detalheHtml) return;
+          const evolucaoHtml = document.getElementById('resumo2-evolucao-print')?.innerHTML || '';
+          if (!consolidadoHtml && !detalheHtml && !evolucaoHtml) return;
           const janela = window.open('', '_blank');
           janela.document.write(`
             <html><head><title>Resumo Geral — ${produtor.nome} · Safra ${safra}</title>
@@ -209,6 +278,9 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               .row-talhao + tr { break-before: avoid; page-break-before: avoid; }
               .row-alt td { background: #f5f5f5; }
               .row-total td { background: #fff3cd; font-weight: 700; }
+              .resumo2-print-btn { display: none !important; }
+              .resumo2-evolucao-print { page-break-inside: avoid; break-inside: avoid; }
+              .resumo2-evolucao-print svg { max-width: 100%; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .col-produto { width: 26%; }
               .col-qtd { width: 12%; }
               .col-g { width: 10%; }
@@ -223,6 +295,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
             ${consolidadoHtml}
             <h3>Detalhamento por Talhão</h3>
             ${detalheHtml}
+            <h3>Evolução das Análises de Solo</h3>
+            <div class="resumo2-evolucao-print">${evolucaoHtml}</div>
             </body></html>
           `);
           janela.document.close();
@@ -406,6 +480,70 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               })}
             </tbody>
           </table>
+        </div>
+
+        <div className="bg-card border border-border rounded-2xl overflow-hidden resumo2-evolucao-print" id="resumo2-evolucao-print">
+          <div className="px-5 py-3 border-b border-border bg-muted/20">
+            <h3 className="font-bold text-sm">Evolução das Análises de Solo</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              {talhaoGrafico?.nome || 'Talhão'} · Profundidade {graficoProfundidade} cm · Safras analisadas: {graficoSafras.join(', ') || '—'}
+            </p>
+          </div>
+          <div className="resumo2-print-btn grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 border-b border-border/50">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Talhão</label>
+              <select value={graficoTalhaoId} onChange={e => setGraficoTalhaoId(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
+                {talhoes.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Profundidade</label>
+              <select value={graficoProfundidade} onChange={e => setGraficoProfundidade(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
+                {PROFUNDIDADES_ANALISE_SOLO.map(item => <option key={item} value={item}>{item} cm</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Nutriente</label>
+              <select value={graficoNutriente} onChange={e => setGraficoNutriente(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
+                {NUTRIENTES_GRAFICOS_SOLO.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Safras comparadas</label>
+              <div className="min-h-8 rounded-md border border-input bg-background px-2 py-1 flex flex-wrap gap-1">
+                {safrasGraficosDisponiveis.length === 0 ? (
+                  <span className="text-[11px] text-muted-foreground py-0.5">Sem safras disponíveis</span>
+                ) : safrasGraficosDisponiveis.map(safraItem => (
+                  <button
+                    key={safraItem}
+                    type="button"
+                    onClick={() => alternarSafraGrafico(safraItem)}
+                    className={`text-[11px] rounded-full border px-2 py-0.5 ${graficoSafras.includes(safraItem) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border'}`}
+                  >
+                    {safraItem}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="text-xs text-muted-foreground">
+              Nutriente: <strong>{serieGrafico.label}</strong>{serieGrafico.unidade ? ` (${serieGrafico.unidade})` : ''} · Profundidade: <strong>{graficoProfundidade} cm</strong>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px]" dangerouslySetInnerHTML={{ __html: svgAdequacao }} />
+              </div>
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px]" dangerouslySetInnerHTML={{ __html: svgEvolucao }} />
+              </div>
+            </div>
+            {!serieGrafico.temHistoricoSuficiente && (
+              <p className="text-xs text-amber-700">
+                Não há histórico suficiente para comparar esta seleção.
+              </p>
+            )}
+          </div>
         </div>
 
       </div>
