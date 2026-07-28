@@ -1140,7 +1140,7 @@ function seletorPoliticaRecalculo(valor, onChange) {
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, calculando, podeCacularTodos, onRecalcular, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos, precosNotasMap }) {
+export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calculando, calculandoTalhaoId = null, podeCacularTodos, onRecalcular, onRecalcularTalhao, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos, precosNotasMap }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
@@ -1172,16 +1172,30 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     setProdutosOcultosPorTalhao({});
   }, [resultados, todos]);
 
+  const todosFiltered = useMemo(() => filtrarProdutosPlanejamento(todos, filtro), [todos, filtro]);
+  const resultadosVisiveis = useMemo(() => {
+    const listaResultados = listaSeguraAdubacao2(resultados).filter(r => r?.talhao);
+    if (listaResultados.length > 0) return listaResultados;
+    return listaSeguraAdubacao2(talhoes).filter(t => t?.id).map(talhao => ({
+      talhao,
+      mediaBienal: null,
+      analise: null,
+      analise2040: null,
+      rec: null,
+      produtoSugerido: null,
+      doseProdutoHa: null,
+      temRegistroSalvo: false,
+    }));
+  }, [resultados, talhoes]);
+
   const toggleExpand = (id) => setExpandidos(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
 
-  const expandirTodos = () => setExpandidos(new Set(listaSeguraAdubacao2(resultados).filter(r => r?.talhao?.id).map(r => r.talhao.id)));
+  const expandirTodos = () => setExpandidos(new Set(resultadosVisiveis.filter(r => r?.talhao?.id).map(r => r.talhao.id)));
   const recolherTodos = () => setExpandidos(new Set());
-
-  const todosFiltered = useMemo(() => filtrarProdutosPlanejamento(todos, filtro), [todos, filtro]);
 
   const handleFiltroChange = useCallback((next) => {
     setFiltro(next);
@@ -1191,17 +1205,27 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const handleRecalcularComFiltro = useCallback(() => {
     const substituirSalvos = politicaRecalculo === 'substituir';
     if (todosFiltered.length === 0) return;
-    if (substituirSalvos) {
-      setTrocasPorTalhao({});
-      setMarcadosPorTalhao({});
-      setAjustesDosePorTalhao({});
-      setProdutosOcultosPorTalhao({});
-      onProdutosEfetivosChange?.({});
-    }
     setProdutosCalculo(todosFiltered);
     setFiltroPendente(false);
     onRecalcular(todosFiltered, { substituirSalvos });
-  }, [onRecalcular, onProdutosEfetivosChange, politicaRecalculo, todosFiltered]);
+  }, [onRecalcular, politicaRecalculo, todosFiltered]);
+
+  const handleRecalcularTalhaoComFiltro = useCallback((talhaoId) => {
+    const substituirSalvos = politicaRecalculo === 'substituir';
+    if (!talhaoId || todosFiltered.length === 0) return;
+    setProdutosCalculo(todosFiltered);
+    setFiltroPendente(false);
+    onRecalcularTalhao?.(talhaoId, todosFiltered, {
+      substituirSalvos,
+      estadoPlanejamento: {
+        trocasPorTalhao,
+        marcadosPorTalhao,
+        extrasPorTalhao,
+        ajustesDosePorTalhao,
+        produtosOcultosPorTalhao,
+      },
+    });
+  }, [onRecalcularTalhao, politicaRecalculo, todosFiltered, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
 
   // Sincroniza quando o pai restaura preços/parcelamentos/trocas/marcados do banco
   // Merge por chave: só preenche chaves ainda ausentes no estado local
@@ -1355,12 +1379,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const handleAplicarParcTodos = useCallback((prodId, parc) => {
     setParcelamentos(prev => {
       const next = { ...prev };
-      listaSeguraAdubacao2(resultados).filter(r => r?.talhao?.id).forEach(r => {
+      resultadosVisiveis.filter(r => r?.talhao?.id).forEach(r => {
         next[r.talhao.id] = { ...(next[r.talhao.id] || {}), [prodId]: parc };
       });
       return next;
     });
-  }, [resultados]);
+  }, [resultadosVisiveis]);
 
   const handleTrocasChange = useCallback((talhaoId, trocas) => {
     setTrocasPorTalhao(prev => ({ ...prev, [talhaoId]: trocas }));
@@ -1404,7 +1428,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
 
   const metricas = useMemo(() => {
-    const resultadosLista = listaSeguraAdubacao2(resultados).filter(r => r?.talhao);
+    const resultadosLista = resultadosVisiveis;
     if (resultadosLista.length === 0) return null;
     const comRec = resultadosLista.filter(r => r.rec);
     const areaTotal = resultadosLista.reduce((s, r) => s + (r.talhao.area_ha || 0), 0);
@@ -1460,9 +1484,9 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       custoHaMedio: custoFazendaHaCount > 0 ? custoFazendaHaSum / custoFazendaHaCount : null,
       custoSaca,
     };
-  }, [resultados, produtosCalculo, precos, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
+  }, [resultadosVisiveis, produtosCalculo, precos, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
 
-  if (!resultados || resultados.length === 0) {
+  if (resultadosVisiveis.length === 0) {
     return (
       <div className="p-6 space-y-4">
         <div className="bg-card border border-border rounded-xl px-4 py-2">
@@ -1472,7 +1496,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
           {seletorPoliticaRecalculo(politicaRecalculo, setPoliticaRecalculo)}
           <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando || todosFiltered.length === 0} onClick={handleRecalcularComFiltro}>
             {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            Recalcular todos
+            Calcular todos os talhões
           </Button>
           <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled>
             <BarChart2 className="w-3.5 h-3.5" /> Comparar estratégias
@@ -1493,14 +1517,14 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       {/* 1. Barra de botões */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {seletorPoliticaRecalculo(politicaRecalculo, setPoliticaRecalculo)}
-        <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando || todosFiltered.length === 0} onClick={handleRecalcularComFiltro}>
-          {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Recalcular todos
+          <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled={!podeCacularTodos || calculando || todosFiltered.length === 0} onClick={handleRecalcularComFiltro}>
+            {calculando ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          Calcular todos os talhões
         </Button>
         <Button variant="secondary" size="sm" className="gap-1.5 text-xs" disabled>
           <BarChart2 className="w-3.5 h-3.5" /> Comparar estratégias
         </Button>
-        <Button size="sm" className="gap-1.5 text-xs bg-green-700 hover:bg-green-800 text-white" onClick={onSalvar}>
+        <Button size="sm" className="gap-1.5 text-xs bg-green-700 hover:bg-green-800 text-white" disabled={!resultados} onClick={onSalvar}>
           <Save className="w-3.5 h-3.5" /> Salvar planejamento
         </Button>
       </div>
@@ -1521,7 +1545,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         <FiltroProdutosGlobal todos={todos} filtro={filtro} onChange={handleFiltroChange} />
         {filtroPendente && (
           <p className="px-1 pb-2 text-[10px] text-amber-700">
-            Filtro alterado. Clique em Recalcular todos para aplicar aos produtos recomendados.
+            Filtro alterado. Clique em Calcular todos os talhões ou calcule apenas o talhão desejado.
           </p>
         )}
       </div>
@@ -1549,7 +1573,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
               </tr>
             </thead>
             <tbody>
-              {listaSeguraAdubacao2(resultados).filter(r => r?.talhao).map((r, i) => {
+              {resultadosVisiveis.map((r, i) => {
                 const expandido = expandidos.has(r.talhao.id);
                 const area = r.talhao.area_ha || 0;
 
@@ -1587,6 +1611,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                 const precoNum = precoPrinc != null && precoPrinc !== '' ? parseFloat(precoPrinc) : null;
                 const custoHa = precoNum != null && doseProdutoHaVivo != null ? precoNum * doseProdutoHaVivo : null;
                 const custoTotal = custoHa != null ? custoHa * area : null;
+                const carregandoTalhao = calculandoTalhaoId === r.talhao.id;
 
                 return (
                   <React.Fragment key={r.talhao.id}>
@@ -1626,7 +1651,24 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{custoTotal != null ? fmtR(custoTotal) : '—'}</td>
                       <td className="px-3 py-2.5 text-center"><StatusBadgePlan rec={r.rec} /></td>
                       <td className="px-2 py-2.5">
-                        <MenuAcoes onRecalcular={() => {}} onLimpar={() => {}} />
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px] whitespace-nowrap gap-1.5"
+                            disabled={!r.talhao?.id || todosFiltered.length === 0 || calculando || Boolean(calculandoTalhaoId)}
+                            onClick={() => handleRecalcularTalhaoComFiltro(r.talhao.id)}
+                          >
+                            {carregandoTalhao ? (
+                              <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                            Calcular apenas este talhão
+                          </Button>
+                          <MenuAcoes onRecalcular={() => handleRecalcularTalhaoComFiltro(r.talhao.id)} onLimpar={() => {}} />
+                        </div>
                       </td>
                     </tr>
                     {expandido && (

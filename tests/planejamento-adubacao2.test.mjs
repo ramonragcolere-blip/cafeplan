@@ -18,6 +18,11 @@ import {
 import { consolidarPlanejamentosPorTalhao } from '../src/lib/planejamentoAdubacao2.js';
 import { consolidarComprasAdubacao2, montarGruposResumoAdubacao2 } from '../src/lib/calagemAdubacao2.js';
 import { normalizarPlanosAdubacao } from '../src/lib/integracaoPlanejamentos.js';
+import {
+  calcularResultadoTalhaoAdubacao2,
+  mesclarResultadoTalhaoAdubacao2,
+  montarPayloadPlanejamentoTalhaoAdubacao2,
+} from '../src/lib/calculoIndividualAdubacao2.js';
 
 const ureia = { id: 'ureia', nome: 'Ureia', _tipo: 'fonte', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0 };
 const kcl = { id: 'kcl', nome: 'KCl', _tipo: 'fonte', n_pct: 0, p2o5_pct: 0, k2o_pct: 60, b_pct: 0 };
@@ -28,6 +33,9 @@ const acidoBorico = { id: 'boro', nome: 'Ácido bórico', _tipo: 'fonte', n_pct:
 const recNK = { N: 90, P: 0, K: 120, B: 0 };
 const recNPKB = { N: 90, P: 52, K: 120, B: 1.7 };
 const talhao = { id: 't1', nome: 'Talhao 1', area_ha: 2, num_plantas: 1000, espacamento: '3,5x0,7' };
+const talhao2 = { id: 't2', nome: 'Talhao 2', area_ha: 3, num_plantas: 1200, espacamento: '3,5x0,7' };
+const analiseBase = { talhao_id: 't1', safra: '2026/2027', fosforo: 8, potassio: 50, boro: 0.3 };
+const analiseBase2 = { talhao_id: 't2', safra: '2026/2027', fosforo: 14, potassio: 130, boro: 0.9 };
 
 test('fornecedor selecionado nao inclui fontes simples sem fornecedor por padrao', () => {
   const filtrados = filtrarProdutosPlanejamento([formuladoA, formuladoB, ureia], {
@@ -156,6 +164,157 @@ test('troca de safra usa somente registros da safra selecionada', () => {
   const safraNova = consolidarPlanejamentosPorTalhao(planejamentos.filter(p => p.codigo_produtor === 'P001' && p.safra === '2026/2027'));
 
   assert.equal(safraNova[0].id, 'nova');
+});
+
+test('calculo individual recalcula somente um talhao', () => {
+  const anteriorTalhao2 = { talhao: talhao2, rec: { N: 10 }, produtoSugerido: kcl, doseProdutoHa: 20, mediaBienal: 20 };
+  const novoTalhao1 = calcularResultadoTalhaoAdubacao2({
+    talhao,
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    analises: [analiseBase],
+    todos: [ureia, kcl],
+    listaCalculo: [ureia, kcl],
+  });
+  const mesclado = mesclarResultadoTalhaoAdubacao2([{ talhao, rec: null }, anteriorTalhao2], novoTalhao1, [talhao, talhao2]);
+
+  assert.equal(mesclado.length, 2);
+  assert.equal(mesclado.find(r => r.talhao.id === 't1').rec.N, 230);
+  assert.deepEqual(mesclado.find(r => r.talhao.id === 't2'), anteriorTalhao2);
+});
+
+test('calculo individual permite calcular talhao recem-cadastrado sem recalcular antigos', () => {
+  const resultadoNovo = calcularResultadoTalhaoAdubacao2({
+    talhao: talhao2,
+    produtividadeLocal: { t2: { safra1: '25', safra2: '25' } },
+    analises: [analiseBase2],
+    todos: [ureia, kcl],
+    listaCalculo: [ureia, kcl],
+  });
+  const antigo = { talhao, rec: { N: 90 }, produtoSugerido: ureia, doseProdutoHa: 200 };
+  const mesclado = mesclarResultadoTalhaoAdubacao2([antigo], resultadoNovo, [talhao, talhao2]);
+
+  assert.equal(mesclado.length, 2);
+  assert.deepEqual(mesclado.find(r => r.talhao.id === 't1'), antigo);
+  assert.equal(mesclado.find(r => r.talhao.id === 't2').rec.N, 200);
+});
+
+test('payload do calculo individual usa produtor safra e talhao_id para nao duplicar planejamento', () => {
+  const resultado = calcularResultadoTalhaoAdubacao2({
+    talhao,
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    analises: [analiseBase],
+    todos: [ureia],
+    listaCalculo: [ureia],
+  });
+  const payload = montarPayloadPlanejamentoTalhaoAdubacao2({
+    resultado,
+    produtor: { codigo: 'P001' },
+    safra: '2026/2027',
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    produtoEfetivo: { produto: ureia, doseKgHa: 511.1, complementos: [] },
+  });
+
+  assert.equal(payload.codigo_produtor, 'P001');
+  assert.equal(payload.safra, '2026/2027');
+  assert.equal(payload.talhao_id, 't1');
+  assert.equal(`${payload.codigo_produtor}|${payload.safra}|${payload.talhao_id}`, 'P001|2026/2027|t1');
+});
+
+test('calculo individual preserva produtos manuais ao substituir automaticos', () => {
+  const resultado = calcularResultadoTalhaoAdubacao2({
+    talhao,
+    registrosSalvos: [{ talhao_id: 't1', detalhamento: { produtoSugerido: { id: 'ureia', nome: 'Ureia' }, doseProdutoHa: 200 } }],
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    analises: [analiseBase],
+    todos: [ureia, formuladoA, map],
+    listaCalculo: [formuladoA, map],
+    substituirSalvos: true,
+  });
+  const efetivos = montarProdutosEfetivosPlanejamento({
+    resultados: [resultado],
+    registrosSalvos: [{ talhao_id: 't1', detalhamento: { produtoSugerido: { id: 'ureia', nome: 'Ureia' }, doseProdutoHa: 200 } }],
+    todosFiltrados: [formuladoA, map],
+    todosCatalogo: [ureia, formuladoA, map],
+    extrasPorTalhao: { t1: { 'manual-map': { produtoId: 'map', doseKgHa: 100, nutriente_alvo: 'p2o5_pct', nutKey: 'p2o5_pct', isManualLivre: true, usoSeparado: true } } },
+  });
+
+  assert.equal(resultado.substituirSalvo, true);
+  assert.equal(efetivos.t1.produto.id, 'npk-a');
+  assert.equal(efetivos.t1.complementos.some(c => c.produto.id === 'map' && c.isManualLivre), true);
+});
+
+test('calculo individual preserva precos parcelamentos e produtos ocultos', () => {
+  const resultado = calcularResultadoTalhaoAdubacao2({
+    talhao,
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    analises: [analiseBase],
+    todos: [ureia, acidoBorico],
+    listaCalculo: [ureia, acidoBorico],
+  });
+  const efetivos = montarProdutosEfetivosPlanejamento({
+    resultados: [resultado],
+    todosFiltrados: [ureia, acidoBorico],
+    todosCatalogo: [ureia, acidoBorico],
+    produtosOcultosPorTalhao: { t1: [{ linhaId: 'b_pct:boro', produtoId: 'boro', nutriente_alvo: 'b_pct' }] },
+  });
+  const payload = montarPayloadPlanejamentoTalhaoAdubacao2({
+    resultado,
+    produtor: { codigo: 'P001' },
+    safra: '2026/2027',
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    produtoEfetivo: efetivos.t1,
+    precos: { ureia: '6.10', boro: '12.00' },
+    parcelamentos: { t1: { ureia: { parcelas: [{ pct: 100, meses: ['OUT'] }] } }, t2: { kcl: { parcelas: [{ pct: 100, meses: ['JAN'] }] } } },
+  });
+
+  assert.equal(payload.detalhamento.precos.ureia, '6.10');
+  assert.equal(payload.detalhamento.parcelamentos.ureia.parcelas[0].meses[0], 'OUT');
+  assert.equal(payload.detalhamento.parcelamentos.kcl, undefined);
+  assert.equal(payload.detalhamento.produtos_ocultos.length, 1);
+});
+
+test('calculo individual preserva dose ajustada manualmente quando nao ha confirmacao explicita', () => {
+  const resultado = calcularResultadoTalhaoAdubacao2({
+    talhao,
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    analises: [analiseBase],
+    todos: [ureia],
+    listaCalculo: [ureia],
+  });
+  const efetivos = montarProdutosEfetivosPlanejamento({
+    resultados: [resultado],
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia],
+    ajustesDosePorTalhao: {
+      t1: {
+        'n_pct:ureia': {
+          linhaId: 'n_pct:ureia',
+          dose_calculada_kg_ha: resultado.doseProdutoHa,
+          dose_utilizada_kg_ha: 300,
+          doseKgHa: 300,
+          dose_ajustada_manualmente: true,
+          nutriente_alvo: 'n_pct',
+        },
+      },
+    },
+  });
+
+  assert.equal(efetivos.t1.doseKgHa, 300);
+  assert.equal(efetivos.t1.dose_ajustada_manualmente, true);
+});
+
+test('calculo global continua calculando todos os talhoes', () => {
+  const resultados = [talhao, talhao2].map(t => calcularResultadoTalhaoAdubacao2({
+    talhao: t,
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' }, t2: { safra1: '25', safra2: '25' } },
+    analises: [analiseBase, analiseBase2],
+    todos: [ureia, kcl],
+    listaCalculo: [ureia, kcl],
+  }));
+
+  assert.equal(resultados.length, 2);
+  assert.equal(resultados.every(r => r.rec), true);
+  assert.deepEqual(resultados.map(r => r.talhao.id), ['t1', 't2']);
 });
 
 test('ausencia de produtos compativeis nao cria recomendacao fora do filtro', () => {

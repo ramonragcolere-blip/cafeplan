@@ -17,18 +17,22 @@ import ModalVerAnalisesTalhao from '@/components/adubacao2/ModalVerAnalisesTalha
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
-import { calcRecomendacaoRamon } from '@/lib/protocoloRamon';
-import { consolidarPlanejamentosPorTalhao } from '@/lib/planejamentoAdubacao2';
+import { consolidarPlanejamentosPorTalhao, criarMarcacoesPadrao } from '@/lib/planejamentoAdubacao2';
+import { TODOS_ELEMENTOS_GRID } from '@/components/adubacao2/PainelTalhaoHelpers';
 import {
   listaSeguraAdubacao2,
   MENSAGEM_FALLBACK_ADUBACAO2,
-  montarLinhasProdutos,
+  montarProdutosEfetivosPlanejamento,
   normalizarComplementosAdubacao2,
   normalizarProdutoAdubacao2,
   objetoSeguroAdubacao2,
   produtoAtivo,
-  produtoNuloAdubacao2,
 } from '@/lib/planejamentoProdutosAdubacao2';
+import {
+  calcularResultadoTalhaoAdubacao2,
+  mesclarResultadoTalhaoAdubacao2,
+  montarPayloadPlanejamentoTalhaoAdubacao2,
+} from '@/lib/calculoIndividualAdubacao2';
 import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
 import {
   classificarExtracaoAnaliseSolo,
@@ -296,6 +300,7 @@ export function Adubacao2Conteudo() {
   const [abaAtiva, setAbaAtiva] = useState('analises');
   const [resultadosCalculo, setResultadosCalculo] = useState(null);
   const [calculando, setCalculando] = useState(false);
+  const [calculandoTalhaoId, setCalculandoTalhaoId] = useState(null);
   const [modal2040, setModal2040] = useState(null);
   const [modalVerAnalises, setModalVerAnalises] = useState(null);
   // PROBLEMA 2: doses editadas na tabela
@@ -682,58 +687,16 @@ export function Adubacao2Conteudo() {
     const substituirSalvos = opcoes.substituirSalvos === true;
     setCalculando(true);
     setTimeout(() => {
-      const resultados = talhoes.map(talhao => {
-        const registroSalvo = listaSeguraAdubacao2(registrosSalvos).find(r => r.talhao_id === talhao.id) || null;
-        const detSalvo = objetoSeguroAdubacao2(registroSalvo?.detalhamento);
-        const locProd = produtividadeLocal[talhao.id] || {};
-        const s1 = parseFloat(locProd.safra1);
-        const s2 = parseFloat(locProd.safra2);
-        let mediaBienal = null;
-        if (!isNaN(s1) && !isNaN(s2)) mediaBienal = (s1 + s2) / 2;
-        else if (!isNaN(s1)) mediaBienal = s1;
-        else if (!isNaN(s2)) mediaBienal = s2;
-
-        const analise = analises.find(a => a.talhao_id === talhao.id) || null;
-        const analise2040 = analises2040Local[talhao.id] || null;
-        const rec = mediaBienal != null && analise ? calcRecomendacaoRamon(mediaBienal, analise, analise2040) : null;
-
-        let produtoSugerido = null;
-        let doseProdutoHa = null;
-        if (rec && detSalvo.produtoSugerido && !substituirSalvos && !produtoNuloAdubacao2(detSalvo.produtoSugerido)) {
-          const salvo = normalizarProdutoAdubacao2(detSalvo.produtoSugerido);
-          const produtoBase = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
-          produtoSugerido = {
-            ...produtoBase,
-            dose_calculada_kg_ha: detSalvo.dose_calculada_kg_ha ?? detSalvo.doseProdutoHa ?? null,
-            dose_utilizada_kg_ha: detSalvo.dose_utilizada_kg_ha ?? detSalvo.doseProdutoHa ?? null,
-            dose_ajustada_manualmente: Boolean(detSalvo.dose_ajustada_manualmente),
-            nutriente_alvo: detSalvo.nutriente_alvo || 'n_pct',
-          };
-          doseProdutoHa = detSalvo.dose_utilizada_kg_ha ?? detSalvo.doseProdutoHa ?? null;
-        } else if (rec && listaCalculo.length > 0) {
-          const linhas = montarLinhasProdutos(listaCalculo, { N: rec.N, P: rec.P, K: rec.K, B: rec.B }, {}, null, null, null, rec);
-          const principal = linhas.find(l => l.ehPrincipal);
-          if (principal) {
-            produtoSugerido = principal.produto;
-            doseProdutoHa = principal.doseKgHa;
-          }
-        }
-        return {
-          talhao,
-          mediaBienal,
-          analise,
-          analise2040,
-          rec,
-          produtoSugerido,
-          doseProdutoHa,
-          dose_calculada_kg_ha: detSalvo.dose_calculada_kg_ha ?? doseProdutoHa,
-          dose_utilizada_kg_ha: detSalvo.dose_utilizada_kg_ha ?? doseProdutoHa,
-          dose_ajustada_manualmente: Boolean(detSalvo.dose_ajustada_manualmente),
-          nutriente_alvo: detSalvo.nutriente_alvo || 'n_pct',
-          temRegistroSalvo: !!registroSalvo,
-          substituirSalvo: substituirSalvos && !!registroSalvo,
-        };
-      });
+      const resultados = talhoes.map(talhao => calcularResultadoTalhaoAdubacao2({
+        talhao,
+        registrosSalvos,
+        produtividadeLocal,
+        analises,
+        analises2040Local,
+        todos,
+        listaCalculo,
+        substituirSalvos,
+      }));
 
       setResultadosCalculo(resultados);
       setCalculando(false);
@@ -768,58 +731,93 @@ export function Adubacao2Conteudo() {
     setProdutosEfetivosExterno(m);
   }, []);
 
+  const montarPayloadPlanejamento = useCallback((resultado, produtoEfetivo = null) => montarPayloadPlanejamentoTalhaoAdubacao2({
+    resultado,
+    produtor,
+    safra,
+    produtividadeLocal,
+    analises2040Local,
+    dosesEditadas,
+    produtoEfetivo,
+    precos: precosRef.current,
+    parcelamentos: parcelamentosRef.current,
+  }), [produtor, safra, produtividadeLocal, analises2040Local, dosesEditadas]);
+
   // C2: Salvar tudo (planejamento completo) — usa refs para pegar valores mais recentes
   const handleSalvarTudo = useCallback(async () => {
     if (!produtor || !resultadosCalculo) return;
-    const precos = precosRef.current;
-    const parcelamentos = parcelamentosRef.current;
     try {
     for (const r of resultadosCalculo) {
-      const talhao = r.talhao;
-      const locProd = produtividadeLocal[talhao.id] || {};
-      const loc2040 = analises2040Local[talhao.id] || null;
-      const efetivoTalhao = produtosEfetivosRef.current[talhao.id];
-      const produtoPrincipalSalvo = !produtoNuloAdubacao2(efetivoTalhao?.produto)
-        ? efetivoTalhao.produto
-        : (!produtoNuloAdubacao2(r.produtoSugerido) ? r.produtoSugerido : null);
-      const dosePrincipalSalva = produtoPrincipalSalvo
-        ? (efetivoTalhao?.dose_utilizada_kg_ha ?? efetivoTalhao?.doseKgHa ?? r.doseProdutoHa)
-        : null;
-      const payload = {
-        codigo_produtor: produtor.codigo,
-        safra,
-        talhao_id: talhao.id,
-        talhao_nome: talhao.nome,
-        safra1_sc_ha: locProd.safra1 ? parseFloat(locProd.safra1) : null,
-        safra2_sc_ha: locProd.safra2 ? parseFloat(locProd.safra2) : null,
-        analise2040: loc2040 || null,
-        doses_editadas: dosesEditadas[talhao.id] || {},
-        detalhamento: {
-          rec: r.rec,
-          mediaBienal: r.mediaBienal,
-          produtoSugerido: produtoPrincipalSalvo ? { id: produtoPrincipalSalvo.id, nome: produtoPrincipalSalvo.nome } : null,
-          doseProdutoHa: dosePrincipalSalva,
-          dose_calculada_kg_ha: produtoPrincipalSalvo ? (efetivoTalhao?.dose_calculada_kg_ha ?? r.dose_calculada_kg_ha ?? r.doseProdutoHa) : null,
-          dose_utilizada_kg_ha: dosePrincipalSalva,
-          dose_ajustada_manualmente: Boolean(produtoPrincipalSalvo && efetivoTalhao?.dose_ajustada_manualmente),
-          nutriente_alvo: produtoPrincipalSalvo ? (efetivoTalhao?.nutriente_alvo || r.nutriente_alvo || 'n_pct') : null,
-          // Complementos, trocas e marcados — persistência completa do planejamento
-          complementos: efetivoTalhao?.complementos || [],
-          trocas: efetivoTalhao?.trocas || {},
-          marcados: efetivoTalhao?.marcados || null,
-          produtos_ocultos: efetivoTalhao?.produtos_ocultos || [],
-          precos,
-          parcelamentos: parcelamentos[talhao.id] || {},
-        },
-      };
-      await upsertPlanejamento(payload);
+      if (!r?.rec && !produtosEfetivosRef.current[r?.talhao?.id]) continue;
+      const efetivoTalhao = produtosEfetivosRef.current[r.talhao.id];
+      await upsertPlanejamento(montarPayloadPlanejamento(r, efetivoTalhao));
     }
     await queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
     toast({ title: 'Planejamento salvo!', description: 'Dados salvos com sucesso.' });
     } catch {
       toast({ title: 'Erro ao salvar', description: 'Tente novamente.', variant: 'destructive' });
     }
-  }, [produtor, safra, resultadosCalculo, produtividadeLocal, analises2040Local, dosesEditadas, upsertPlanejamento, queryClient, toast]);
+  }, [produtor, resultadosCalculo, montarPayloadPlanejamento, upsertPlanejamento, queryClient, toast]);
+
+  const handleCalcularTalhao = useCallback(async (talhaoId, todosParaCalculo, opcoes = {}) => {
+    if (!produtor?.codigo || !talhaoId) return;
+    const talhao = talhoes.find(t => t.id === talhaoId);
+    if (!talhao) return;
+    const listaCalculo = todosParaCalculo || todos;
+    const substituirSalvos = opcoes.substituirSalvos === true;
+    const estado = opcoes.estadoPlanejamento || {};
+    setCalculandoTalhaoId(talhaoId);
+    try {
+      const resultado = calcularResultadoTalhaoAdubacao2({
+        talhao,
+        registrosSalvos,
+        produtividadeLocal,
+        analises,
+        analises2040Local,
+        todos,
+        listaCalculo,
+        substituirSalvos,
+      });
+      setResultadosCalculo(prev => mesclarResultadoTalhaoAdubacao2(prev, resultado, talhoes));
+      if (!resultado.rec) {
+        toast({ title: 'Recomendação não calculada', description: `Informe análise e produtividade do talhão ${talhao.nome}.`, variant: 'destructive' });
+        return;
+      }
+
+      const efetivosTalhao = montarProdutosEfetivosPlanejamento({
+        resultados: [resultado],
+        registrosSalvos,
+        todosFiltrados: listaCalculo,
+        todosCatalogo: todos,
+        trocasPorTalhao: estado.trocasPorTalhao || {},
+        marcadosPorTalhao: estado.marcadosPorTalhao || {},
+        extrasPorTalhao: estado.extrasPorTalhao || {},
+        ajustesDosePorTalhao: estado.ajustesDosePorTalhao || {},
+        produtosOcultosPorTalhao: estado.produtosOcultosPorTalhao || {},
+        criarMarcacoesPadraoFn: criarMarcacoesPadrao,
+        elementos: TODOS_ELEMENTOS_GRID,
+      });
+      const efetivoTalhao = efetivosTalhao[talhaoId] || null;
+      setProdutosEfetivosExterno(prev => {
+        const next = { ...prev };
+        if (efetivoTalhao) next[talhaoId] = efetivoTalhao;
+        else delete next[talhaoId];
+        produtosEfetivosRef.current = next;
+        return next;
+      });
+
+      await upsertPlanejamento(montarPayloadPlanejamento(resultado, efetivoTalhao));
+      await queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
+      const mensagem = `Recomendação do talhão ${talhao.nome} calculada com sucesso.`;
+      setMsgCalculo(mensagem);
+      setTimeout(() => setMsgCalculo(''), 4000);
+      toast({ title: 'Recomendação calculada', description: mensagem });
+    } catch {
+      toast({ title: 'Erro ao calcular talhão', description: 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setCalculandoTalhaoId(null);
+    }
+  }, [produtor, talhoes, todos, registrosSalvos, produtividadeLocal, analises, analises2040Local, montarPayloadPlanejamento, upsertPlanejamento, queryClient, toast]);
 
   // PROBLEMA 3: salvar detalhamento
   const handleSaveDetalhe = useCallback(async (resultadoTalhao, estadoDetalhe) => {
@@ -851,6 +849,7 @@ export function Adubacao2Conteudo() {
     precosRef.current = {};
     parcelamentosRef.current = {};
     produtosEfetivosRef.current = {};
+    setCalculandoTalhaoId(null);
     if (field === 'produtor') {
       setProdutorId(value === 'none' ? '' : value);
       setSelecionados([]);
@@ -1107,8 +1106,10 @@ export function Adubacao2Conteudo() {
           resultados={resultadosCalculo}
           todos={todos}
           calculando={calculando}
+          calculandoTalhaoId={calculandoTalhaoId}
           podeCacularTodos={podeCacularTodos}
           onRecalcular={handleCalcularTodos}
+          onRecalcularTalhao={handleCalcularTalhao}
           onSalvar={handleSalvarTudo}
           onPrecosChange={handlePrecosChange}
           onParcelamentosChange={handleParcelamentosChange}
@@ -1117,6 +1118,7 @@ export function Adubacao2Conteudo() {
           parcelamentosIniciais={parcelamentosExterno}
           registrosSalvos={registrosSalvos}
           precosNotasMap={precosNotasMap}
+          talhoes={talhoes}
         />
       )}
 
