@@ -99,6 +99,49 @@ test('identificador inexistente removido e no-undef passa na pagina Adubacao2', 
   assert.equal(resultado.status, 0, `${resultado.stdout}\n${resultado.stderr}`);
 });
 
+test('estados de produtividade e analises 20-40 sao declarados antes dos useMemo que dependem deles', () => {
+  const idxProdutividade = fonteAdubacao2.indexOf('const [produtividadeLocal, setProdutividadeLocal] = useState({});');
+  const idxAnalises2040 = fonteAdubacao2.indexOf('const [analises2040Local, setAnalises2040Local] = useState({});');
+  const idxHistoricas = fonteAdubacao2.indexOf('const analises2040Historicas = useMemo(() =>');
+
+  assert.ok(idxProdutividade > 0);
+  assert.ok(idxAnalises2040 > 0);
+  assert.ok(idxHistoricas > 0);
+  assert.ok(idxProdutividade < idxHistoricas);
+  assert.ok(idxAnalises2040 < idxHistoricas);
+  assert.equal(fonteAdubacao2.match(/setAnalises2040Local\] = useState/g)?.length, 1);
+  assert.equal(fonteAdubacao2.match(/setProdutividadeLocal\] = useState/g)?.length, 1);
+});
+
+test('ESLint no-use-before-define passa na pagina Adubacao2 e componentes novos', () => {
+  const eslintBin = resolve(repoRoot, 'node_modules/eslint/bin/eslint.js');
+  const resultado = spawnSync(process.execPath, [
+    eslintBin,
+    'src/pages/Adubacao2.jsx',
+    'src/components/adubacao2/AbaGraficosAnalisesSolo2.jsx',
+    'src/components/adubacao2/AbaGessagem2.jsx',
+    'src/components/adubacao2/AbaResumoGeral2.jsx',
+    '--quiet',
+    '--rule',
+    'no-undef:error',
+    '--rule',
+    'no-use-before-define:error',
+  ], { cwd: repoRoot, encoding: 'utf8' });
+
+  assert.equal(resultado.status, 0, `${resultado.stdout}\n${resultado.stderr}`);
+});
+
+test('abas criticas da Adubacao 2.0 permanecem montadas apos hotfix', () => {
+  assert.match(fonteAdubacao2, /label: 'Gráficos'/);
+  assert.match(fonteAdubacao2, /label: 'Gessagem'/);
+  assert.match(fonteAdubacao2, /label: 'Planejamento'/);
+  assert.match(fonteAdubacao2, /label: 'Resumo Geral'/);
+  assert.match(fonteAdubacao2, /AbaGraficosAnalisesSolo2/);
+  assert.match(fonteAdubacao2, /AbaGessagem2/);
+  assert.match(fonteAdubacao2, /AbaPlanejamento2/);
+  assert.match(fonteAdubacao2, /AbaResumoGeral2/);
+});
+
 test('Error Boundary externo expõe fallback visual sem apagar dados', () => {
   const dados = [{ talhao_id: talhao.id, detalhamento: { produtoSugerido: { id: 'ureia' } } }];
   const snapshot = JSON.stringify(dados);

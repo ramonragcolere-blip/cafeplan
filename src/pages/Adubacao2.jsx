@@ -314,6 +314,16 @@ export function Adubacao2Conteudo() {
   const [modalDetalhe, setModalDetalhe] = useState(null); // resultado do talhão
   // mensagem de sucesso do cálculo
   const [msgCalculo, setMsgCalculo] = useState('');
+  // Estado local para edição (antes de salvar)
+  const [produtividadeLocal, setProdutividadeLocal] = useState({});
+  const [analises2040Local, setAnalises2040Local] = useState({});
+  // C2: estado de preços, parcelamentos e produtos efetivos sincronizado do filho
+  const [precosExterno, setPrecosExterno] = useState({});
+  const [parcelamentosExterno, setParcelamentosExterno] = useState({});
+  const [produtosEfetivosExterno, setProdutosEfetivosExterno] = useState({});
+  const precosRef = useRef({});
+  const parcelamentosRef = useRef({});
+  const produtosEfetivosRef = useRef({});
 
   // Queries
   const { data: produtores = [] } = useQuery({ queryKey: ['produtores', 'completo'], queryFn: () => base44.entities.Produtor.list(undefined, 5000) });
@@ -476,10 +486,6 @@ export function Adubacao2Conteudo() {
       atualizar: (id, payload) => updateAnalise.mutateAsync({ id, d: payload }),
     });
   }
-
-  // Estado local para edição (antes de salvar)
-  const [produtividadeLocal, setProdutividadeLocal] = useState({});
-  const [analises2040Local, setAnalises2040Local] = useState({});
 
   useEffect(() => {
     salvarAnaliseSoloRef.current?.registrarExistentes(todasAnalises.filter(a => a.safra === safra));
@@ -752,16 +758,6 @@ export function Adubacao2Conteudo() {
       setTimeout(() => setMsgCalculo(''), 4000);
     }, 100);
   }, [talhoes, registrosSalvos, produtividadeLocal, analises, analises2040Local, todos]);
-
-  // C2: estado de preços e parcelamentos sincronizado do filho
-  // Usamos refs para evitar stale closure no handleSalvarTudo
-  const [precosExterno, setPrecosExterno] = useState({});
-  const [parcelamentosExterno, setParcelamentosExterno] = useState({});
-  const precosRef = useRef({});
-  const parcelamentosRef = useRef({});
-  // Mapa de produto efetivo por talhão (reflete filtro/troca manual da aba Planejamento)
-  const produtosEfetivosRef = useRef({});
-  const [produtosEfetivosExterno, setProdutosEfetivosExterno] = useState({});
 
   const handlePrecosChange = useCallback((p) => {
     setPrecosExterno(p);
