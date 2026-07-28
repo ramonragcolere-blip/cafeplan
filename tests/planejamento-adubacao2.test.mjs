@@ -339,6 +339,20 @@ test('aba de analises expoe politica de recalculo individual', () => {
   assert.match(fonteAdubacao2, /politicaRecalculoTalhao === 'substituir_automaticos'/);
 });
 
+test('AbaPlanejamento2 renderiza produto extra usando handler de remocao recebido por prop', () => {
+  const fontePlanejamento = readFileSync(new URL('../src/components/adubacao2/AbaPlanejamento2.jsx', import.meta.url), 'utf8');
+  const inicioTabela = fontePlanejamento.indexOf('function TabelaProdutos');
+  const fimTabela = fontePlanejamento.indexOf('// ── Painel expandido de um talhão', inicioTabela);
+  const tabelaProdutos = fontePlanejamento.slice(inicioTabela, fimTabela);
+
+  assert.match(tabelaProdutos, /onRemoverExtra/);
+  assert.doesNotMatch(tabelaProdutos, /handleRemoverExtra\(/);
+  assert.match(tabelaProdutos, /onRemoverPlanejamento=\{\(\) => onRemoverExtra\?\.\(el\.key,\s*valorSeguro,\s*false\)\}/);
+  assert.match(tabelaProdutos, /onRemoverPlanejamento=\{\(\) => onRemoverExtra\?\.\(key,\s*data,\s*true\)\}/);
+  assert.match(fontePlanejamento, /const handleRemoverExtra = useCallback\(\(key,\s*data,\s*isManualLivre = false\) =>/);
+  assert.match(fontePlanejamento, /onRemoverExtra=\{handleRemoverExtra\}/);
+});
+
 test('ausencia de produtos compativeis nao cria recomendacao fora do filtro', () => {
   const linhas = montarLinhasProdutos([], recNK);
 

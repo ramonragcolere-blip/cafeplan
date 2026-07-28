@@ -293,7 +293,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
 // ── Tabela de Produtos do Talhão ───────────────────────────────────────────────
 
-function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange, onDoseChange, onRestaurarDose, onAlvoChange, onAdicionarManual, onExcluirManual, onOcultarLinha }) {
+function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange, onDoseChange, onRestaurarDose, onAlvoChange, onAdicionarManual, onExcluirManual, onOcultarLinha, onRemoverExtra }) {
   const [expandidoProd, setExpandidoProd] = useState(null);
 
   const extrasObj = objetoSeguroAdubacao2(extrasManuais);
@@ -454,7 +454,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
                 onAplicarParcTodos={onAplicarParcTodos}
                 value={valorSeguro}
                 onChange={(data) => onExtraChange(el.key, data)}
-                onRemoverPlanejamento={() => handleRemoverExtra(el.key, valorSeguro, false)}
+                onRemoverPlanejamento={() => onRemoverExtra?.(el.key, valorSeguro, false)}
               />
             );
           })}
@@ -476,7 +476,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
               value={data}
               onChange={(next) => onExtraChange(key, { ...next, isManualLivre: true, usoSeparado: true })}
               onExcluir={() => onExcluirManual?.(key)}
-              onRemoverPlanejamento={() => handleRemoverExtra(key, data, true)}
+              onRemoverPlanejamento={() => onRemoverExtra?.(key, data, true)}
               isManualLivre
             />
           ))}
@@ -918,6 +918,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
             onAdicionarManual={handleAdicionarManual}
             onExcluirManual={handleExcluirManual}
             onOcultarLinha={handleOcultarLinha}
+            onRemoverExtra={handleRemoverExtra}
           />
           {balancoNutrientes.length > 0 && (
             <div className="mt-3 rounded-lg border border-border overflow-hidden">
