@@ -34,6 +34,18 @@
       "type": "number",
       "description": "Fotografia do CaO do calcario/corretivo usado no calculo (%)"
     },
+    "ca_calcario_pct": {
+      "type": "number",
+      "description": "Fotografia do Ca elemental do corretivo selecionado (%)"
+    },
+    "mg_calcario_pct": {
+      "type": "number",
+      "description": "Fotografia do Mg elemental do corretivo selecionado (%)"
+    },
+    "prnt_calcario": {
+      "type": "number",
+      "description": "Fotografia do PRNT do corretivo selecionado (%)"
+    },
     "ca_atual": {
       "type": "number",
       "description": "Ca atual (cmolc/dm\u00b3)"

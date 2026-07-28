@@ -2,13 +2,19 @@ name: QA
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test-build:
+  static-checks:
+    name: Static checks
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,8 +28,143 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test
-        run: npm test
+      - name: Lint
+        run: npm run lint 2>&1 | tee lint-output.txt
+
+      - name: Typecheck
+        run: npm run typecheck 2>&1 | tee typecheck-output.txt
+
+      - name: Schema contracts
+        run: npm run test:contracts 2>&1 | tee contracts-output.txt
+
+      - name: Upload static artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-checks-artifacts
+          path: |
+            lint-output.txt
+            typecheck-output.txt
+            contracts-output.txt
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Static checks"
+            echo "- Lint: ${{ job.status }}"
+            echo "- Typecheck and schema contracts executed in this job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  unit-component-contract:
+    name: Unit, component, contract and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:unit 2>&1 | tee unit-output.txt
+
+      - name: Component tests
+        run: npm run test:component 2>&1 | tee component-output.txt
+
+      - name: Contract tests
+        run: npm run test:contracts 2>&1 | tee contracts-output.txt
 
       - name: Build
-        run: npm run build
+        run: npm run build 2>&1 | tee build-output.txt
+
+      - name: Upload unit artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-component-contract-artifacts
+          path: |
+            unit-output.txt
+            component-output.txt
+            contracts-output.txt
+            build-output.txt
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Unit, component, contract and build"
+            echo "- Unit, component and contract tests executed."
+            echo "- Build executed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e-visual:
+    name: E2E and visual
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e 2>&1 | tee e2e-output.txt
+
+      - name: Visual tests
+        run: npm run test:visual 2>&1 | tee visual-output.txt
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-visual-artifacts
+          path: |
+            playwright-report
+            test-results
+            screenshots
+            e2e-output.txt
+            visual-output.txt
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## E2E and visual"
+            echo "- Chromium E2E executed with VITE_E2E_MOCK=true through Playwright webServer."
+            echo "- Visual print regression executed without automatic snapshot updates."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test-build:
+    name: test-build
+    runs-on: ubuntu-latest
+    needs:
+      - static-checks
+      - unit-component-contract
+      - e2e-visual
+    steps:
+      - name: Final QA gate
+        run: |
+          {
+            echo "## test-build"
+            echo "All QA 2.0 prerequisite jobs passed."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "test-build approved"

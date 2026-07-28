@@ -12,6 +12,7 @@ import {
   montarGruposResumoAdubacao2,
   podeSalvarRecomendacaoCalagem,
   resolverRegistroCalagemAtual,
+  selecionarRegistroCalagem,
 } from '../src/lib/calagemAdubacao2.js';
 import {
   calcularDoseProdutoPorAlvo,
@@ -95,6 +96,15 @@ test('Consolidacao de Compras soma dois talhoes usando o mesmo corretivo e escol
   assert.equal(linhas.length, 1);
   assert.equal(linhas[0].qtdTotal, 5000);
   assert.deepEqual(linhas[0].talhoes, ['Talhao 1', 'Talhao 2']);
+});
+
+test('Calagem duplicada prefere registro valido com dose positiva sobre registro vazio mais recente', () => {
+  const selecionado = selecionarRegistroCalagem([
+    { id: 'valido', talhao_id: 't1', produto_id: 'calc1', produto_nome: 'Calcario A', dose_kg_ha: 1500, updated_date: '2026-07-01T10:00:00Z' },
+    { id: 'vazio', talhao_id: 't1', produto_id: '', produto_nome: '', dose_kg_ha: 0, updated_date: '2026-07-02T10:00:00Z' },
+  ]);
+
+  assert.equal(selecionado.id, 'valido');
 });
 
 test('Consolidacao de Compras filtra calagem por produtor e safra', () => {
