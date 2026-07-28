@@ -165,7 +165,9 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
   }), [doseFinalNum, talhao.area_ha, precoUnitario, unidadePreco]);
   const fornecimento = useMemo(() => calcularFornecimentoGesso({ produto, doseKgHa: doseFinalNum }), [produto, doseFinalNum]);
   const precoInvalido = precoUnitario !== '' && (normalizarNumeroGessagem(precoUnitario) == null || normalizarNumeroGessagem(precoUnitario) < 0);
-  const podeSalvar = !!codigoProdutor && !!safra && (doseFinalNum == null || doseFinalNum >= 0) && !precoInvalido;
+  const dosePositivaSemIndicacao = doseFinalNum != null && doseFinalNum > 0 && !recomendacao.indicada && !aplicarSemIndicacao;
+  const dosePositivaSemProduto = doseFinalNum != null && doseFinalNum > 0 && !produto;
+  const podeSalvar = !!codigoProdutor && !!safra && (doseFinalNum == null || doseFinalNum >= 0) && !precoInvalido && !dosePositivaSemIndicacao && !dosePositivaSemProduto;
 
   const { mutate: salvar, isPending: salvando } = useMutation({
     mutationFn: async (payload) => {
@@ -193,7 +195,9 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
       queryClient.setQueryData(['gessagem_recomendacoes'], anteriores => atualizarListaGessagens(anteriores, atualizado));
       queryClient.setQueryData(['recomendacao_gessagem', ctxKey], anteriores => atualizarListaGessagens(anteriores, atualizado));
       queryClient.invalidateQueries({ queryKey: ['gessagem_recomendacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['gessagem_recomendacoes', 'planejamento', codigoProdutor, safra] });
       queryClient.invalidateQueries({ queryKey: ['recomendacao_gessagem', ctxKey] });
+      queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] });
     },
   });
 
@@ -309,7 +313,7 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                     <div><span className="text-muted-foreground">Corretivo</span><p className="font-semibold">{calagemImportada.produtoNome || '—'}</p></div>
                     <div><span className="text-muted-foreground">Preço calcário</span><p className="font-semibold">{formatarPrecoUnitarioGessagem(calagemImportada.precoUnitario, calagemImportada.unidadePreco)}</p></div>
                     <div><span className="text-muted-foreground">PRNT</span><p className="font-semibold">{calagemImportada.prnt != null ? `${fmt(calagemImportada.prnt, 1)}%` : '—'}</p></div>
-                    <div><span className="text-muted-foreground">CaO</span><p className="font-semibold">{calagemImportada.caoCalcarioPct != null ? `${fmt(calagemImportada.caoCalcarioPct, 1)}%` : '—'}</p></div>
+                    <div><span className="text-muted-foreground">CaO</span><p className={`font-semibold ${calagemImportada.caoCalcarioPct == null ? 'text-amber-700' : ''}`}>{calagemImportada.caoCalcarioPct != null ? `${fmt(calagemImportada.caoCalcarioPct, 1)}%` : 'CaO não cadastrado'}</p></div>
                     <div><span className="text-muted-foreground">Ca</span><p className="font-semibold">{calagemImportada.caPct != null ? `${fmt(calagemImportada.caPct, 1)}%` : '—'}</p></div>
                     <div><span className="text-muted-foreground">Mg</span><p className="font-semibold">{calagemImportada.mgPct != null ? `${fmt(calagemImportada.mgPct, 1)}%` : '—'}</p></div>
                   </div>
@@ -372,6 +376,9 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                   <p className="text-[10px] text-muted-foreground">Resultado matemático de Lopes</p>
                   <p className="font-bold">{fmtKg(recomendacao.lopes?.gessoKgHa)}</p>
                   {recomendacao.lopes?.calcarioAjustadoKgHa != null && <p className="text-[10px] text-muted-foreground">Calcário ajustado: {fmtKg(recomendacao.lopes.calcarioAjustadoKgHa)}</p>}
+                  {!recomendacao.lopes && (
+                    <p className="text-[10px] text-amber-700 mt-1">Lopes indisponível: informe a dose e o CaO do calcário.</p>
+                  )}
                 </div>
                 <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
                   <p className="text-[10px] text-sky-800">Dose técnica sugerida</p>
@@ -379,9 +386,18 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                 </div>
                 <div>
                   <Label className="text-xs mb-1 block">Dose final escolhida (kg/ha)</Label>
-                  <Input type="number" min="0" step="1" value={doseFinal} onChange={e => setDoseFinal(e.target.value)} disabled={metodoCalculo !== 'dose_manual' || (!recomendacao.indicada && !aplicarSemIndicacao)} placeholder="Dose final" className="h-8 text-xs disabled:opacity-75" />
+                  <Input type="number" min="0" step="1" value={doseFinal} onChange={e => setDoseFinal(e.target.value)} disabled={!recomendacao.indicada && !aplicarSemIndicacao} placeholder="Dose final" className="h-8 text-xs disabled:opacity-75" />
+                  {dosePositivaSemIndicacao && (
+                    <p className="mt-1 text-[10px] font-medium text-amber-700">Marque "Aplicar mesmo sem indicação técnica" para salvar dose positiva.</p>
+                  )}
                 </div>
               </div>
+
+              {!recomendacao.indicada && aplicarSemIndicacao && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 font-medium">
+                  Aplicação sem indicação técnica autorizada. Revise Mg e K e registre a justificativa nas observações.
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
                 <div className="sm:col-span-2">
@@ -395,6 +411,7 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                   <Label className="text-xs mb-1 block">Preço unitário</Label>
                   <Input type="number" min="0" step="0.01" value={precoUnitario} onChange={e => setPrecoUnitario(e.target.value)} placeholder="Ex: 500" className="h-8 text-xs" />
                   {precoInvalido && <p className="mt-1 text-[10px] font-medium text-destructive">Informe preço positivo ou deixe vazio.</p>}
+                  {dosePositivaSemProduto && <p className="mt-1 text-[10px] font-medium text-destructive">Selecione a fonte de gesso para salvar dose positiva.</p>}
                 </div>
                 <div>
                   <Label className="text-xs mb-1 block">Unidade</Label>

@@ -20,6 +20,33 @@ function timestampRegistro(registro) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function doseCalagemRegistro(registro) {
+  return normalizarNumeroGessagem(
+    registro?.dose_kg_ha ??
+    registro?.dose_calcario_kg_ha ??
+    registro?.doseFinalHa ??
+    registro?.dose_final_kg_ha
+  );
+}
+
+function produtoCalagemPreenchido(registro) {
+  const id = registro?.produto_id;
+  const nome = registro?.produto_nome;
+  const idValido = id != null && id !== '' && id !== 0 && id !== '0';
+  const nomeValido = nome != null && nome !== '' && nome !== 0 && nome !== '0';
+  return Boolean(idValido || nomeValido);
+}
+
+function qualidadeRegistroCalagem(registro) {
+  const dose = doseCalagemRegistro(registro);
+  const temDosePositiva = dose != null && dose > 0;
+  const temProduto = produtoCalagemPreenchido(registro);
+  if (temDosePositiva && temProduto) return 3;
+  if (temDosePositiva) return 2;
+  if (temProduto) return 1;
+  return 0;
+}
+
 function parseMetadadosJson(texto) {
   if (!texto || typeof texto !== 'string') return {};
   try {
@@ -45,6 +72,7 @@ export function extrairCaoPctExplicito(...fontes) {
 
 export function selecionarRegistroCalagemParaGessagem({ calagens = [], codigoProdutor = null, safra = null, talhaoId = null } = {}) {
   let selecionado = null;
+  let selecionadoQualidade = -1;
   let selecionadoTimestamp = -1;
   let selecionadoIndice = -1;
   (calagens || []).forEach((calagem, indice) => {
@@ -52,10 +80,13 @@ export function selecionarRegistroCalagemParaGessagem({ calagens = [], codigoPro
     if (calagem.codigo_produtor !== codigoProdutor) return;
     if (calagem.safra !== safra) return;
     if (calagem.talhao_id !== talhaoId) return;
+    const qualidade = qualidadeRegistroCalagem(calagem);
     const timestamp = timestampRegistro(calagem);
-    if (!selecionado || timestamp > selecionadoTimestamp ||
-        (timestamp === selecionadoTimestamp && indice > selecionadoIndice)) {
+    if (!selecionado || qualidade > selecionadoQualidade ||
+        (qualidade === selecionadoQualidade && timestamp > selecionadoTimestamp) ||
+        (qualidade === selecionadoQualidade && timestamp === selecionadoTimestamp && indice > selecionadoIndice)) {
       selecionado = calagem;
+      selecionadoQualidade = qualidade;
       selecionadoTimestamp = timestamp;
       selecionadoIndice = indice;
     }
@@ -91,7 +122,7 @@ export function normalizarCalagemParaGessagem({
   return {
     registro: calagem,
     produto,
-    doseCalcarioKgHa: normalizarNumeroGessagem(calagem.dose_kg_ha ?? calagem.dose_calcario_kg_ha),
+    doseCalcarioKgHa: doseCalagemRegistro(calagem),
     produtoId: calagem.produto_id || produto?.id || '',
     produtoNome: calagem.produto_nome || produto?.nome || '',
     precoUnitario: preco != null && preco >= 0 ? preco : null,
@@ -283,9 +314,7 @@ export function selecionarDoseMetodoGessagem({
 
   const indicada = Boolean(rec.indicada);
   const doseTecnica = indicada ? doseMatematica : null;
-  const doseFinal = indicada
-    ? doseMatematica
-    : (metodoCalculo === 'dose_manual' && aplicarSemIndicacao ? doseManual : null);
+  const doseFinal = indicada || aplicarSemIndicacao ? doseMatematica : null;
 
   return {
     metodoCalculo,
@@ -486,6 +515,15 @@ export function montarLinhaGessagemResumo({ gessagem, talhao }) {
     unidadePreco: custo.unidadePreco,
     custoHa: custo.custoHa,
     custoTotal: custo.custoTotal,
+    metodoCalculo: gessagem.metodo_calculo || '',
+    indicacaoTecnica: gessagem.indicada ? 'Sim' : 'Não',
+    aplicadaSemIndicacao: Boolean(gessagem.aplicar_sem_indicacao_tecnica),
+    observacaoTecnica: [
+      gessagem.metodo_calculo ? `Método utilizado: ${gessagem.metodo_calculo}` : null,
+      `Indicação técnica: ${gessagem.indicada ? 'Sim' : 'Não'}`,
+      gessagem.aplicar_sem_indicacao_tecnica ? 'Aplicada sem indicação técnica.' : null,
+      gessagem.observacoes || null,
+    ].filter(Boolean).join(' · '),
   };
 }
 

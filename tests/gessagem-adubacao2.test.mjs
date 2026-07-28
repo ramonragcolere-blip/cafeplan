@@ -7,10 +7,12 @@ import {
   calcularFornecimentoGesso,
   calcularGessagemLopes,
   calcularRecomendacaoGessagem,
+  montarPayloadGessagem,
   normalizarCalagemParaGessagem,
   ORIENTACAO_APLICACAO_GESSAGEM,
   ALERTA_LIXIVIACAO_GESSAGEM,
   montarLinhaGessagemResumo,
+  selecionarDoseMetodoGessagem,
 } from '../src/lib/gessagemAdubacao2.js';
 import { consolidarComprasAdubacao2, montarGruposResumoAdubacao2 } from '../src/lib/calagemAdubacao2.js';
 import { normalizarPlanosAdubacao } from '../src/lib/integracaoPlanejamentos.js';
@@ -136,6 +138,26 @@ test('Gessagem importa Calagem sem indicacao e nao mistura talhao nem safra', ()
   assert.equal(dados.prnt, 85);
 });
 
+test('Gessagem seleciona Calagem mais recente valida e ignora registro antigo vazio ou zero', () => {
+  const dados = normalizarCalagemParaGessagem({
+    calagens: [
+      { id: 'zero-novo', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't1', dose_kg_ha: 0, produto_id: '', produto_nome: '', updated_date: '2026-07-28T12:00:00Z' },
+      { id: 'positivo', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't1', dose_kg_ha: 1500, produto_id: 'calc1', produto_nome: 'Calcario', preco_unitario: 500, unidade_preco: 't', cao_calcario_pct: 35, updated_date: '2026-07-28T10:00:00Z' },
+      { id: 'outro-talhao', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't2', dose_kg_ha: 2500, produto_id: 'calc1', updated_date: '2026-07-28T11:00:00Z' },
+    ],
+    produtos: [{ id: 'calc1', nome: 'Calcario', cao_pct: 34, prnt: 88 }],
+    codigoProdutor: 'P001',
+    safra: '2026/2027',
+    talhaoId: 't1',
+  });
+
+  assert.equal(dados.registro.id, 'positivo');
+  assert.equal(dados.doseCalcarioKgHa, 1500);
+  assert.equal(dados.produtoId, 'calc1');
+  assert.equal(dados.precoUnitario, 500);
+  assert.equal(dados.caoCalcarioPct, 35);
+});
+
 test('Gessagem usa registro antigo de Calagem e fallback textual de CaO sem usar Ca elemental', () => {
   const porTexto = normalizarCalagemParaGessagem({
     calagens: [{ id: 'old', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't1', dose_kg_ha: 1100, produto_id: 'calc1' }],
@@ -154,6 +176,54 @@ test('Gessagem usa registro antigo de Calagem e fallback textual de CaO sem usar
 
   assert.equal(porTexto.caoCalcarioPct, 38);
   assert.equal(semCao.caoCalcarioPct, null);
+});
+
+test('5a Aproximacao com 35 por cento expõe minimo medio e maximo em kg/ha', () => {
+  const recomendacao = calcularRecomendacaoGessagem({ talhao, analise2040: { ...analise2040, argila_pct: 35 } });
+  const minima = selecionarDoseMetodoGessagem({ recomendacao, metodoCalculo: '5a_aproximacao', faixa5aPosicao: 'minima' });
+  const media = selecionarDoseMetodoGessagem({ recomendacao, metodoCalculo: '5a_aproximacao', faixa5aPosicao: 'media' });
+  const maxima = selecionarDoseMetodoGessagem({ recomendacao, metodoCalculo: '5a_aproximacao', faixa5aPosicao: 'maxima' });
+
+  assert.equal(minima.doseMatematicaKgHa, 400);
+  assert.equal(media.doseMatematicaKgHa, 600);
+  assert.equal(maxima.doseMatematicaKgHa, 800);
+});
+
+test('combinado conservador usa metodo disponivel e nao fica vazio quando um calculo falta', () => {
+  const somente5a = calcularRecomendacaoGessagem({
+    talhao,
+    analise2040,
+    doseCalcarioKgHa: '',
+    caoCalcarioPct: '',
+    caoGessoPct: 25,
+  });
+  const somenteLopes = calcularRecomendacaoGessagem({
+    talhao,
+    analise2040: { ...analise2040, argila_pct: '' },
+    doseCalcarioKgHa: 1500,
+    caoCalcarioPct: 40,
+    caoGessoPct: 25,
+  });
+
+  assert.equal(selecionarDoseMetodoGessagem({ recomendacao: somente5a }).doseFinalKgHa, 1200);
+  assert.equal(selecionarDoseMetodoGessagem({ recomendacao: somenteLopes }).doseFinalKgHa, 600);
+});
+
+test('checkbox de aplicacao sem indicacao bloqueia ou libera dose positiva conforme marcado', () => {
+  const recomendacao = calcularRecomendacaoGessagem({
+    talhao,
+    analise2040: { calcio: 1, aluminio: 0.1, saturacao_aluminio: 5, argila_pct: 35 },
+    doseCalcarioKgHa: 1500,
+    caoCalcarioPct: 40,
+    caoGessoPct: 25,
+  });
+  const bloqueado = selecionarDoseMetodoGessagem({ recomendacao, metodoCalculo: '5a_aproximacao', faixa5aPosicao: 'media', aplicarSemIndicacao: false });
+  const autorizado = selecionarDoseMetodoGessagem({ recomendacao, metodoCalculo: '5a_aproximacao', faixa5aPosicao: 'media', aplicarSemIndicacao: true });
+
+  assert.equal(recomendacao.indicada, false);
+  assert.equal(bloqueado.doseMatematicaKgHa, 600);
+  assert.equal(bloqueado.doseFinalKgHa, null);
+  assert.equal(autorizado.doseFinalKgHa, 600);
 });
 
 test('gessagem calcula custo quantidade total Ca e S fornecidos', () => {
@@ -194,6 +264,48 @@ test('Resumo Geral e Consolidacao de Compras incluem gessagem sem duplicar custo
   assert.equal(grupos[0].linhas[0].isGessagem, true);
   assert.equal(grupos[0].linhas[0].custoHa, 500);
   assert.equal(grupos[0].linhas[0].custoTotal, 1000);
+});
+
+test('payload salvo da gessagem restaura dados importados e aparece com metodo e indicacao no resumo', () => {
+  const recomendacao = calcularRecomendacaoGessagem({
+    talhao,
+    analise2040,
+    argilaManual: 35,
+    doseCalcarioKgHa: 1500,
+    caoCalcarioPct: 40,
+    caoGessoPct: 25,
+  });
+  const escolha = selecionarDoseMetodoGessagem({ recomendacao, metodoCalculo: 'combinado_conservador', faixa5aPosicao: 'media' });
+  const payload = montarPayloadGessagem({
+    codigoProdutor: 'P001',
+    safra: '2026/2027',
+    talhao,
+    analise2040,
+    produto: gesso,
+    doseCalcarioKgHa: 1500,
+    caoCalcarioPct: 40,
+    caoGessoPct: 25,
+    argilaManual: 35,
+    doseFinalKgHa: escolha.doseFinalKgHa,
+    metodoCalculo: 'combinado_conservador',
+    faixa5aPosicao: 'media',
+    doseMatematicaKgHa: escolha.doseMatematicaKgHa,
+    doseTecnicaKgHa: escolha.doseTecnicaKgHa,
+    calagemImportada: { produtoId: 'calc1', produtoNome: 'Calcario', precoUnitario: 500, unidadePreco: 't', prnt: 88, caPct: 26, mgPct: 12 },
+    precoUnitario: 500,
+    unidadePreco: 't',
+  });
+  const linha = montarLinhaGessagemResumo({ gessagem: payload, talhao });
+
+  assert.equal(payload.dose_calcario_kg_ha, 1500);
+  assert.equal(payload.produto_calcario_nome, 'Calcario');
+  assert.equal(payload.prnt_calcario, 88);
+  assert.equal(payload.custo_ha, 300);
+  assert.equal(payload.custo_total, 600);
+  assert.equal(linha.metodoCalculo, 'combinado_conservador');
+  assert.equal(linha.indicacaoTecnica, 'Sim');
+  assert.equal(linha.custoTotal, 600);
+  assert.match(linha.observacaoTecnica, /Método utilizado/);
 });
 
 test('montar linha de resumo da gessagem preserva distribuicao e periodo', () => {
@@ -242,6 +354,7 @@ test('schema e UI da Gessagem estao registrados no Base44 e na Adubacao 2.0', ()
   const schemaFonte = readFileSync(new URL('../base44/entities/FonteSimples.jsonc', import.meta.url), 'utf8');
   const pagina = readFileSync(new URL('../src/pages/Adubacao2.jsx', import.meta.url), 'utf8');
   const componente = readFileSync(new URL('../src/components/adubacao2/AbaGessagem2.jsx', import.meta.url), 'utf8');
+  const resumo = readFileSync(new URL('../src/components/adubacao2/AbaResumoGeral2.jsx', import.meta.url), 'utf8');
 
   assert.match(schema, /"name": "BaseRecomendacaoGessagem"/);
   assert.match(schema, /"dose_final_kg_ha"/);
@@ -254,9 +367,17 @@ test('schema e UI da Gessagem estao registrados no Base44 e na Adubacao 2.0', ()
   assert.match(pagina, /BaseRecomendacaoGessagem/);
   assert.match(componente, /BaseRecomendacaoCalagem\.filter\(\{\s*codigo_produtor: codigoProdutor,\s*safra,\s*talhao_id: talhao\.id\s*\}/s);
   assert.match(componente, /Editar manualmente/);
+  assert.match(componente, /CaO não cadastrado/);
+  assert.match(componente, /Lopes indisponível: informe a dose e o CaO do calcário/);
+  assert.match(componente, /dosePositivaSemIndicacao/);
+  assert.match(componente, /dosePositivaSemProduto/);
+  assert.match(componente, /\['gessagem_recomendacoes', 'planejamento', codigoProdutor, safra\]/);
+  assert.match(componente, /\['planejamento_adubacao2'\]/);
   assert.match(componente, /Método de cálculo/);
   assert.match(componente, /ORIENTACAO_APLICACAO_GESSAGEM/);
   assert.match(componente, /ALERTA_LIXIVIACAO_GESSAGEM/);
+  assert.match(resumo, /linha\.isGessagem && linha\.observacaoTecnica/);
+  assert.match(resumo, /precoLinhaResumo\(linha, precosMap\)/);
   assert.match(ORIENTACAO_APLICACAO_GESSAGEM, /Aplicar após o calcário e distribuir em faixa uniforme/);
   assert.match(ALERTA_LIXIVIACAO_GESSAGEM, /lixiviação de Mg e K/);
 });
