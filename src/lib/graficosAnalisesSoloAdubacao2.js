@@ -20,6 +20,8 @@ export const NUTRIENTES_GRAFICOS_SOLO = [
   { key: 'saturacao_aluminio', label: 'm%', unidade: '%' },
 ];
 
+export const NUTRIENTES_PADRAO_TODOS_TALHOES = ['ph', 'fosforo', 'potassio', 'calcio', 'magnesio', 'boro', 'zinco'];
+
 const CORES_CLASSIFICACAO = {
   baixo: '#dc2626',
   adequado: '#16a34a',
@@ -27,6 +29,26 @@ const CORES_CLASSIFICACAO = {
   'muito alto': '#2563eb',
   'sem referência': '#6b7280',
 };
+
+const CENTROS_ADEQUACAO = {
+  ph: 6,
+  fosforo: 15,
+  potassio: 130,
+  calcio: 3.75,
+  magnesio: 1.25,
+  aluminio: 0.3,
+  materia_organica: 3,
+  boro: 1,
+  zinco: 3.25,
+  cobre: 1.75,
+  manganes: 17.5,
+  enxofre: 12.5,
+  ctc: 10,
+  saturacao_bases: 60,
+  saturacao_aluminio: 30,
+};
+
+const CORES_SERIES = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#4b5563'];
 
 function numero(valor) {
   if (valor == null || valor === '') return null;
@@ -225,6 +247,73 @@ export function montarSerieEvolucaoAnalises({ analises020 = [], analises2040 = [
   };
 }
 
+export function montarSeriesTodosElementosEvolucao({ analises020 = [], analises2040 = [], talhaoId, profundidade = '0-20', safras = [] } = {}) {
+  return NUTRIENTES_GRAFICOS_SOLO.map(info => montarSerieEvolucaoAnalises({
+    analises020,
+    analises2040,
+    talhaoId,
+    nutriente: info.key,
+    profundidade,
+    safras,
+  }));
+}
+
+export function calcularIndiceAdequacaoSolo(key, valor) {
+  const v = numero(valor);
+  const centro = CENTROS_ADEQUACAO[key];
+  if (v == null || centro == null || centro <= 0) return null;
+  return Math.round((v / centro) * 1000) / 10;
+}
+
+export function montarComparacaoTalhoesSafraAtual({
+  talhoes = [],
+  analises020 = [],
+  analises2040 = [],
+  safra,
+  profundidade = '0-20',
+  nutrientes = NUTRIENTES_PADRAO_TODOS_TALHOES,
+} = {}) {
+  const nutrientesValidos = (nutrientes || [])
+    .map(key => NUTRIENTES_GRAFICOS_SOLO.find(info => info.key === key))
+    .filter(Boolean);
+  const series = nutrientesValidos.map((info, indiceSerie) => {
+    const pontos = (talhoes || []).map(talhao => {
+      const analise = encontrarAnalise({ analises020, analises2040, talhaoId: talhao.id, safra, profundidade });
+      const valorReal = arredondar(analise?.[info.key], 2);
+      const classificacao = classificarNutrienteSoloAdubacao2(info.key, valorReal);
+      const indiceAdequacao = calcularIndiceAdequacaoSolo(info.key, valorReal);
+      const detalhe = `${talhao.nome || 'Talhão'} · ${info.label}: ${formatarValor(valorReal, info.unidade)} · índice ${indiceAdequacao != null ? `${indiceAdequacao}%` : '—'} · ${classificacao.classificacao}`;
+      return {
+        talhaoId: talhao.id,
+        talhaoNome: talhao.nome || talhao.id,
+        nutriente: info.key,
+        label: info.label,
+        unidade: info.unidade,
+        valorReal,
+        valorFormatado: formatarValor(valorReal, info.unidade),
+        indiceAdequacao,
+        classificacao: classificacao.classificacao,
+        corClassificacao: classificacao.cor,
+        detalhe,
+      };
+    });
+    return {
+      nutriente: info.key,
+      label: info.label,
+      unidade: info.unidade,
+      cor: CORES_SERIES[indiceSerie % CORES_SERIES.length],
+      pontos,
+    };
+  });
+  return {
+    modo: 'todos_talhoes',
+    safra,
+    profundidade,
+    talhoes: (talhoes || []).map(talhao => ({ id: talhao.id, nome: talhao.nome || talhao.id })),
+    series,
+  };
+}
+
 export function gerarSvgAdequacaoSolo(dados = [], opcoes = {}) {
   const largura = opcoes.largura || 720;
   const alturaLinha = 25;
@@ -287,6 +376,62 @@ export function gerarSvgEvolucaoSolo(serie = {}, opcoes = {}) {
   </svg>`;
 }
 
+export function gerarSvgComparacaoTalhoesSolo(comparacao = {}, opcoes = {}) {
+  const talhoes = Array.isArray(comparacao.talhoes) ? comparacao.talhoes : [];
+  const series = Array.isArray(comparacao.series) ? comparacao.series : [];
+  const largura = opcoes.largura || 720;
+  const altura = opcoes.altura || 320;
+  const plot = { x: 58, y: 48, w: largura - 96, h: altura - 118 };
+  const maxIndice = Math.max(160, ...series.flatMap(serie => serie.pontos.map(ponto => numero(ponto.indiceAdequacao) || 0)));
+  const escalaMax = Math.min(220, Math.ceil(maxIndice / 20) * 20);
+  const xTalhao = indice => talhoes.length <= 1 ? plot.x + plot.w / 2 : plot.x + (plot.w / (talhoes.length - 1)) * indice;
+  const yIndice = indice => {
+    const valor = numero(indice);
+    if (valor == null) return null;
+    return plot.y + plot.h - (clamp(valor, 0, escalaMax) / escalaMax) * plot.h;
+  };
+  const linhas = series.map(serie => {
+    const coords = serie.pontos.map((ponto, indice) => ({
+      ...ponto,
+      x: Math.round(xTalhao(indice)),
+      y: yIndice(ponto.indiceAdequacao),
+    }));
+    const polyline = coords.filter(ponto => ponto.y != null).map(ponto => `${ponto.x},${Math.round(ponto.y)}`).join(' ');
+    const pontosSvg = coords.map(ponto => ponto.y == null ? '' : `
+      <circle cx="${ponto.x}" cy="${Math.round(ponto.y)}" r="4" fill="${ponto.corClassificacao}" stroke="#ffffff" stroke-width="1.5">
+        <title>${escaparSvg(ponto.detalhe)}</title>
+      </circle>
+      <text x="${ponto.x}" y="${Math.round(ponto.y) - 8}" font-size="9" text-anchor="middle" fill="#111827">${escaparSvg(ponto.valorFormatado)}</text>`).join('');
+    return `
+      ${polyline ? `<polyline points="${polyline}" fill="none" stroke="${serie.cor}" stroke-width="2"/>` : ''}
+      ${pontosSvg}`;
+  }).join('');
+  const labelsTalhoes = talhoes.map((talhao, indice) => {
+    const x = Math.round(xTalhao(indice));
+    return `<text x="${x}" y="${plot.y + plot.h + 20}" font-size="10" text-anchor="middle" fill="#374151">${escaparSvg(talhao.nome)}</text>`;
+  }).join('');
+  const legendasSeries = series.map((serie, indice) => {
+    const x = 18 + (indice % 4) * 150;
+    const y = altura - 42 + Math.floor(indice / 4) * 14;
+    return `<line x1="${x}" y1="${y - 3}" x2="${x + 16}" y2="${y - 3}" stroke="${serie.cor}" stroke-width="2"/><text x="${x + 22}" y="${y}" font-size="10" fill="#374151">${escaparSvg(serie.label)}</text>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${largura}" height="${altura}" viewBox="0 0 ${largura} ${altura}" role="img">
+    <rect width="100%" height="100%" fill="#ffffff"/>
+    <text x="16" y="22" font-size="14" font-weight="700" fill="#111827">Comparação Nutricional entre Talhões</text>
+    <text x="16" y="38" font-size="10" fill="#6b7280">Safra ${escaparSvg(comparacao.safra || '—')} · Profundidade ${escaparSvg(comparacao.profundidade || '0-20')} cm · Eixo Y: Índice de adequação (%)</text>
+    <line x1="${plot.x}" y1="${plot.y + plot.h}" x2="${plot.x + plot.w}" y2="${plot.y + plot.h}" stroke="#d1d5db"/>
+    <line x1="${plot.x}" y1="${plot.y}" x2="${plot.x}" y2="${plot.y + plot.h}" stroke="#d1d5db"/>
+    <line x1="${plot.x}" y1="${Math.round(yIndice(100))}" x2="${plot.x + plot.w}" y2="${Math.round(yIndice(100))}" stroke="#16a34a" stroke-width="1" stroke-dasharray="4 4"/>
+    <text x="12" y="${Math.round(yIndice(100)) + 4}" font-size="10" fill="#16a34a">100</text>
+    <text x="10" y="${plot.y + 8}" font-size="10" fill="#6b7280">${escaparSvg(escalaMax)}%</text>
+    <text x="8" y="${plot.y + plot.h}" font-size="10" fill="#6b7280">0%</text>
+    ${linhas}
+    ${labelsTalhoes}
+    <text x="16" y="${altura - 58}" font-size="11" font-weight="700" fill="#111827">Legenda</text>
+    ${legendasSeries}
+  </svg>`;
+}
+
 export function montarResumoEvolucaoAnalisesSolo({
   talhoes = [],
   analises020 = [],
@@ -312,5 +457,32 @@ export function montarResumoEvolucaoAnalisesSolo({
     svgAdequacao: gerarSvgAdequacaoSolo(adequacao),
     svgEvolucao: gerarSvgEvolucaoSolo(serie),
     mensagemHistorico: serie.temHistoricoSuficiente ? '' : 'Não há histórico suficiente para comparar esta seleção.',
+  };
+}
+
+export function montarResumoComparacaoTalhoesSolo({
+  talhoes = [],
+  analises020 = [],
+  analises2040 = [],
+  safraAtual,
+  profundidade = '0-20',
+  nutrientes = NUTRIENTES_PADRAO_TODOS_TALHOES,
+} = {}) {
+  const comparacao = montarComparacaoTalhoesSafraAtual({
+    talhoes,
+    analises020,
+    analises2040,
+    safra: safraAtual,
+    profundidade,
+    nutrientes,
+  });
+  return {
+    titulo: 'Comparação Nutricional entre Talhões',
+    safra: safraAtual,
+    profundidade,
+    nutrientes,
+    comparacao,
+    svgComparacao: gerarSvgComparacaoTalhoesSolo(comparacao, { largura: 680, altura: 300 }),
+    mensagem: talhoes.length === 0 ? 'Nenhum talhão disponível para comparar.' : '',
   };
 }

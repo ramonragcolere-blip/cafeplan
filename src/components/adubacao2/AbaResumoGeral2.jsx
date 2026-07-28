@@ -6,10 +6,13 @@ import { formatarPrecoUnitarioCalagem, montarGruposResumoAdubacao2 } from '@/lib
 import { formatarPrecoUnitarioGessagem } from '@/lib/gessagemAdubacao2';
 import {
   NUTRIENTES_GRAFICOS_SOLO,
+  NUTRIENTES_PADRAO_TODOS_TALHOES,
   PROFUNDIDADES_ANALISE_SOLO,
   gerarSvgAdequacaoSolo,
+  gerarSvgComparacaoTalhoesSolo,
   gerarSvgEvolucaoSolo,
   montarAdequacaoSafraAtual,
+  montarComparacaoTalhoesSafraAtual,
   montarSerieEvolucaoAnalises,
 } from '@/lib/graficosAnalisesSoloAdubacao2';
 
@@ -28,8 +31,8 @@ const PRINT_STYLES = `
   .print-row-alt { background-color: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-row-talhao { background-color: #d9f2df !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-weight: 700; }
   .print-row-talhao + tr { break-before: avoid; page-break-before: avoid; }
-  .resumo2-evolucao-print { break-inside: avoid; page-break-inside: avoid; }
-  .resumo2-evolucao-print svg { max-width: 100%; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .resumo2-comparacao-print, .resumo2-evolucao-print { break-inside: avoid; page-break-inside: avoid; }
+  .resumo2-comparacao-print svg, .resumo2-evolucao-print svg { max-width: 100%; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .col-produto { width: 26%; }
   .col-qtd { width: 12%; }
   .col-g { width: 10%; }
@@ -123,6 +126,7 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
   const [graficoProfundidade, setGraficoProfundidade] = useState('0-20');
   const [graficoNutriente, setGraficoNutriente] = useState('magnesio');
   const [graficoSafras, setGraficoSafras] = useState([]);
+  const [modoGraficoResumo, setModoGraficoResumo] = useState('todos_talhoes');
 
   // Mapa de preços salvos por produto (de todos os registros)
   const precosMap = useMemo(() => {
@@ -185,6 +189,15 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
 
   const svgAdequacao = useMemo(() => gerarSvgAdequacaoSolo(adequacaoGrafico, { largura: 680 }), [adequacaoGrafico]);
   const svgEvolucao = useMemo(() => gerarSvgEvolucaoSolo(serieGrafico, { largura: 680, altura: 240 }), [serieGrafico]);
+  const comparacaoTalhoesGrafico = useMemo(() => montarComparacaoTalhoesSafraAtual({
+    talhoes,
+    analises020,
+    analises2040,
+    safra,
+    profundidade: graficoProfundidade,
+    nutrientes: NUTRIENTES_PADRAO_TODOS_TALHOES,
+  }), [talhoes, analises020, analises2040, safra, graficoProfundidade]);
+  const svgComparacaoTalhoes = useMemo(() => gerarSvgComparacaoTalhoesSolo(comparacaoTalhoesGrafico, { largura: 680, altura: 300 }), [comparacaoTalhoesGrafico]);
   const talhaoGrafico = talhoes.find(t => t.id === graficoTalhaoId) || null;
 
   const alternarSafraGrafico = (safraItem) => {
@@ -260,8 +273,9 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
         <Button variant="outline" size="sm" className="gap-2" onClick={() => {
           const consolidadoHtml = document.getElementById('resumo2-consolidado-tabela')?.innerHTML || '';
           const detalheHtml = document.getElementById('resumo2-detalhe-print-tabela')?.innerHTML || '';
-          const evolucaoHtml = document.getElementById('resumo2-evolucao-print')?.innerHTML || '';
-          if (!consolidadoHtml && !detalheHtml && !evolucaoHtml) return;
+          const comparacaoHtml = document.getElementById('resumo2-comparacao-print-svg')?.innerHTML ||
+            document.getElementById('resumo2-comparacao-print')?.innerHTML || '';
+          if (!consolidadoHtml && !detalheHtml && !comparacaoHtml) return;
           const janela = window.open('', '_blank');
           janela.document.write(`
             <html><head><title>Resumo Geral — ${produtor.nome} · Safra ${safra}</title>
@@ -279,8 +293,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               .row-alt td { background: #f5f5f5; }
               .row-total td { background: #fff3cd; font-weight: 700; }
               .resumo2-print-btn { display: none !important; }
-              .resumo2-evolucao-print { page-break-inside: avoid; break-inside: avoid; }
-              .resumo2-evolucao-print svg { max-width: 100%; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .resumo2-comparacao-print { page-break-inside: avoid; break-inside: avoid; }
+              .resumo2-comparacao-print svg { max-width: 100%; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .col-produto { width: 26%; }
               .col-qtd { width: 12%; }
               .col-g { width: 10%; }
@@ -295,8 +309,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
             ${consolidadoHtml}
             <h3>Detalhamento por Talhão</h3>
             ${detalheHtml}
-            <h3>Evolução das Análises de Solo</h3>
-            <div class="resumo2-evolucao-print">${evolucaoHtml}</div>
+            <h3>Comparação Nutricional entre Talhões</h3>
+            <div class="resumo2-comparacao-print">${comparacaoHtml}</div>
             </body></html>
           `);
           janela.document.close();
@@ -482,24 +496,42 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
           </table>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl overflow-hidden resumo2-evolucao-print" id="resumo2-evolucao-print">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden resumo2-comparacao-print" id="resumo2-comparacao-print">
           <div className="px-5 py-3 border-b border-border bg-muted/20">
-            <h3 className="font-bold text-sm">Evolução das Análises de Solo</h3>
+            <h3 className="font-bold text-sm">Comparação Nutricional entre Talhões</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              {talhaoGrafico?.nome || 'Talhão'} · Profundidade {graficoProfundidade} cm · Safras analisadas: {graficoSafras.join(', ') || '—'}
+              Safra {safra} · Profundidade {graficoProfundidade} cm · Índice de adequação (%)
             </p>
           </div>
-          <div className="resumo2-print-btn grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 border-b border-border/50">
+          <div className="resumo2-print-btn flex flex-wrap items-center gap-2 p-4 border-b border-border/50">
+            <button
+              type="button"
+              onClick={() => setModoGraficoResumo('todos_talhoes')}
+              className={`text-xs rounded-full border px-3 py-1 ${modoGraficoResumo === 'todos_talhoes' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border'}`}
+            >
+              Todos os talhões
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoGraficoResumo('evolucao_talhao')}
+              className={`text-xs rounded-full border px-3 py-1 ${modoGraficoResumo === 'evolucao_talhao' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border'}`}
+            >
+              Ver evolução de um talhão
+            </button>
+            <div className="ml-auto w-full sm:w-auto">
+              <label className="text-xs text-muted-foreground block mb-1">Profundidade</label>
+              <select value={graficoProfundidade} onChange={e => setGraficoProfundidade(e.target.value)} className="h-8 w-full sm:w-40 text-xs border border-input rounded px-2 bg-background">
+                {PROFUNDIDADES_ANALISE_SOLO.map(item => <option key={item} value={item}>{item} cm</option>)}
+              </select>
+            </div>
+          </div>
+
+          {modoGraficoResumo === 'evolucao_talhao' && (
+          <div className="resumo2-print-btn grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 border-b border-border/50">
             <div>
               <label className="text-xs text-muted-foreground block mb-1">Talhão</label>
               <select value={graficoTalhaoId} onChange={e => setGraficoTalhaoId(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
                 {talhoes.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Profundidade</label>
-              <select value={graficoProfundidade} onChange={e => setGraficoProfundidade(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
-                {PROFUNDIDADES_ANALISE_SOLO.map(item => <option key={item} value={item}>{item} cm</option>)}
               </select>
             </div>
             <div>
@@ -526,7 +558,26 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               </div>
             </div>
           </div>
+          )}
           <div className="p-4 space-y-4">
+            {modoGraficoResumo === 'todos_talhoes' && (
+              <>
+                <div className="text-xs text-muted-foreground">
+                  Safra: <strong>{safra}</strong> · Profundidade: <strong>{graficoProfundidade} cm</strong> · Legenda por nutriente no SVG
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px]" dangerouslySetInnerHTML={{ __html: svgComparacaoTalhoes }} />
+                </div>
+              </>
+            )}
+            <div className="hidden resumo2-print-only" id="resumo2-comparacao-print-svg">
+              <div className="text-xs text-muted-foreground">
+                Safra: <strong>{safra}</strong> · Profundidade: <strong>{graficoProfundidade} cm</strong>
+              </div>
+              <div dangerouslySetInnerHTML={{ __html: svgComparacaoTalhoes }} />
+            </div>
+            {modoGraficoResumo === 'evolucao_talhao' && (
+            <>
             <div className="text-xs text-muted-foreground">
               Nutriente: <strong>{serieGrafico.label}</strong>{serieGrafico.unidade ? ` (${serieGrafico.unidade})` : ''} · Profundidade: <strong>{graficoProfundidade} cm</strong>
             </div>
@@ -542,6 +593,8 @@ export default function AbaResumoGeral2({ resultados, todos, produtosEfetivos = 
               <p className="text-xs text-amber-700">
                 Não há histórico suficiente para comparar esta seleção.
               </p>
+            )}
+            </>
             )}
           </div>
         </div>
