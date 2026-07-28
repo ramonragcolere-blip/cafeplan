@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 import {
   calcularCustoGessagem,
   calcularFornecimentoGesso,
   calcularGessagemLopes,
   calcularRecomendacaoGessagem,
+  normalizarCalagemParaGessagem,
   ORIENTACAO_APLICACAO_GESSAGEM,
   ALERTA_LIXIVIACAO_GESSAGEM,
   montarLinhaGessagemResumo,
@@ -37,12 +39,12 @@ test('gessagem indica somente por analise 20-40 e mostra mensagem quando ausente
   assert.deepEqual(recomendado.motivos, ['m% maior que 30%', 'Ca menor que 0,4 cmolc/dm³', 'Al maior que 0,5 cmolc/dm³']);
 });
 
-test('5a Aproximacao calcula faixa por teor de argila somente quando houver indicacao', () => {
+test('5a Aproximacao calcula faixa por teor de argila para resultado matematico', () => {
   assert.deepEqual(calcularRecomendacaoGessagem({ talhao, analise2040: { ...analise2040, argila_pct: 10 } }).faixa5a, { minT: 0, maxT: 0.4, minKgHa: 0, maxKgHa: 400 });
   assert.deepEqual(calcularRecomendacaoGessagem({ talhao, analise2040: { ...analise2040, argila_pct: 20 } }).faixa5a, { minT: 0.4, maxT: 0.8, minKgHa: 400, maxKgHa: 800 });
   assert.deepEqual(calcularRecomendacaoGessagem({ talhao, analise2040: { ...analise2040, argila_pct: 50 } }).faixa5a, { minT: 0.8, maxT: 1.2, minKgHa: 800, maxKgHa: 1200 });
   assert.deepEqual(calcularRecomendacaoGessagem({ talhao, analise2040: { ...analise2040, argila_pct: 70 } }).faixa5a, { minT: 1.2, maxT: 1.6, minKgHa: 1200, maxKgHa: 1600 });
-  assert.equal(calcularRecomendacaoGessagem({ talhao, analise2040: { calcio: 1, aluminio: 0.1, saturacao_aluminio: 5, argila_pct: 40 } }).faixa5a, null);
+  assert.deepEqual(calcularRecomendacaoGessagem({ talhao, analise2040: { calcio: 1, aluminio: 0.1, saturacao_aluminio: 5, argila_pct: 40 } }).faixa5a, { minT: 0.8, maxT: 1.2, minKgHa: 800, maxKgHa: 1200 });
 });
 
 test('metodo Lopes calcula gesso e calcario ajustado', () => {
@@ -66,6 +68,92 @@ test('dose sugerida usa menor valor entre Lopes e teto da 5a Aproximacao', () =>
   assert.equal(recomendacao.lopes.gessoKgHa, 1200);
   assert.equal(recomendacao.faixa5a.maxKgHa, 1200);
   assert.equal(recomendacao.doseSugeridaKgHa, 1200);
+});
+
+test('Gessagem mostra resultados matematicos mesmo quando a analise nao indica', () => {
+  const recomendacao = calcularRecomendacaoGessagem({
+    talhao,
+    analise2040: { calcio: 1, aluminio: 0.1, saturacao_aluminio: 5, argila_pct: 40 },
+    doseCalcarioKgHa: 1500,
+    caoCalcarioPct: 40,
+    caoGessoPct: 25,
+  });
+
+  assert.equal(recomendacao.indicada, false);
+  assert.equal(recomendacao.lopes.gessoKgHa, 600);
+  assert.equal(recomendacao.faixa5a.maxKgHa, 1200);
+  assert.equal(recomendacao.doseSugeridaKgHa, null);
+});
+
+test('Gessagem importa dados novos da Calagem por produtor safra e talhao', () => {
+  const dados = normalizarCalagemParaGessagem({
+    calagens: [{
+      id: 'c1',
+      codigo_produtor: 'P001',
+      safra: '2026/2027',
+      talhao_id: 't1',
+      produto_id: 'calc1',
+      produto_nome: 'Calcario dolomitico',
+      dose_kg_ha: 1500,
+      preco_unitario: 500,
+      unidade_preco: 't',
+      prnt_calcario: 88,
+      cao_calcario_pct: 35,
+      updated_date: '2026-07-28T10:00:00Z',
+    }],
+    produtos: [{ id: 'calc1', nome: 'Calcario dolomitico', ca_pct: 26, mg_pct: 12, prnt: 90, cao_pct: 34 }],
+    codigoProdutor: 'P001',
+    safra: '2026/2027',
+    talhaoId: 't1',
+  });
+
+  assert.equal(dados.doseCalcarioKgHa, 1500);
+  assert.equal(dados.produtoId, 'calc1');
+  assert.equal(dados.produtoNome, 'Calcario dolomitico');
+  assert.equal(dados.precoUnitario, 500);
+  assert.equal(dados.unidadePreco, 't');
+  assert.equal(dados.prnt, 88);
+  assert.equal(dados.caoCalcarioPct, 35);
+  assert.equal(dados.caPct, 26);
+  assert.equal(dados.mgPct, 12);
+});
+
+test('Gessagem importa Calagem sem indicacao e nao mistura talhao nem safra', () => {
+  const dados = normalizarCalagemParaGessagem({
+    calagens: [
+      { id: 'c1', codigo_produtor: 'P001', safra: '2025/2026', talhao_id: 't1', dose_kg_ha: 900, produto_id: 'calc1' },
+      { id: 'c2', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't2', dose_kg_ha: 1200, produto_id: 'calc1' },
+      { id: 'c3', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't1', dose_kg_ha: 1500, produto_id: 'calc1', updated_date: '2026-07-28T11:00:00Z' },
+    ],
+    produtos: [{ id: 'calc1', nome: 'Calcario', composicao_texto: 'CaO 36%', prnt: 85 }],
+    codigoProdutor: 'P001',
+    safra: '2026/2027',
+    talhaoId: 't1',
+  });
+
+  assert.equal(dados.doseCalcarioKgHa, 1500);
+  assert.equal(dados.caoCalcarioPct, 36);
+  assert.equal(dados.prnt, 85);
+});
+
+test('Gessagem usa registro antigo de Calagem e fallback textual de CaO sem usar Ca elemental', () => {
+  const porTexto = normalizarCalagemParaGessagem({
+    calagens: [{ id: 'old', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't1', dose_kg_ha: 1100, produto_id: 'calc1' }],
+    produtos: [{ id: 'calc1', nome: 'Calcario', ca_pct: 25, observacoes: 'Produto com CaO 38%' }],
+    codigoProdutor: 'P001',
+    safra: '2026/2027',
+    talhaoId: 't1',
+  });
+  const semCao = normalizarCalagemParaGessagem({
+    calagens: [{ id: 'old', codigo_produtor: 'P001', safra: '2026/2027', talhao_id: 't1', dose_kg_ha: 1100, produto_id: 'calc2' }],
+    produtos: [{ id: 'calc2', nome: 'Calcario', ca_pct: 25 }],
+    codigoProdutor: 'P001',
+    safra: '2026/2027',
+    talhaoId: 't1',
+  });
+
+  assert.equal(porTexto.caoCalcarioPct, 38);
+  assert.equal(semCao.caoCalcarioPct, null);
 });
 
 test('gessagem calcula custo quantidade total Ca e S fornecidos', () => {
@@ -149,13 +237,24 @@ test('Planejamento Geral soma custo da gessagem junto da Adubacao 2.0', () => {
 
 test('schema e UI da Gessagem estao registrados no Base44 e na Adubacao 2.0', () => {
   const schema = readFileSync(new URL('../base44/entities/BaseRecomendacaoGessagem.jsonc', import.meta.url), 'utf8');
+  const schemaCalagem = readFileSync(new URL('../base44/entities/BaseRecomendacaoCalagem.jsonc', import.meta.url), 'utf8');
+  const schemaFertilizante = readFileSync(new URL('../base44/entities/FertilizanteFormulado.jsonc', import.meta.url), 'utf8');
+  const schemaFonte = readFileSync(new URL('../base44/entities/FonteSimples.jsonc', import.meta.url), 'utf8');
   const pagina = readFileSync(new URL('../src/pages/Adubacao2.jsx', import.meta.url), 'utf8');
   const componente = readFileSync(new URL('../src/components/adubacao2/AbaGessagem2.jsx', import.meta.url), 'utf8');
 
   assert.match(schema, /"name": "BaseRecomendacaoGessagem"/);
   assert.match(schema, /"dose_final_kg_ha"/);
+  assert.match(schema, /"metodo_calculo"/);
+  assert.match(schema, /"produto_calcario_id"/);
+  assert.match(schemaCalagem, /"cao_calcario_pct"/);
+  assert.match(schemaFertilizante, /"cao_pct"/);
+  assert.match(schemaFonte, /"cao_pct"/);
   assert.match(pagina, /label: 'Gessagem'/);
   assert.match(pagina, /BaseRecomendacaoGessagem/);
+  assert.match(componente, /BaseRecomendacaoCalagem\.filter\(\{\s*codigo_produtor: codigoProdutor,\s*safra,\s*talhao_id: talhao\.id\s*\}/s);
+  assert.match(componente, /Editar manualmente/);
+  assert.match(componente, /Método de cálculo/);
   assert.match(componente, /ORIENTACAO_APLICACAO_GESSAGEM/);
   assert.match(componente, /ALERTA_LIXIVIACAO_GESSAGEM/);
   assert.match(ORIENTACAO_APLICACAO_GESSAGEM, /Aplicar após o calcário e distribuir em faixa uniforme/);

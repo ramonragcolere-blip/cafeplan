@@ -111,6 +111,7 @@ function SeletorCorretivo({ produto, corretivos, onChange }) {
           {produto.ca_pct > 0 && <span className="bg-lime-100 text-lime-700 px-2 py-0.5 rounded-full font-medium">Ca: {produto.ca_pct}%</span>}
           {produto.mg_pct > 0 && <span className="bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">Mg: {produto.mg_pct}%</span>}
           {produto.prnt != null && produto.prnt > 0 && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">PRNT: {produto.prnt}%</span>}
+          {produto.cao_pct != null && produto.cao_pct > 0 && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">CaO: {produto.cao_pct}%</span>}
         </div>
       )}
     </div>
@@ -210,6 +211,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   const [prntManual, setPrntManual] = useState('');
   const [precoUnitario, setPrecoUnitario] = useState('');
   const [unidadePreco, setUnidadePreco] = useState('t');
+  const [registroId, setRegistroId] = useState(null);
   const carregadoRef = useRef(false);
   const registroIdRef = useRef(null);
   const filaSalvamentoRef = useRef(Promise.resolve());
@@ -266,7 +268,6 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
     carregadoRef.current = true;
   }, [registrosSalvos, carregando]);
 
-  const [registroId, setRegistroId] = useState(null);
   useEffect(() => {
     const idAtual = selecionarRegistroCalagem(registrosSalvos)?.id || null;
     setRegistroId(idAtual);
@@ -313,6 +314,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
   });
 
   const produto = useMemo(() => corretivos.find(p => p.id === produtoId) || null, [corretivos, produtoId]);
+  const caoProduto = normalizarNumeroCalagem(produto?.cao_pct);
 
   const meta = NIVEIS[nivel] || NIVEIS['Bom'];
 
@@ -361,6 +363,7 @@ function CardCalagem({ talhao, analise, safra, codigoProdutor, corretivos }) {
       meta: protocolo === 'elevacao' ? nivel : `V%→${v2}`,
       produto_id: produtoId || '',
       produto_nome: produto?.nome || '',
+      cao_calcario_pct: caoProduto ?? null,
       ca_atual: caAtual ?? null,
       mg_atual: mgAtual ?? null,
       k_atual: kAtual ?? null,

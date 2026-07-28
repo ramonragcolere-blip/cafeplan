@@ -54,6 +54,14 @@
       "type": "number",
       "description": "CaO do gesso (%)"
     },
+    "metodo_calculo": {
+      "type": "string",
+      "description": "Metodo selecionado: combinado_conservador, 5a_aproximacao, lopes ou dose_manual"
+    },
+    "faixa_5a_posicao": {
+      "type": "string",
+      "description": "Posicao escolhida na faixa da 5a Aproximacao: minima, media ou maxima"
+    },
     "indicada": {
       "type": "boolean",
       "description": "Indica se a análise 20-40 cm recomenda gessagem"
@@ -81,6 +89,18 @@
       "type": "number",
       "description": "Calcário ajustado no método Lopes (kg/ha)"
     },
+    "dose_matematica_kg_ha": {
+      "type": "number",
+      "description": "Resultado matematico do metodo selecionado (kg/ha)"
+    },
+    "dose_tecnica_kg_ha": {
+      "type": "number",
+      "description": "Dose tecnica sugerida quando a analise indica gessagem (kg/ha)"
+    },
+    "aplicar_sem_indicacao_tecnica": {
+      "type": "boolean",
+      "description": "Permite dose manual mesmo sem indicacao tecnica pela analise 20-40 cm"
+    },
     "dose_sugerida_kg_ha": {
       "type": "number",
       "description": "Dose técnica sugerida (kg/ha)"
@@ -96,6 +116,34 @@
     "produto_nome": {
       "type": "string",
       "description": "Nome da fonte de gesso"
+    },
+    "produto_calcario_id": {
+      "type": "string",
+      "description": "ID do corretivo importado da Calagem"
+    },
+    "produto_calcario_nome": {
+      "type": "string",
+      "description": "Nome do corretivo importado da Calagem"
+    },
+    "preco_calcario_unitario": {
+      "type": "number",
+      "description": "Preco unitario do calcario importado da Calagem"
+    },
+    "unidade_preco_calcario": {
+      "type": "string",
+      "description": "Unidade do preco do calcario importado: t ou kg"
+    },
+    "prnt_calcario": {
+      "type": "number",
+      "description": "PRNT do corretivo importado da Calagem (%)"
+    },
+    "ca_calcario_pct": {
+      "type": "number",
+      "description": "Ca elemental do corretivo importado da Calagem (%)"
+    },
+    "mg_calcario_pct": {
+      "type": "number",
+      "description": "Mg elemental do corretivo importado da Calagem (%)"
     },
     "preco_unitario": {
       "type": "number",

@@ -15,7 +15,9 @@ import {
   calcularRecomendacaoGessagem,
   formatarPrecoUnitarioGessagem,
   montarPayloadGessagem,
+  normalizarCalagemParaGessagem,
   normalizarNumeroGessagem,
+  selecionarDoseMetodoGessagem,
   selecionarRegistroGessagem,
 } from '@/lib/gessagemAdubacao2';
 
@@ -34,13 +36,17 @@ function selecionarProdutoInicial(produtos, produtoId) {
   return produtos.find(p => p.id === produtoId) || null;
 }
 
-function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, produtos }) {
+function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, produtos, todosProdutos }) {
   const [expandido, setExpandido] = useState(false);
   const [produtoId, setProdutoId] = useState('');
   const [argilaManual, setArgilaManual] = useState('');
   const [doseCalcario, setDoseCalcario] = useState('');
   const [caoCalcario, setCaoCalcario] = useState('');
   const [caoGesso, setCaoGesso] = useState('25');
+  const [metodoCalculo, setMetodoCalculo] = useState('combinado_conservador');
+  const [faixa5aPosicao, setFaixa5aPosicao] = useState('media');
+  const [aplicarSemIndicacao, setAplicarSemIndicacao] = useState(false);
+  const [edicaoManualCalagem, setEdicaoManualCalagem] = useState(false);
   const [doseFinal, setDoseFinal] = useState('');
   const [precoUnitario, setPrecoUnitario] = useState('');
   const [unidadePreco, setUnidadePreco] = useState('t');
@@ -59,19 +65,46 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
     enabled: !!(codigoProdutor && safra && talhao.id),
   });
 
+  const { data: calagensDiretas = [], isLoading: carregandoCalagem } = useQuery({
+    queryKey: ['recomendacao_calagem', ctxKey],
+    queryFn: () => codigoProdutor && safra && talhao.id
+      ? base44.entities.BaseRecomendacaoCalagem.filter({ codigo_produtor: codigoProdutor, safra, talhao_id: talhao.id })
+      : Promise.resolve([]),
+    enabled: !!(codigoProdutor && safra && talhao.id),
+  });
+
+  const calagemImportada = useMemo(() => normalizarCalagemParaGessagem({
+    calagens: [...(calagensDiretas || []), ...(calagem ? [calagem] : [])],
+    produtos: todosProdutos,
+    codigoProdutor,
+    safra,
+    talhaoId: talhao.id,
+  }), [calagensDiretas, calagem, todosProdutos, codigoProdutor, safra, talhao.id]);
+
   useEffect(() => {
     carregadoRef.current = false;
     registroIdRef.current = null;
     setProdutoId('');
     setArgilaManual('');
-    setDoseCalcario(calagem?.dose_kg_ha != null ? String(calagem.dose_kg_ha) : '');
+    setDoseCalcario('');
     setCaoCalcario('');
     setCaoGesso('25');
+    setMetodoCalculo('combinado_conservador');
+    setFaixa5aPosicao('media');
+    setAplicarSemIndicacao(false);
+    setEdicaoManualCalagem(false);
     setDoseFinal('');
     setPrecoUnitario('');
     setUnidadePreco('t');
     setObservacoes('');
-  }, [ctxKey, calagem?.dose_kg_ha]);
+  }, [ctxKey]);
+
+  useEffect(() => {
+    if (edicaoManualCalagem || carregandoCalagem) return;
+    if (!calagemImportada) return;
+    setDoseCalcario(calagemImportada.doseCalcarioKgHa != null ? String(calagemImportada.doseCalcarioKgHa) : '');
+    setCaoCalcario(calagemImportada.caoCalcarioPct != null ? String(calagemImportada.caoCalcarioPct) : '');
+  }, [calagemImportada, edicaoManualCalagem, carregandoCalagem]);
 
   useEffect(() => {
     if (carregadoRef.current || carregando) return;
@@ -80,16 +113,21 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
       registroIdRef.current = reg.id;
       setProdutoId(reg.produto_id || '');
       setArgilaManual(reg.argila_pct != null ? String(reg.argila_pct) : '');
-      setDoseCalcario(reg.dose_calcario_kg_ha != null ? String(reg.dose_calcario_kg_ha) : (calagem?.dose_kg_ha != null ? String(calagem.dose_kg_ha) : ''));
-      setCaoCalcario(reg.cao_calcario_pct != null ? String(reg.cao_calcario_pct) : '');
+      if (!calagemImportada) {
+        setDoseCalcario(reg.dose_calcario_kg_ha != null ? String(reg.dose_calcario_kg_ha) : '');
+        setCaoCalcario(reg.cao_calcario_pct != null ? String(reg.cao_calcario_pct) : '');
+      }
       setCaoGesso(reg.cao_gesso_pct != null ? String(reg.cao_gesso_pct) : '25');
+      setMetodoCalculo(reg.metodo_calculo || 'combinado_conservador');
+      setFaixa5aPosicao(reg.faixa_5a_posicao || 'media');
+      setAplicarSemIndicacao(Boolean(reg.aplicar_sem_indicacao_tecnica));
       setDoseFinal(reg.dose_final_kg_ha != null ? String(reg.dose_final_kg_ha) : '');
       setPrecoUnitario(reg.preco_unitario != null ? String(reg.preco_unitario) : '');
       setUnidadePreco(reg.unidade_preco === 'kg' ? 'kg' : 't');
       setObservacoes(reg.observacoes || '');
     }
     carregadoRef.current = true;
-  }, [registrosSalvos, carregando, calagem?.dose_kg_ha]);
+  }, [registrosSalvos, carregando, calagemImportada]);
 
   const produto = useMemo(() => selecionarProdutoInicial(produtos, produtoId), [produtos, produtoId]);
   const recomendacao = useMemo(() => calcularRecomendacaoGessagem({
@@ -101,12 +139,24 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
     caoGessoPct: caoGesso,
   }), [talhao, analise2040, argilaManual, doseCalcario, caoCalcario, caoGesso]);
 
-  useEffect(() => {
-    if (doseFinal !== '' || recomendacao.doseSugeridaKgHa == null) return;
-    setDoseFinal(String(recomendacao.doseSugeridaKgHa));
-  }, [recomendacao.doseSugeridaKgHa, doseFinal]);
+  const escolhaDose = useMemo(() => selecionarDoseMetodoGessagem({
+    recomendacao,
+    metodoCalculo,
+    faixa5aPosicao,
+    doseManualKgHa: doseFinal,
+    aplicarSemIndicacao,
+  }), [recomendacao, metodoCalculo, faixa5aPosicao, doseFinal, aplicarSemIndicacao]);
 
-  const doseFinalNum = normalizarNumeroGessagem(doseFinal) ?? recomendacao.doseSugeridaKgHa;
+  useEffect(() => {
+    if (metodoCalculo === 'dose_manual') return;
+    if (escolhaDose.doseFinalKgHa == null) {
+      if (!recomendacao.indicada) setDoseFinal('');
+      return;
+    }
+    setDoseFinal(String(escolhaDose.doseFinalKgHa));
+  }, [metodoCalculo, escolhaDose.doseFinalKgHa, recomendacao.indicada]);
+
+  const doseFinalNum = normalizarNumeroGessagem(doseFinal) ?? escolhaDose.doseFinalKgHa;
   const custo = useMemo(() => calcularCustoGessagem({
     doseKgHa: doseFinalNum,
     areaHa: talhao.area_ha,
@@ -115,7 +165,7 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
   }), [doseFinalNum, talhao.area_ha, precoUnitario, unidadePreco]);
   const fornecimento = useMemo(() => calcularFornecimentoGesso({ produto, doseKgHa: doseFinalNum }), [produto, doseFinalNum]);
   const precoInvalido = precoUnitario !== '' && (normalizarNumeroGessagem(precoUnitario) == null || normalizarNumeroGessagem(precoUnitario) < 0);
-  const podeSalvar = !!codigoProdutor && !!safra && doseFinalNum != null && doseFinalNum >= 0 && !precoInvalido;
+  const podeSalvar = !!codigoProdutor && !!safra && (doseFinalNum == null || doseFinalNum >= 0) && !precoInvalido;
 
   const { mutate: salvar, isPending: salvando } = useMutation({
     mutationFn: async (payload) => {
@@ -160,6 +210,12 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
       caoGessoPct: caoGesso,
       argilaManual,
       doseFinalKgHa: doseFinalNum,
+      metodoCalculo,
+      faixa5aPosicao,
+      doseMatematicaKgHa: escolhaDose.doseMatematicaKgHa,
+      doseTecnicaKgHa: escolhaDose.doseTecnicaKgHa,
+      aplicarSemIndicacao,
+      calagemImportada,
       precoUnitario,
       unidadePreco,
       observacoes,
@@ -238,6 +294,30 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                 <p className="text-amber-800">{ALERTA_LIXIVIACAO_GESSAGEM}</p>
               </div>
 
+              <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">Dados importados da Calagem</p>
+                    <p className="text-[11px] text-muted-foreground">Busca pelo produtor, safra e talhão selecionados.</p>
+                  </div>
+                  <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEdicaoManualCalagem(v => !v)}>
+                    {edicaoManualCalagem ? 'Usar Calagem salva' : 'Editar manualmente'}
+                  </Button>
+                </div>
+                {calagemImportada ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
+                    <div><span className="text-muted-foreground">Corretivo</span><p className="font-semibold">{calagemImportada.produtoNome || '—'}</p></div>
+                    <div><span className="text-muted-foreground">Preço calcário</span><p className="font-semibold">{formatarPrecoUnitarioGessagem(calagemImportada.precoUnitario, calagemImportada.unidadePreco)}</p></div>
+                    <div><span className="text-muted-foreground">PRNT</span><p className="font-semibold">{calagemImportada.prnt != null ? `${fmt(calagemImportada.prnt, 1)}%` : '—'}</p></div>
+                    <div><span className="text-muted-foreground">CaO</span><p className="font-semibold">{calagemImportada.caoCalcarioPct != null ? `${fmt(calagemImportada.caoCalcarioPct, 1)}%` : '—'}</p></div>
+                    <div><span className="text-muted-foreground">Ca</span><p className="font-semibold">{calagemImportada.caPct != null ? `${fmt(calagemImportada.caPct, 1)}%` : '—'}</p></div>
+                    <div><span className="text-muted-foreground">Mg</span><p className="font-semibold">{calagemImportada.mgPct != null ? `${fmt(calagemImportada.mgPct, 1)}%` : '—'}</p></div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Nenhuma Calagem salva encontrada para este produtor, safra e talhão.</p>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
                   <Label className="text-xs mb-1 block">Teor de argila (%)</Label>
@@ -245,11 +325,11 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                 </div>
                 <div>
                   <Label className="text-xs mb-1 block">Dose de calcário (kg/ha)</Label>
-                  <Input type="number" min="0" step="1" value={doseCalcario} onChange={e => setDoseCalcario(e.target.value)} placeholder="Ex: 2000" className="h-8 text-xs" />
+                  <Input type="number" min="0" step="1" value={doseCalcario} onChange={e => setDoseCalcario(e.target.value)} disabled={!edicaoManualCalagem && !!calagemImportada} placeholder="Ex: 2000" className="h-8 text-xs disabled:opacity-75" />
                 </div>
                 <div>
                   <Label className="text-xs mb-1 block">CaO do calcário (%)</Label>
-                  <Input type="number" min="0" step="0.1" value={caoCalcario} onChange={e => setCaoCalcario(e.target.value)} placeholder="Ex: 40" className="h-8 text-xs" />
+                  <Input type="number" min="0" step="0.1" value={caoCalcario} onChange={e => setCaoCalcario(e.target.value)} disabled={!edicaoManualCalagem && !!calagemImportada} placeholder="Ex: 40" className="h-8 text-xs disabled:opacity-75" />
                 </div>
                 <div>
                   <Label className="text-xs mb-1 block">CaO do gesso (%)</Label>
@@ -257,23 +337,49 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                <div>
+                  <Label className="text-xs mb-1 block">Método de cálculo</Label>
+                  <select value={metodoCalculo} onChange={e => setMetodoCalculo(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
+                    <option value="combinado_conservador">Combinado conservador</option>
+                    <option value="5a_aproximacao">5ª Aproximação</option>
+                    <option value="lopes">Lopes</option>
+                    <option value="dose_manual">Dose manual</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs mb-1 block">Faixa 5ª Aproximação</Label>
+                  <select value={faixa5aPosicao} onChange={e => setFaixa5aPosicao(e.target.value)} className="h-8 w-full text-xs border border-input rounded px-2 bg-background">
+                    <option value="minima">Dose mínima</option>
+                    <option value="media">Dose média</option>
+                    <option value="maxima">Dose máxima</option>
+                  </select>
+                </div>
+                {!recomendacao.indicada && (
+                  <label className="sm:col-span-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <input type="checkbox" checked={aplicarSemIndicacao} onChange={e => setAplicarSemIndicacao(e.target.checked)} />
+                    Aplicar mesmo sem indicação técnica
+                  </label>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
-                  <p className="text-[10px] text-muted-foreground">5ª Aproximação</p>
+                  <p className="text-[10px] text-muted-foreground">Resultado matemático da 5ª Aproximação</p>
                   <p className="font-bold">{recomendacao.faixa5a ? `${fmtT(recomendacao.faixa5a.minT)} a ${fmtT(recomendacao.faixa5a.maxT)}` : '—'}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
-                  <p className="text-[10px] text-muted-foreground">Lopes</p>
+                  <p className="text-[10px] text-muted-foreground">Resultado matemático de Lopes</p>
                   <p className="font-bold">{fmtKg(recomendacao.lopes?.gessoKgHa)}</p>
                   {recomendacao.lopes?.calcarioAjustadoKgHa != null && <p className="text-[10px] text-muted-foreground">Calcário ajustado: {fmtKg(recomendacao.lopes.calcarioAjustadoKgHa)}</p>}
                 </div>
                 <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
                   <p className="text-[10px] text-sky-800">Dose técnica sugerida</p>
-                  <p className="font-bold text-sky-900">{fmtKg(recomendacao.doseSugeridaKgHa)}</p>
+                  <p className="font-bold text-sky-900">{fmtKg(escolhaDose.doseTecnicaKgHa)}</p>
                 </div>
                 <div>
                   <Label className="text-xs mb-1 block">Dose final escolhida (kg/ha)</Label>
-                  <Input type="number" min="0" step="1" value={doseFinal} onChange={e => setDoseFinal(e.target.value)} placeholder="Dose final" className="h-8 text-xs" />
+                  <Input type="number" min="0" step="1" value={doseFinal} onChange={e => setDoseFinal(e.target.value)} disabled={metodoCalculo !== 'dose_manual' || (!recomendacao.indicada && !aplicarSemIndicacao)} placeholder="Dose final" className="h-8 text-xs disabled:opacity-75" />
                 </div>
               </div>
 
@@ -348,14 +454,17 @@ function CardGessagem({ talhao, analise2040, calagem, safra, codigoProdutor, pro
 }
 
 export default function AbaGessagem2({ talhoes, analises2040PorTalhao = {}, calagens = [], safra, codigoProdutor, fertilizantes, fontesSimples }) {
-  const produtosGesso = useMemo(() => {
+  const todosProdutos = useMemo(() => {
     const ferts = (fertilizantes || []).map(f => ({ ...f, _tipo: 'formulado' }));
     const fontes = (fontesSimples || []).map(f => ({ ...f, _tipo: 'fonte' }));
-    return [...ferts, ...fontes]
-      .filter(produtoValidoAdubacao2)
+    return [...ferts, ...fontes].filter(produtoValidoAdubacao2);
+  }, [fertilizantes, fontesSimples]);
+
+  const produtosGesso = useMemo(() => {
+    return todosProdutos
       .filter(produtoPareceGesso)
       .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
-  }, [fertilizantes, fontesSimples]);
+  }, [todosProdutos]);
 
   if (!codigoProdutor) {
     return (
@@ -393,6 +502,7 @@ export default function AbaGessagem2({ talhoes, analises2040PorTalhao = {}, cala
           safra={safra}
           codigoProdutor={codigoProdutor}
           produtos={produtosGesso}
+          todosProdutos={todosProdutos}
         />
       ))}
     </div>

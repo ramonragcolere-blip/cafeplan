@@ -20,6 +20,89 @@ function timestampRegistro(registro) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function parseMetadadosJson(texto) {
+  if (!texto || typeof texto !== 'string') return {};
+  try {
+    const parsed = JSON.parse(texto);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function extrairCaoPctExplicito(...fontes) {
+  const textos = fontes
+    .filter(valor => typeof valor === 'string' && valor.trim())
+    .map(valor => valor.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  for (const texto of textos) {
+    const direto = texto.match(/\b(?:CaO|oxido\s+de\s+calcio)\b\s*:?\s*(\d+(?:[,.]\d+)?)\s*%/i);
+    if (direto) return normalizarNumeroGessagem(direto[1]);
+    const invertido = texto.match(/(\d+(?:[,.]\d+)?)\s*%\s*(?:de\s+)?\b(?:CaO|oxido\s+de\s+calcio)\b/i);
+    if (invertido) return normalizarNumeroGessagem(invertido[1]);
+  }
+  return null;
+}
+
+export function selecionarRegistroCalagemParaGessagem({ calagens = [], codigoProdutor = null, safra = null, talhaoId = null } = {}) {
+  let selecionado = null;
+  let selecionadoTimestamp = -1;
+  let selecionadoIndice = -1;
+  (calagens || []).forEach((calagem, indice) => {
+    if (!calagem || !codigoProdutor || !safra || !talhaoId) return;
+    if (calagem.codigo_produtor !== codigoProdutor) return;
+    if (calagem.safra !== safra) return;
+    if (calagem.talhao_id !== talhaoId) return;
+    const timestamp = timestampRegistro(calagem);
+    if (!selecionado || timestamp > selecionadoTimestamp ||
+        (timestamp === selecionadoTimestamp && indice > selecionadoIndice)) {
+      selecionado = calagem;
+      selecionadoTimestamp = timestamp;
+      selecionadoIndice = indice;
+    }
+  });
+  return selecionado;
+}
+
+export function normalizarCalagemParaGessagem({
+  calagens = [],
+  produtos = [],
+  codigoProdutor = null,
+  safra = null,
+  talhaoId = null,
+} = {}) {
+  const calagem = selecionarRegistroCalagemParaGessagem({ calagens, codigoProdutor, safra, talhaoId });
+  if (!calagem) return null;
+  const produto = (produtos || []).find(p => p?.id && p.id === calagem.produto_id) ||
+    (produtos || []).find(p => p?.nome && calagem.produto_nome && p.nome === calagem.produto_nome) ||
+    null;
+  const metadados = parseMetadadosJson(calagem.observacoes);
+  const preco = normalizarNumeroGessagem(calagem.preco_unitario ?? metadados.preco_unitario);
+  const caoCampo = normalizarNumeroGessagem(calagem.cao_calcario_pct ?? metadados.cao_calcario_pct);
+  const caoProduto = normalizarNumeroGessagem(produto?.cao_pct);
+  const caoTexto = extrairCaoPctExplicito(
+    calagem.composicao_texto,
+    calagem.observacoes,
+    produto?.composicao_texto,
+    produto?.outros_nutrientes,
+    produto?.nutrientes_secundarios,
+    produto?.observacoes
+  );
+
+  return {
+    registro: calagem,
+    produto,
+    doseCalcarioKgHa: normalizarNumeroGessagem(calagem.dose_kg_ha ?? calagem.dose_calcario_kg_ha),
+    produtoId: calagem.produto_id || produto?.id || '',
+    produtoNome: calagem.produto_nome || produto?.nome || '',
+    precoUnitario: preco != null && preco >= 0 ? preco : null,
+    unidadePreco: calagem.unidade_preco === 'kg' || metadados.unidade_preco === 'kg' ? 'kg' : 't',
+    prnt: normalizarNumeroGessagem(calagem.prnt_calcario ?? calagem.prnt ?? metadados.prnt_efetivo ?? produto?.prnt),
+    caoCalcarioPct: caoCampo ?? caoProduto ?? caoTexto,
+    caPct: normalizarNumeroGessagem(calagem.ca_calcario_pct ?? produto?.ca_pct),
+    mgPct: normalizarNumeroGessagem(calagem.mg_calcario_pct ?? produto?.mg_pct),
+  };
+}
+
 export function selecionarRegistroGessagem(registros) {
   let selecionado = null;
   let selecionadoTimestamp = -1;
@@ -96,9 +179,9 @@ export function lerDadosAnaliseGessagem(analise2040, argilaManual = null) {
   };
 }
 
-export function calcularFaixa5aAproximacao(argilaPct, indicada = true) {
+export function calcularFaixa5aAproximacao(argilaPct) {
   const argila = normalizarNumeroGessagem(argilaPct);
-  if (!indicada || argila == null) return null;
+  if (argila == null) return null;
   if (argila <= 15) return { minT: 0, maxT: 0.4, minKgHa: 0, maxKgHa: 400 };
   if (argila <= 35) return { minT: 0.4, maxT: 0.8, minKgHa: 400, maxKgHa: 800 };
   if (argila <= 60) return { minT: 0.8, maxT: 1.2, minKgHa: 800, maxKgHa: 1200 };
@@ -151,8 +234,8 @@ export function calcularRecomendacaoGessagem({
   if (dados.ca2040 != null && dados.ca2040 < 0.4) motivos.push('Ca menor que 0,4 cmolc/dm³');
   if (dados.al2040 != null && dados.al2040 > 0.5) motivos.push('Al maior que 0,5 cmolc/dm³');
   const indicada = motivos.length > 0;
-  const faixa5a = calcularFaixa5aAproximacao(dados.argilaPct, indicada);
-  const lopes = indicada ? calcularGessagemLopes({ doseCalcarioKgHa, caoCalcarioPct, caoGessoPct }) : null;
+  const faixa5a = calcularFaixa5aAproximacao(dados.argilaPct);
+  const lopes = calcularGessagemLopes({ doseCalcarioKgHa, caoCalcarioPct, caoGessoPct });
   const candidatos = [lopes?.gessoKgHa, faixa5a?.maxKgHa]
     .map(normalizarNumeroGessagem)
     .filter(valor => valor != null && valor >= 0);
@@ -167,6 +250,52 @@ export function calcularRecomendacaoGessagem({
     lopes,
     doseSugeridaKgHa,
     mensagem: indicada ? null : 'Gessagem não indicada pela análise 20–40 cm.',
+  };
+}
+
+function doseFaixa5aKgHa(faixa, posicao = 'media') {
+  if (!faixa) return null;
+  if (posicao === 'minima') return faixa.minKgHa;
+  if (posicao === 'maxima') return faixa.maxKgHa;
+  return Math.round(((faixa.minKgHa + faixa.maxKgHa) / 2) * 10) / 10;
+}
+
+export function selecionarDoseMetodoGessagem({
+  recomendacao,
+  metodoCalculo = 'combinado_conservador',
+  faixa5aPosicao = 'media',
+  doseManualKgHa = null,
+  aplicarSemIndicacao = false,
+} = {}) {
+  const rec = recomendacao || {};
+  const doseManual = normalizarNumeroGessagem(doseManualKgHa);
+  const dose5a = doseFaixa5aKgHa(rec.faixa5a, faixa5aPosicao);
+  const doseLopes = normalizarNumeroGessagem(rec.lopes?.gessoKgHa);
+  const candidatosCombinados = [doseLopes, rec.faixa5a?.maxKgHa]
+    .map(normalizarNumeroGessagem)
+    .filter(valor => valor != null && valor >= 0);
+  let doseMatematica = null;
+
+  if (metodoCalculo === 'dose_manual') doseMatematica = doseManual;
+  else if (metodoCalculo === 'lopes') doseMatematica = doseLopes;
+  else if (metodoCalculo === '5a_aproximacao') doseMatematica = dose5a;
+  else doseMatematica = candidatosCombinados.length > 0 ? Math.min(...candidatosCombinados) : null;
+
+  const indicada = Boolean(rec.indicada);
+  const doseTecnica = indicada ? doseMatematica : null;
+  const doseFinal = indicada
+    ? doseMatematica
+    : (metodoCalculo === 'dose_manual' && aplicarSemIndicacao ? doseManual : null);
+
+  return {
+    metodoCalculo,
+    faixa5aPosicao,
+    dose5aKgHa: dose5a,
+    doseLopesKgHa: doseLopes,
+    doseMatematicaKgHa: doseMatematica,
+    doseTecnicaKgHa: doseTecnica,
+    doseFinalKgHa: doseFinal,
+    aplicarSemIndicacao: Boolean(aplicarSemIndicacao),
   };
 }
 
@@ -231,6 +360,12 @@ export function montarPayloadGessagem({
   caoGessoPct,
   argilaManual,
   doseFinalKgHa,
+  metodoCalculo = 'combinado_conservador',
+  faixa5aPosicao = 'media',
+  doseMatematicaKgHa = null,
+  doseTecnicaKgHa = null,
+  aplicarSemIndicacao = false,
+  calagemImportada = null,
   precoUnitario,
   unidadePreco,
   observacoes,
@@ -265,14 +400,26 @@ export function montarPayloadGessagem({
     dose_calcario_kg_ha: normalizarNumeroGessagem(doseCalcarioKgHa),
     cao_calcario_pct: normalizarNumeroGessagem(caoCalcarioPct),
     cao_gesso_pct: normalizarNumeroGessagem(caoGessoPct) ?? 25,
+    metodo_calculo: metodoCalculo,
+    faixa_5a_posicao: faixa5aPosicao,
     indicada: recomendacao.indicada,
     motivos: recomendacao.motivos,
     faixa_5a_min_t_ha: recomendacao.faixa5a?.minT ?? null,
     faixa_5a_max_t_ha: recomendacao.faixa5a?.maxT ?? null,
     dose_lopes_kg_ha: recomendacao.lopes?.gessoKgHa ?? null,
     calcario_ajustado_kg_ha: recomendacao.lopes?.calcarioAjustadoKgHa ?? null,
+    dose_matematica_kg_ha: normalizarNumeroGessagem(doseMatematicaKgHa),
+    dose_tecnica_kg_ha: normalizarNumeroGessagem(doseTecnicaKgHa),
+    aplicar_sem_indicacao_tecnica: Boolean(aplicarSemIndicacao),
     dose_sugerida_kg_ha: recomendacao.doseSugeridaKgHa,
     dose_final_kg_ha: doseFinal,
+    produto_calcario_id: calagemImportada?.produtoId || '',
+    produto_calcario_nome: calagemImportada?.produtoNome || '',
+    preco_calcario_unitario: calagemImportada?.precoUnitario ?? null,
+    unidade_preco_calcario: calagemImportada?.unidadePreco || 't',
+    prnt_calcario: calagemImportada?.prnt ?? null,
+    ca_calcario_pct: calagemImportada?.caPct ?? null,
+    mg_calcario_pct: calagemImportada?.mgPct ?? null,
     produto_id: produto?.id || '',
     produto_nome: produto?.nome || '',
     preco_unitario: custo.precoUnitario,
