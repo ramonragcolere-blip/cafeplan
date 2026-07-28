@@ -246,7 +246,7 @@ function LinhaElementoExtra({ elLabel, nutField, todos, area, precos, onPrecoCha
 
 // ── Tabela de Produtos do Talhão ───────────────────────────────────────────────
 
-function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange, onDoseChange, onRestaurarDose, onAlvoChange, onAdicionarManual, onExcluirManual }) {
+function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, onParcelamentoChange, onAplicarParcTodos, todos, onTrocarProduto, elementosExtras, extrasManuais, onExtraChange, onDoseChange, onRestaurarDose, onAlvoChange, onAdicionarManual, onExcluirManual, onOcultarLinha }) {
   const [expandidoProd, setExpandidoProd] = useState(null);
 
   const extrasObj = objetoSeguroAdubacao2(extrasManuais);
@@ -356,12 +356,18 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
                     </button>
                   </td>
                   <td className="px-3 py-2">
-                    {dose_ajustada_manualmente ? (
-                      <button type="button" onClick={() => onRestaurarDose?.(linha)}
-                        className="h-7 px-2 text-xs rounded border border-border hover:bg-muted/60 whitespace-nowrap">
-                        Restaurar dose calculada
+                    <div className="flex flex-col gap-1">
+                      {dose_ajustada_manualmente && (
+                        <button type="button" onClick={() => onRestaurarDose?.(linha)}
+                          className="h-7 px-2 text-xs rounded border border-border hover:bg-muted/60 whitespace-nowrap">
+                          Restaurar dose calculada
+                        </button>
+                      )}
+                      <button type="button" onClick={() => onOcultarLinha?.(linha)}
+                        className="h-7 px-2 text-xs rounded border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 whitespace-nowrap">
+                        Remover do planejamento
                       </button>
-                    ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </div>
                   </td>
                 </tr>
                 {expandido && (
@@ -428,7 +434,7 @@ function TabelaProdutos({ linhas, area, precos, onPrecoChange, parcelamentos, on
 
 // ── Painel expandido de um talhão ─────────────────────────────────────────────
 
-function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, ajustesDoseIniciais, onMarcadosChange, onTrocasChange, onExtrasChange, onAjustesDoseChange }) {
+function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoChange, parcelamentosProd, onParcelamentoChange, onAplicarParcTodos, onFechar, marcadosIniciais, trocasIniciais, complementosSalvos, ajustesDoseIniciais, produtosOcultosIniciais, onMarcadosChange, onTrocasChange, onExtrasChange, onAjustesDoseChange, onProdutosOcultosChange }) {
   const { talhao, rec, mediaBienal, analise, analise2040 } = resultado;
   const micros = calcMicros(analise);
   const area = talhao.area_ha || 0;
@@ -454,6 +460,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     return init;
   });
   const [ajustesDose, setAjustesDose] = useState(() => objetoSeguroAdubacao2(ajustesDoseIniciais));
+  const [produtosOcultos, setProdutosOcultos] = useState(() => listaSeguraAdubacao2(produtosOcultosIniciais));
 
   // Garante que checkboxes dos extras salvos fiquem marcados ao carregar
   useEffect(() => {
@@ -514,6 +521,25 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     });
   }, [rec, atualizarAjusteDose]);
 
+  const handleOcultarLinha = useCallback((linha) => {
+    const linhaId = chaveLinhaProduto(linha);
+    const produtoId = linha?.produto?.id || null;
+    const item = { linhaId, produtoId, produtoNome: linha?.produto?.nome || '', nutriente_alvo: linha?.nutriente_alvo || linha?.nutKey || 'dose_manual' };
+    setProdutosOcultos(prev => {
+      const prevLista = listaSeguraAdubacao2(prev);
+      if (prevLista.some(o => o?.linhaId === linhaId || o === linhaId)) return prevLista;
+      const next = [...prevLista, item];
+      onProdutosOcultosChange?.(next);
+      return next;
+    });
+    if (produtoId) onParcelamentoChange?.(produtoId, null);
+  }, [onProdutosOcultosChange, onParcelamentoChange]);
+
+  const handleRestaurarOcultos = useCallback(() => {
+    setProdutosOcultos([]);
+    onProdutosOcultosChange?.([]);
+  }, [onProdutosOcultosChange]);
+
   const toggleMarcado = (key) => {
     const marcadosObj = objetoSeguroAdubacao2(marcados);
     const vaiAtivar = !marcadosObj[key];
@@ -551,8 +577,12 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['B']) delete recFiltrado.B;
     const prodSalvo = resultado.substituirSalvo ? null : (resultado.produtoSugerido || null);
     const doseSalva = resultado.substituirSalvo ? null : (resultado.doseProdutoHa ?? null);
-    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : normalizarComplementosAdubacao2(complementosSalvos), rec, ajustesDose);
-  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos, ajustesDose]);
+    const ocultosSet = new Set(listaSeguraAdubacao2(produtosOcultos).flatMap(item =>
+      typeof item === 'string' ? [item] : [item?.linhaId, item?.produtoId]
+    ).filter(Boolean));
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : normalizarComplementosAdubacao2(complementosSalvos), rec, ajustesDose)
+      .filter(linha => !ocultosSet.has(chaveLinhaProduto(linha)) && !ocultosSet.has(linha?.produto?.id));
+  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos, ajustesDose, produtosOcultos]);
 
   const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
   const balancoNutrientes = useMemo(() => calcularBalancoNutrientes(rec, [
@@ -753,6 +783,15 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
       {rec && (
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Produtos Recomendados</p>
+          {produtosOcultos.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-50 border border-slate-200 rounded px-3 py-2">
+              <span className="text-slate-700">{produtosOcultos.length} produto(s) oculto(s) neste talhão.</span>
+              <button type="button" onClick={handleRestaurarOcultos}
+                className="h-7 px-2 rounded border border-border bg-background hover:bg-muted/60 text-foreground">
+                Restaurar produtos ocultos
+              </button>
+            </div>
+          )}
           {nutrientesNaoAtendidos.length > 0 && (
             <div className="mb-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
               Nutrientes não atendidos pelo filtro atual: {nutrientesNaoAtendidos.join(', ')}.
@@ -776,6 +815,7 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
             onAlvoChange={handleAlvoChange}
             onAdicionarManual={handleAdicionarManual}
             onExcluirManual={handleExcluirManual}
+            onOcultarLinha={handleOcultarLinha}
           />
           {balancoNutrientes.length > 0 && (
             <div className="mt-3 rounded-lg border border-border overflow-hidden">
@@ -1011,6 +1051,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
   const [marcadosPorTalhao, setMarcadosPorTalhao] = useState({});
   const [extrasPorTalhao, setExtrasPorTalhao] = useState({});
   const [ajustesDosePorTalhao, setAjustesDosePorTalhao] = useState({});
+  const [produtosOcultosPorTalhao, setProdutosOcultosPorTalhao] = useState({});
 
   const handleExtrasChange = useCallback((talhaoId, extras) => {
     setExtrasPorTalhao(prev => ({ ...prev, [talhaoId]: extras }));
@@ -1026,6 +1067,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     setMarcadosPorTalhao({});
     setExtrasPorTalhao({});
     setAjustesDosePorTalhao({});
+    setProdutosOcultosPorTalhao({});
   }, [resultados, todos]);
 
   const toggleExpand = (id) => setExpandidos(prev => {
@@ -1051,6 +1093,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       setTrocasPorTalhao({});
       setMarcadosPorTalhao({});
       setAjustesDosePorTalhao({});
+      setProdutosOcultosPorTalhao({});
       onProdutosEfetivosChange?.({});
     }
     setProdutosCalculo(todosFiltered);
@@ -1086,10 +1129,13 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     const marcadosAgg = {};
     const extrasAgg = {};
     const ajustesAgg = {};
+    const ocultosAgg = {};
     registrosLista.forEach(r => {
       const det = objetoSeguroAdubacao2(r.detalhamento);
       if (Object.keys(objetoSeguroAdubacao2(det.trocas)).length > 0) trocasAgg[r.talhao_id] = objetoSeguroAdubacao2(det.trocas);
       if (Object.keys(objetoSeguroAdubacao2(det.marcados)).length > 0) marcadosAgg[r.talhao_id] = objetoSeguroAdubacao2(det.marcados);
+      const ocultos = listaSeguraAdubacao2(det.produtos_ocultos);
+      if (ocultos.length > 0) ocultosAgg[r.talhao_id] = ocultos;
       if (det.produtoSugerido?.id) {
         const key = `n_pct:${det.produtoSugerido.id}`;
         ajustesAgg[r.talhao_id] = {
@@ -1161,6 +1207,13 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
         return merged;
       });
     }
+    if (Object.keys(ocultosAgg).length > 0) {
+      setProdutosOcultosPorTalhao(prev => {
+        const merged = { ...ocultosAgg };
+        Object.keys(objetoSeguroAdubacao2(prev)).forEach(k => { merged[k] = prev[k]; });
+        return merged;
+      });
+    }
   }, [registrosSalvos]);
 
   // Preenche preços das notas fiscais para produtos sem preço manual
@@ -1219,6 +1272,10 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     setAjustesDosePorTalhao(prev => ({ ...prev, [talhaoId]: ajustes }));
   }, []);
 
+  const handleProdutosOcultosChange = useCallback((talhaoId, ocultos) => {
+    setProdutosOcultosPorTalhao(prev => ({ ...prev, [talhaoId]: listaSeguraAdubacao2(ocultos) }));
+  }, []);
+
   // Expõe trocas, marcados e complementos calculados para o pai usar no handleSalvarTudo
   useEffect(() => {
     if (!onProdutosEfetivosChange || !resultados) return;
@@ -1237,11 +1294,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       marcadosPorTalhao,
       extrasPorTalhao,
       ajustesDosePorTalhao,
+      produtosOcultosPorTalhao,
       criarMarcacoesPadraoFn: criarMarcacoesPadrao,
       elementos: TODOS_ELEMENTOS_GRID,
     });
     onProdutosEfetivosChange(mapa);
-  }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao]);
+  }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
 
   const metricas = useMemo(() => {
     const resultadosLista = listaSeguraAdubacao2(resultados).filter(r => r?.talhao);
@@ -1253,10 +1311,27 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
     let custoFazendaHaSum = 0;
     let custoFazendaHaCount = 0;
     let somaSacasArea = 0;
+    const efetivosMetricas = montarProdutosEfetivosPlanejamento({
+      resultados: comRec,
+      registrosSalvos,
+      todosFiltrados: produtosCalculo,
+      todosCatalogo: todos,
+      trocasPorTalhao,
+      marcadosPorTalhao,
+      extrasPorTalhao,
+      ajustesDosePorTalhao,
+      produtosOcultosPorTalhao,
+      criarMarcacoesPadraoFn: criarMarcacoesPadrao,
+      elementos: TODOS_ELEMENTOS_GRID,
+    });
 
     comRec.forEach(r => {
       const area = r.talhao.area_ha || 0;
-      const linhas = montarLinhasProdutos(produtosCalculo, r.rec);
+      const efetivo = efetivosMetricas[r.talhao.id];
+      const linhas = [
+        efetivo?.produto ? { produto: efetivo.produto, doseKgHa: efetivo.doseKgHa } : null,
+        ...listaSeguraAdubacao2(efetivo?.complementos),
+      ].filter(Boolean);
       linhas.forEach(l => {
         if (!l?.produto?.id) return;
         const preco = precos[l.produto.id];
@@ -1283,7 +1358,7 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
       custoHaMedio: custoFazendaHaCount > 0 ? custoFazendaHaSum / custoFazendaHaCount : null,
       custoSaca,
     };
-  }, [resultados, produtosCalculo, precos]);
+  }, [resultados, produtosCalculo, precos, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
 
   if (!resultados || resultados.length === 0) {
     return (
@@ -1469,10 +1544,12 @@ export default function AbaPlanejamento2({ resultados, todos, calculando, podeCa
                             trocasIniciais={trocasPorTalhao[r.talhao.id] || null}
                             complementosSalvos={r.substituirSalvo ? null : ((registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos || null)}
                             ajustesDoseIniciais={ajustesDosePorTalhao[r.talhao.id] || null}
+                            produtosOcultosIniciais={produtosOcultosPorTalhao[r.talhao.id] || null}
                             onMarcadosChange={(m) => handleMarcadosChange(r.talhao.id, m)}
                             onTrocasChange={(t) => handleTrocasChange(r.talhao.id, t)}
                             onExtrasChange={(e) => handleExtrasChange(r.talhao.id, e)}
                             onAjustesDoseChange={(a) => handleAjustesDoseChange(r.talhao.id, a)}
+                            onProdutosOcultosChange={(o) => handleProdutosOcultosChange(r.talhao.id, o)}
                           />
                         </td>
                       </tr>

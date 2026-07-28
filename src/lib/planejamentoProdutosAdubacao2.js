@@ -55,6 +55,21 @@ export function produtoAtivo(produto) {
   return produto?.ativo !== false;
 }
 
+export function produtoNuloAdubacao2(produto) {
+  if (!produto) return true;
+  if (produto === 0 || produto === '0') return true;
+  if (typeof produto !== 'object') return String(produto || '').trim() === '';
+  const id = produto.id ?? produto.produto_id ?? produto.value ?? null;
+  const nome = produto.nome ?? produto.produto_nome ?? produto.label ?? null;
+  if (id === 0 || id === '0') return true;
+  if (nome === 0 || nome === '0') return true;
+  return String(id ?? '').trim() === '' && String(nome ?? '').trim() === '';
+}
+
+export function produtoValidoAdubacao2(produto) {
+  return !produtoNuloAdubacao2(produto);
+}
+
 export function listaSeguraAdubacao2(valor) {
   if (Array.isArray(valor)) return valor.filter(Boolean);
   if (valor && typeof valor === 'object') return Object.values(valor).filter(Boolean);
@@ -66,14 +81,21 @@ export function objetoSeguroAdubacao2(valor) {
 }
 
 export function normalizarProdutoAdubacao2(produto, fallback = {}) {
+  if (produtoNuloAdubacao2(produto) && produtoNuloAdubacao2({ id: fallback.produto_id, nome: fallback.produto_nome || fallback.nome })) return null;
+  if (produtoNuloAdubacao2(produto) && !produtoNuloAdubacao2({ id: fallback.produto_id, nome: fallback.produto_nome || fallback.nome })) {
+    produto = null;
+  }
   if (!produto && !fallback.produto_id && !fallback.produto_nome) return null;
   if (produto && typeof produto !== 'object') {
     return { id: fallback.produto_id || null, nome: String(produto || fallback.produto_nome || 'Produto não definido') };
   }
+  const id = produto?.id || fallback.produto_id || null;
+  const nome = produto?.nome || fallback.produto_nome || fallback.nome || 'Produto não definido';
+  if (produtoNuloAdubacao2({ id, nome })) return null;
   return {
     ...(produto || {}),
-    id: produto?.id || fallback.produto_id || null,
-    nome: produto?.nome || fallback.produto_nome || fallback.nome || 'Produto não definido',
+    id,
+    nome,
   };
 }
 
@@ -110,6 +132,7 @@ export function filtrarProdutosPlanejamento(todos = [], filtro = {}) {
   const incluirFontesSemFornecedor = Boolean(filtro.incluirFontesSemFornecedor);
 
   return listaSeguraAdubacao2(todos)
+    .filter(produtoValidoAdubacao2)
     .filter(produtoAtivo)
     .filter(produtoTemNutrientePlanejamento)
     .filter(produto => {
@@ -182,7 +205,7 @@ function criarIdLinha(produto, nutKey, sufixo = '') {
 }
 
 function normalizarLinhaProduto(linha, rec = {}, ajustes = {}) {
-  if (!linha?.produto) return null;
+  if (!linha?.produto || produtoNuloAdubacao2(linha.produto)) return null;
   const chave = linha.linhaId || criarIdLinha(linha.produto, linha.nutKey);
   const ajustesSeguros = objetoSeguroAdubacao2(ajustes);
   const ajuste = ajustesSeguros[chave] || ajustesSeguros[linha.produto?.id] || {};
@@ -252,7 +275,7 @@ export function calcularBalancoNutrientes(rec = {}, linhas = []) {
 }
 
 export function resolverAcaoProdutoDuplicado({ produtoId, linhas = [], manuais = [] }) {
-  if (!produtoId) return { duplicado: false, acao: 'adicionar' };
+  if (!produtoId || produtoId === '0') return { duplicado: false, acao: 'adicionar' };
   const existe = listaSeguraAdubacao2(linhas).some(linha => linha?.produto?.id === produtoId) ||
     Object.values(objetoSeguroAdubacao2(manuais)).some(item => item?.produtoId === produtoId);
   return existe
@@ -270,7 +293,7 @@ function promoverPrincipalSeNecessario(linhas) {
 
 export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null, ajustesDose = {}) {
   const _recOrig = recOriginal || rec;
-  const todosLista = listaSeguraAdubacao2(todos);
+  const todosLista = listaSeguraAdubacao2(todos).filter(produtoValidoAdubacao2);
   const trocasSeguras = objetoSeguroAdubacao2(trocas);
   if (!rec || !todosLista.length) return [];
 
@@ -442,6 +465,7 @@ export function montarProdutosEfetivosPlanejamento({
   ajustesDosePorTalhao = {},
   criarMarcacoesPadraoFn = () => ({}),
   elementos = [],
+  produtosOcultosPorTalhao = {},
 }) {
   const resultadosLista = listaSeguraAdubacao2(resultados);
   const registrosLista = listaSeguraAdubacao2(registrosSalvos);
@@ -451,6 +475,7 @@ export function montarProdutosEfetivosPlanejamento({
   const marcadosSeguros = objetoSeguroAdubacao2(marcadosPorTalhao);
   const extrasSeguros = objetoSeguroAdubacao2(extrasPorTalhao);
   const ajustesSeguros = objetoSeguroAdubacao2(ajustesDosePorTalhao);
+  const ocultosSeguros = objetoSeguroAdubacao2(produtosOcultosPorTalhao);
   const idsSalvos = new Set(registrosLista.map(r => r.talhao_id));
   const mapa = {};
 
@@ -470,6 +495,10 @@ export function montarProdutosEfetivosPlanejamento({
     let produto = r.substituirSalvo ? null : (r.produtoSugerido || null);
     let doseKgHa = r.substituirSalvo ? null : (r.doseProdutoHa ?? null);
     const extrasTalhao = objetoSeguroAdubacao2(extrasSeguros[r.talhao.id]);
+    const produtosOcultosTalhao = listaSeguraAdubacao2(ocultosSeguros[r.talhao.id]);
+    const ocultosSet = new Set(produtosOcultosTalhao.flatMap(item =>
+      typeof item === 'string' ? [item] : [item?.linhaId, item?.produtoId]
+    ).filter(Boolean));
     if (!produto && idsSalvos.has(r.talhao.id) && !r.substituirSalvo && compsSalvos.length === 0 && Object.keys(extrasTalhao).length === 0) return;
 
     const linhas = montarLinhasProdutos(
@@ -481,11 +510,14 @@ export function montarProdutosEfetivosPlanejamento({
       r.substituirSalvo ? null : compsSalvos,
       r.rec,
       objetoSeguroAdubacao2(ajustesSeguros[r.talhao.id]),
-    );
+    ).filter(linha => !ocultosSet.has(linha.linhaId) && !ocultosSet.has(linha.produto?.id));
     const linhaPrincipal = linhas.find(l => l.ehPrincipal);
     if (linhaPrincipal) {
       produto = linhaPrincipal.produto;
       doseKgHa = linhaPrincipal.doseKgHa;
+    } else if (produto && (ocultosSet.has(produto.id) || ocultosSet.has(criarIdLinha(produto, r.nutriente_alvo || 'n_pct')))) {
+      produto = null;
+      doseKgHa = null;
     }
 
     const complementos = linhas.filter(l => !l.ehPrincipal).map(l => ({
@@ -503,10 +535,14 @@ export function montarProdutosEfetivosPlanejamento({
 
     Object.entries(extrasTalhao).forEach(([key, data]) => {
       const doseExtra = Number(data?.doseKgHa);
-      if (!data?.produtoId || !Number.isFinite(doseExtra) || doseExtra <= 0) return;
+      if (!data?.produtoId || data.produtoId === '0' || !Number.isFinite(doseExtra) || doseExtra <= 0) return;
+      if (ocultosSet.has(key) || ocultosSet.has(data.produtoId)) return;
       const prod = todosFiltradosLista.find(p => p.id === data.produtoId) || todosCatalogoLista.find(p => p.id === data.produtoId);
       const permiteUsoSeparado = Boolean(data?.usoSeparado || data?.isManualLivre || String(key).startsWith('manual-'));
-      if (prod && (permiteUsoSeparado || !complementos.some(c => c.produto.id === prod.id))) {
+      const complementoExistente = complementos.find(c => c.produto.id === prod?.id);
+      if (prod && !permiteUsoSeparado && complementoExistente) {
+        complementoExistente.nutrientes = nutrientesDaDose(prod, complementoExistente.dose_utilizada_kg_ha ?? complementoExistente.doseKgHa, r.rec);
+      } else if (prod && (permiteUsoSeparado || !complementoExistente)) {
         complementos.push({
           produto: { id: prod.id, nome: prod.nome },
           doseKgHa: doseExtra,
@@ -525,7 +561,7 @@ export function montarProdutosEfetivosPlanejamento({
       }
     });
 
-    if (produto || complementos.length > 0) {
+    if (produto || complementos.length > 0 || produtosOcultosTalhao.length > 0) {
       mapa[r.talhao.id] = {
         produto,
         doseKgHa,
@@ -537,6 +573,7 @@ export function montarProdutosEfetivosPlanejamento({
         complementos,
         trocas,
         marcados: Object.keys(marcados).length > 0 ? marcados : criarMarcacoesPadraoFn(r.rec, elementos),
+        produtos_ocultos: produtosOcultosTalhao,
       };
     }
   });
@@ -548,7 +585,7 @@ export function combinarCatalogoInsumos(formulados = [], fontes = []) {
   return [
     ...listaSeguraAdubacao2(formulados).map(produto => ({ ...produto, _tipo: 'formulado', _origemLabel: 'Fertilizante formulado' })),
     ...listaSeguraAdubacao2(fontes).map(produto => ({ ...produto, _tipo: 'fonte', _origemLabel: 'Fonte simples' })),
-  ];
+  ].filter(produtoValidoAdubacao2);
 }
 
 export function sanitizarPayloadInsumo(tipo, dados = {}) {
@@ -563,7 +600,7 @@ export function sanitizarPayloadInsumo(tipo, dados = {}) {
 }
 
 export function contarUsoProdutoPlanejamento(registros = [], produtoId) {
-  if (!produtoId) return 0;
+  if (!produtoId || produtoId === '0') return 0;
   return listaSeguraAdubacao2(registros).filter(registro => {
     const det = registro?.detalhamento || {};
     if (det.produtoSugerido?.id === produtoId) return true;

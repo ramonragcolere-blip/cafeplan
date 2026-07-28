@@ -27,6 +27,7 @@ import {
   normalizarProdutoAdubacao2,
   objetoSeguroAdubacao2,
   produtoAtivo,
+  produtoNuloAdubacao2,
 } from '@/lib/planejamentoProdutosAdubacao2';
 import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
 import {
@@ -515,8 +516,9 @@ export function Adubacao2Conteudo() {
           else if (!isNaN(s1)) mediaBienal = s1;
           else if (!isNaN(s2)) mediaBienal = s2;
         }
-        let produtoSugerido = det.produtoSugerido ? {
-          ...normalizarProdutoAdubacao2(det.produtoSugerido),
+        const produtoNormalizado = det.produtoSugerido ? normalizarProdutoAdubacao2(det.produtoSugerido) : null;
+        let produtoSugerido = produtoNormalizado ? {
+          ...produtoNormalizado,
           dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa ?? null,
           dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
           dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
@@ -570,6 +572,7 @@ export function Adubacao2Conteudo() {
               complementos: complementosRestaurados,
               trocas: objetoSeguroAdubacao2(detRestaurado.trocas),
               marcados: Object.keys(objetoSeguroAdubacao2(detRestaurado.marcados)).length > 0 ? objetoSeguroAdubacao2(detRestaurado.marcados) : null,
+              produtos_ocultos: listaSeguraAdubacao2(detRestaurado.produtos_ocultos),
             };
           }
         });
@@ -696,7 +699,7 @@ export function Adubacao2Conteudo() {
 
         let produtoSugerido = null;
         let doseProdutoHa = null;
-        if (rec && detSalvo.produtoSugerido && !substituirSalvos) {
+        if (rec && detSalvo.produtoSugerido && !substituirSalvos && !produtoNuloAdubacao2(detSalvo.produtoSugerido)) {
           const salvo = normalizarProdutoAdubacao2(detSalvo.produtoSugerido);
           const produtoBase = listaCalculo.find(p => p.id === salvo.id) || todos.find(p => p.id === salvo.id) || salvo;
           produtoSugerido = {
@@ -802,6 +805,7 @@ export function Adubacao2Conteudo() {
           complementos: produtosEfetivosRef.current[talhao.id]?.complementos || [],
           trocas: produtosEfetivosRef.current[talhao.id]?.trocas || {},
           marcados: produtosEfetivosRef.current[talhao.id]?.marcados || null,
+          produtos_ocultos: produtosEfetivosRef.current[talhao.id]?.produtos_ocultos || [],
           precos,
           parcelamentos: parcelamentos[talhao.id] || {},
         },

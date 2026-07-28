@@ -2,15 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calcCalagemVpct,
+  calcularCustoCalagem,
   calcularDistribuicaoCalagem,
   consolidarComprasAdubacao2,
   atualizarListaCalagens,
+  formatarPrecoUnitarioCalagem,
   formatarPeriodoAplicacao,
   lerDadosAnaliseCalagem,
   montarGruposResumoAdubacao2,
   podeSalvarRecomendacaoCalagem,
   resolverRegistroCalagemAtual,
 } from '../src/lib/calagemAdubacao2.js';
+import {
+  calcularDoseProdutoPorAlvo,
+  montarLinhasProdutos,
+  montarProdutosEfetivosPlanejamento,
+  produtoNuloAdubacao2,
+} from '../src/lib/planejamentoProdutosAdubacao2.js';
 import { readFileSync } from 'node:fs';
 
 test('Calagem V% exige CTC numerica da analise 0-20 e nao usa soma de bases como CTC', () => {
@@ -250,4 +258,169 @@ test('periodo de aplicacao nao altera consolidacao, doses, custos ou quantidades
 
   assert.deepEqual(camposResumo(comPeriodo[0].linhas[0]), camposResumo(semPeriodo[0].linhas[0]));
   assert.deepEqual(comprasDepois, comprasAntes);
+});
+
+test('salvar preco do calcario em R$/t calcula custo por hectare e custo total', () => {
+  const custo = calcularCustoCalagem({
+    doseKgHa: 1000,
+    doseTotalKg: 2000,
+    precoUnitario: 500,
+    unidadePreco: 't',
+  });
+
+  assert.equal(custo.precoUnitario, 500);
+  assert.equal(custo.unidadePreco, 't');
+  assert.equal(custo.custoHa, 500);
+  assert.equal(custo.custoTotal, 1000);
+});
+
+test('salvar preco em R$/kg calcula custo por hectare, custo total e formata unidade', () => {
+  const custo = calcularCustoCalagem({
+    doseKgHa: 1000,
+    doseTotalKg: 2000,
+    precoUnitario: 2.5,
+    unidadePreco: 'kg',
+  });
+
+  assert.equal(custo.custoHa, 2500);
+  assert.equal(custo.custoTotal, 5000);
+  assert.equal(formatarPrecoUnitarioCalagem(500, 't'), 'R$ 500,00/t');
+  assert.equal(formatarPrecoUnitarioCalagem(2.5, 'kg'), 'R$ 2,50/kg');
+});
+
+test('restaurar preco salvo da calagem leva preco e custos ao Resumo Geral', () => {
+  const grupos = montarGruposResumoAdubacao2({
+    resultados: [],
+    calagens: [{
+      id: 'c1',
+      talhao_id: 't1',
+      produto_id: 'calc1',
+      produto_nome: 'Calcario A',
+      dose_kg_ha: 1000,
+      dose_total_kg: 2000,
+      preco_unitario: 500,
+      unidade_preco: 't',
+    }],
+    talhoes: talhoesBase,
+  });
+  const linha = grupos[0].linhas[0];
+
+  assert.equal(linha.precoUnitario, 500);
+  assert.equal(linha.unidadePreco, 't');
+  assert.equal(linha.custoHa, 500);
+  assert.equal(linha.custoTotal, 1000);
+});
+
+test('calagem soma no Total Geral e na Consolidacao de Compras sem depender de R$/kg', () => {
+  const compras = consolidarComprasAdubacao2({
+    resultados: [],
+    calagens: [{
+      id: 'c1',
+      talhao_id: 't1',
+      produto_id: 'calc1',
+      produto_nome: 'Calcario A',
+      dose_kg_ha: 1000,
+      dose_total_kg: 2000,
+      preco_unitario: 500,
+      unidade_preco: 't',
+    }],
+    talhoes: talhoesBase,
+  });
+
+  assert.equal(compras[0].isCalagem, true);
+  assert.equal(compras[0].preco, 500);
+  assert.equal(compras[0].unidadePreco, 't');
+  assert.equal(compras[0].custoTotal, 1000);
+});
+
+test('produto id 0 e nome 0 sao reconhecidos como nulos e ignorados visualmente', () => {
+  assert.equal(produtoNuloAdubacao2({ id: 0, nome: 'Calcario' }), true);
+  assert.equal(produtoNuloAdubacao2({ id: 'calc1', nome: '0' }), true);
+
+  const grupos = montarGruposResumoAdubacao2({
+    resultados: [{ talhao: talhoesBase[0], rec: { N: 1 }, produtoSugerido: { id: '0', nome: '0' }, doseProdutoHa: 400 }],
+    calagens: [{ id: 'c0', talhao_id: 't2', produto_id: '0', produto_nome: '0', dose_kg_ha: 1000, dose_total_kg: 3000 }],
+    talhoes: talhoesBase,
+  });
+  const compras = consolidarComprasAdubacao2({
+    resultados: [{ talhao: talhoesBase[0], rec: { N: 1 }, produtoSugerido: { id: '0', nome: '0' }, doseProdutoHa: 400 }],
+    calagens: [{ id: 'c0', talhao_id: 't2', produto_id: '0', produto_nome: '0', dose_kg_ha: 1000, dose_total_kg: 3000 }],
+    talhoes: talhoesBase,
+  });
+
+  assert.equal(grupos.length, 0);
+  assert.equal(compras.length, 0);
+});
+
+test('produto 0 fica ausente do PDF e cores dos talhoes existem no HTML de impressao', () => {
+  const componente = readFileSync(new URL('../src/components/adubacao2/AbaResumoGeral2.jsx', import.meta.url), 'utf8');
+
+  assert.match(componente, /talhao-cor-0/);
+  assert.match(componente, /talhao-cor-1/);
+  assert.match(componente, /talhao-cor-2/);
+  assert.match(componente, /talhao-cor-3/);
+  assert.match(componente, /-webkit-print-color-adjust: exact/);
+  assert.match(componente, /print-color-adjust: exact/);
+  assert.match(componente, /Preço unitário/);
+});
+
+test('ocultar produto automatico remove de compras resumo e permanece no payload efetivo', () => {
+  const ureia = { id: 'ureia', nome: 'Ureia', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
+  const resultados = [{ talhao: talhoesBase[0], rec: { N: 90 }, produtoSugerido: ureia, doseProdutoHa: 200 }];
+  const produtosEfetivos = montarProdutosEfetivosPlanejamento({
+    resultados,
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia],
+    produtosOcultosPorTalhao: { t1: [{ linhaId: 'n_pct:ureia', produtoId: 'ureia' }] },
+  });
+  const compras = consolidarComprasAdubacao2({ resultados, produtosEfetivos, talhoes: talhoesBase });
+  const resumo = montarGruposResumoAdubacao2({ resultados, produtosEfetivos, talhoes: talhoesBase });
+
+  assert.equal(produtosEfetivos.t1.produtos_ocultos.length, 1);
+  assert.equal(compras.length, 0);
+  assert.equal(resumo.length, 0);
+});
+
+test('restaurar produto oculto devolve produto automatico a compras e resumo', () => {
+  const ureia = { id: 'ureia', nome: 'Ureia', n_pct: 45, p2o5_pct: 0, k2o_pct: 0, b_pct: 0, _tipo: 'fonte' };
+  const resultados = [{ talhao: talhoesBase[0], rec: { N: 90 }, produtoSugerido: ureia, doseProdutoHa: 200 }];
+  const produtosEfetivos = montarProdutosEfetivosPlanejamento({
+    resultados,
+    todosFiltrados: [ureia],
+    todosCatalogo: [ureia],
+    produtosOcultosPorTalhao: { t1: [] },
+  });
+
+  assert.equal(consolidarComprasAdubacao2({ resultados, produtosEfetivos, talhoes: talhoesBase }).length, 1);
+  assert.equal(montarGruposResumoAdubacao2({ resultados, produtosEfetivos, talhoes: talhoesBase }).length, 1);
+});
+
+test('BR Solo 66 consolidado para B e Zn sem dupla contagem e com nutriente-alvo editavel', () => {
+  const brSolo66 = { id: 'br66', nome: 'BR Solo 66', b_pct: 6, zn_pct: 6, n_pct: 0, p2o5_pct: 0, k2o_pct: 0, _tipo: 'fonte' };
+  const linhas = montarLinhasProdutos([brSolo66], { B: 6, Zn: 6 }, {}, brSolo66, 100, null, { B: 6, Zn: 6 });
+  const linha = linhas[0];
+
+  assert.equal(linhas.length, 1);
+  assert.equal(linha.produto.id, 'br66');
+  assert.equal(linha.doseKgHa, 100);
+  assert.equal(linha.nutrientes.some(n => n.label === 'B'), true);
+  assert.equal(linha.nutrientes.some(n => n.label === 'Zn'), true);
+  assert.equal(calcularDoseProdutoPorAlvo(brSolo66, 'zn_pct', { Zn: 6 }), 100);
+});
+
+test('PDF compras e resumo respeitam produtos ocultos sem duplicar quantidade nem custo', () => {
+  const brSolo66 = { id: 'br66', nome: 'BR Solo 66', b_pct: 6, zn_pct: 6, n_pct: 0, p2o5_pct: 0, k2o_pct: 0, _tipo: 'fonte' };
+  const resultados = [{ talhao: talhoesBase[0], rec: { B: 6, Zn: 6 }, produtoSugerido: brSolo66, doseProdutoHa: 100 }];
+  const visivel = montarProdutosEfetivosPlanejamento({ resultados, todosFiltrados: [brSolo66], todosCatalogo: [brSolo66] });
+  const oculto = montarProdutosEfetivosPlanejamento({
+    resultados,
+    todosFiltrados: [brSolo66],
+    todosCatalogo: [brSolo66],
+    produtosOcultosPorTalhao: { t1: [{ linhaId: 'n_pct:br66', produtoId: 'br66' }] },
+  });
+
+  assert.equal(consolidarComprasAdubacao2({ resultados, produtosEfetivos: visivel, talhoes: talhoesBase })[0].qtdTotal, 200);
+  assert.equal(montarGruposResumoAdubacao2({ resultados, produtosEfetivos: visivel, talhoes: talhoesBase })[0].linhas.length, 1);
+  assert.equal(consolidarComprasAdubacao2({ resultados, produtosEfetivos: oculto, talhoes: talhoesBase }).length, 0);
+  assert.equal(montarGruposResumoAdubacao2({ resultados, produtosEfetivos: oculto, talhoes: talhoesBase }).length, 0);
 });
