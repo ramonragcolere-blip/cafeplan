@@ -306,6 +306,7 @@ export function Adubacao2Conteudo() {
   const [resultadosCalculo, setResultadosCalculo] = useState(null);
   const [calculando, setCalculando] = useState(false);
   const [calculandoTalhaoId, setCalculandoTalhaoId] = useState(null);
+  const [politicaRecalculoTalhao, setPoliticaRecalculoTalhao] = useState('manter_salvos');
   const [modal2040, setModal2040] = useState(null);
   const [modalVerAnalises, setModalVerAnalises] = useState(null);
   // PROBLEMA 2: doses editadas na tabela
@@ -1014,6 +1015,18 @@ export function Adubacao2Conteudo() {
               onClick={() => { setSelecionados(talhoes.map(t => t.id)); setModalAgrupado2040(true); }}>
               <FileUp className="w-3.5 h-3.5" /> Todos de uma vez
             </Button>
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">Política de recálculo</Label>
+              <Select value={politicaRecalculoTalhao} onValueChange={setPoliticaRecalculoTalhao}>
+                <SelectTrigger className="h-7 w-[220px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manter_salvos">Manter produtos salvos</SelectItem>
+                  <SelectItem value="substituir_automaticos">Substituir somente sugestões automáticas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="ml-auto flex items-center gap-2">
               {msgCalculo && (
                 <span className="flex items-center gap-1 text-xs text-green-700 font-medium bg-green-50 border border-green-200 rounded px-2 py-1">
@@ -1051,7 +1064,7 @@ export function Adubacao2Conteudo() {
                         onCheckedChange={() => setSelecionados(prev => prev.length === talhoes.length ? [] : talhoes.map(t => t.id))} />
                     </th>
                     {['Talhão','Área (ha)','Nº plantas','Safra 1 (sc/ha)','Safra 2 (sc/ha)','Média','Análise 0-20','Análise 20-40','Status','Ações'].map(h => (
-                      <th key={h} className="px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
+                      <th key={h} className={`px-3 py-3 text-left font-semibold text-xs text-muted-foreground uppercase tracking-wide whitespace-nowrap ${h === 'Ações' ? 'min-w-[150px]' : ''}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1067,6 +1080,8 @@ export function Adubacao2Conteudo() {
                     else if (!isNaN(s1)) media = s1;
                     else if (!isNaN(s2)) media = s2;
                     const tem2040 = !!analises2040Local[talhao.id];
+                    const carregandoTalhao = calculandoTalhaoId === talhao.id;
+                    const podeCacularTalhao = protocolo === 'Protocolo Ramon' && todos.length > 0;
 
                     return (
                       <tr key={talhao.id} className={`border-b border-border/50 last:border-0 transition-colors ${sel ? 'bg-primary/5' : i%2===0?'':'bg-muted/10'}`}>
@@ -1108,16 +1123,31 @@ export function Adubacao2Conteudo() {
                           <StatusBadge status={status} talhoes={talhoes} />
                         </td>
                         <td className="px-3 py-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                            onClick={() => setModalVerAnalises(talhao)}
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Ver análises
-                          </Button>
+                          <div className="flex min-w-[135px] flex-col items-stretch gap-1.5 sm:flex-row lg:flex-col">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 justify-start gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => setModalVerAnalises(talhao)}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Ver análises
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 justify-start gap-1.5 px-2 text-xs"
+                              disabled={!podeCacularTalhao || carregandoTalhao}
+                              onClick={() => handleCalcularTalhao(talhao.id, todos, {
+                                substituirSalvos: politicaRecalculoTalhao === 'substituir_automaticos',
+                              })}
+                            >
+                              {carregandoTalhao ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calculator className="w-3.5 h-3.5" />}
+                              {carregandoTalhao ? 'Calculando...' : 'Calcular talhão'}
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
