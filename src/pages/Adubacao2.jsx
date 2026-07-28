@@ -1158,6 +1158,7 @@ export function Adubacao2Conteudo() {
             produtor={produtor}
             safra={safra}
             registrosSalvos={registrosSalvos}
+            precosAtuais={precosExterno}
           />
         </div>
       )}

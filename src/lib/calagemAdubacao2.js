@@ -320,6 +320,15 @@ function criarMapaParcelamentosResumo(registrosSalvos = []) {
   return mapa;
 }
 
+function criarMapaPrecosResumo(registrosSalvos = []) {
+  const mapa = {};
+  (registrosSalvos || []).forEach(registro => {
+    const precos = registro?.detalhamento?.precos || {};
+    Object.assign(mapa, precos);
+  });
+  return mapa;
+}
+
 function periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, produtoId) {
   if (!produtoId || produtoId === '0') return 'A definir';
   return formatarPeriodoAplicacao(parcelamentosPorTalhao?.[talhaoId]?.[produtoId]);
@@ -415,11 +424,12 @@ export function consolidarComprasAdubacao2({ resultados, produtosEfetivos = {}, 
   return Object.values(mapa);
 }
 
-export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null, registrosSalvos = [] }) {
+export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEfetivos = {}, calagens = [], talhoes = [], codigoProdutor = null, safra = null, sugerirProdutos = null, registrosSalvos = [], precosAtuais = {} }) {
   const calagensRecentes = listarCalagensRecentesPorTalhao({ calagens, talhoes, codigoProdutor, safra });
   const calagensMap = {};
   calagensRecentes.forEach(calagem => { calagensMap[calagem.talhao_id] = calagem; });
   const parcelamentosPorTalhao = criarMapaParcelamentosResumo(registrosSalvos);
+  const precosPorProduto = { ...criarMapaPrecosResumo(registrosSalvos), ...(precosAtuais || {}) };
 
   const talhaoIds = new Set([
     ...(resultados || []).filter(r => r.rec).map(r => r.talhao.id),
@@ -465,6 +475,7 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
         const totalKg = area > 0 ? Math.round(dosePrincipal * area) : null;
         const gPlanta = numPlantas > 0 && totalKg != null ? Math.round((totalKg * 1000) / numPlantas) : null;
         const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
+        const precoUnitario = normalizarNumeroCalagem(precosPorProduto[produtoPrincipal.id]);
         linhas.push({
           produtoNome: produtoPrincipal.nome,
           produtoId: produtoPrincipal.id,
@@ -474,6 +485,10 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
           gMetro,
           nutLabels: [formatarNutrientesFornecidosAdubacao2(produtoPrincipal, dosePrincipal)].filter(Boolean),
           isCalagem: false,
+          precoUnitario,
+          unidadePreco: 'kg',
+          custoHa: precoUnitario != null ? dosePrincipal * precoUnitario : null,
+          custoTotal: precoUnitario != null && totalKg != null ? totalKg * precoUnitario : null,
           periodoAplicacao: periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, produtoPrincipal.id),
         });
       }
@@ -486,6 +501,7 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
         const gMetro = metros > 0 && totalKg != null ? Math.round((totalKg * 1000) / metros) : null;
         const nutStr = formatarNutrientesFornecidosAdubacao2(comp.produto, comp.doseKgHa);
         const nutLabels = nutStr ? [nutStr] : (comp.nutrientes || []).map(n => n.label).filter(Boolean);
+        const precoUnitario = normalizarNumeroCalagem(precosPorProduto[comp.produto.id]);
         linhas.push({
           produtoNome: comp.produto.nome,
           produtoId: comp.produto.id,
@@ -495,6 +511,10 @@ export function montarGruposResumoAdubacao2({ resultados, todos = [], produtosEf
           gMetro,
           nutLabels: nutLabels.length > 0 ? nutLabels : ['Complemento'],
           isCalagem: false,
+          precoUnitario,
+          unidadePreco: 'kg',
+          custoHa: precoUnitario != null ? comp.doseKgHa * precoUnitario : null,
+          custoTotal: precoUnitario != null && totalKg != null ? totalKg * precoUnitario : null,
           periodoAplicacao: periodoAplicacaoProduto(parcelamentosPorTalhao, talhaoId, comp.produto.id),
         });
       }

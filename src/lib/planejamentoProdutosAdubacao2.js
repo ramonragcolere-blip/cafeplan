@@ -39,6 +39,10 @@ export const NUTRIENTES_ALVO_ADUBACAO2 = [
 
 const TEM_NUTRIENTE_KEYS = ['n_pct', 'p2o5_pct', 'k2o_pct', 'b_pct'];
 const NUMERICOS_COMPOSICAO = ['n_pct', 'p2o5_pct', 'k2o_pct', 'ca_pct', 'mg_pct', 's_pct', 'b_pct', 'zn_pct', 'cu_pct', 'mn_pct', 'fe_pct'];
+const ALIASES_COMPOSICAO_TEXTO = {
+  b_pct: ['B', 'Boro'],
+  zn_pct: ['Zn', 'Zinco'],
+};
 export const CAMPOS_FERTILIZANTE_FORMULADO = [
   'nome', 'fornecedor', 'grupo', 'tipo_produto', 'tipo_formulacao', 'funcao_composicao', 'ingrediente_ativo',
   ...NUMERICOS_COMPOSICAO,
@@ -92,11 +96,11 @@ export function normalizarProdutoAdubacao2(produto, fallback = {}) {
   const id = produto?.id || fallback.produto_id || null;
   const nome = produto?.nome || fallback.produto_nome || fallback.nome || 'Produto não definido';
   if (produtoNuloAdubacao2({ id, nome })) return null;
-  return {
+  return normalizarComposicaoProdutoAdubacao2({
     ...(produto || {}),
     id,
     nome,
-  };
+  });
 }
 
 export function normalizarComplementosAdubacao2(complementos = []) {
@@ -119,7 +123,8 @@ export function normalizarComplementosAdubacao2(complementos = []) {
 }
 
 export function produtoTemNutrientePlanejamento(produto) {
-  return TEM_NUTRIENTE_KEYS.some(key => (parseFloat(produto?.[key]) || 0) > 0);
+  const produtoNormalizado = normalizarComposicaoProdutoAdubacao2(produto);
+  return TEM_NUTRIENTE_KEYS.some(key => (parseFloat(produtoNormalizado?.[key]) || 0) > 0);
 }
 
 export function origemProdutoCatalogoLabel(produto) {
@@ -154,8 +159,50 @@ function numeroDose(valor) {
   return Number.isFinite(numero) ? numero : null;
 }
 
+function escaparRegex(valor) {
+  return String(valor).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extrairPercentualNutriente(texto, aliases) {
+  const fonte = String(texto || '');
+  if (!fonte.trim()) return null;
+  for (const alias of aliases) {
+    const aliasRegex = escaparRegex(alias);
+    const antes = new RegExp(`(?:^|[^\\p{L}\\p{N}])([0-9]+(?:[,.][0-9]+)?)\\s*%\\s*${aliasRegex}(?:$|\\b|[^\\p{L}\\p{N}])`, 'iu');
+    const depois = new RegExp(`(?:^|[^\\p{L}\\p{N}])${aliasRegex}(?:\\s|:|-)+([0-9]+(?:[,.][0-9]+)?)\\s*%(?:$|\\b|[^\\p{L}\\p{N}])`, 'iu');
+    const match = fonte.match(antes) || fonte.match(depois);
+    if (match?.[1] != null) {
+      const valor = numeroDose(match[1]);
+      if (valor != null) return valor;
+    }
+  }
+  return null;
+}
+
+export function normalizarComposicaoProdutoAdubacao2(produto = {}) {
+  if (!produto || typeof produto !== 'object') return produto;
+  const textoComposicao = [
+    produto.composicao_texto,
+    produto.outros_nutrientes,
+    produto.funcao_composicao,
+  ].filter(Boolean).join(' ');
+  if (!textoComposicao.trim()) return produto;
+  const normalizado = { ...produto };
+  Object.entries(ALIASES_COMPOSICAO_TEXTO).forEach(([campo, aliases]) => {
+    const valorAtual = numeroDose(normalizado[campo]);
+    if (valorAtual != null) {
+      normalizado[campo] = valorAtual;
+      return;
+    }
+    const valorTexto = extrairPercentualNutriente(textoComposicao, aliases);
+    if (valorTexto != null) normalizado[campo] = valorTexto;
+  });
+  return normalizado;
+}
+
 function doseParaNutriente(produto, nutKey, rec, recKey = null) {
-  const pct = parseFloat(produto?.[nutKey]) || 0;
+  const produtoNormalizado = normalizarComposicaoProdutoAdubacao2(produto);
+  const pct = parseFloat(produtoNormalizado?.[nutKey]) || 0;
   const alvo = rec?.[recKey || nutKeyParaRecKey(nutKey)] || 0;
   if (pct <= 0 || alvo <= 0) return null;
   return Math.round((alvo / (pct / 100)) * 10) / 10;
@@ -168,19 +215,20 @@ export function calcularDoseProdutoPorAlvo(produto, nutrienteAlvo, rec = {}) {
 }
 
 export function calcularNutrientesFornecidos(prod, dose) {
+  const produto = normalizarComposicaoProdutoAdubacao2(prod);
   const doseNum = numeroDose(dose) || 0;
   return {
-    N: (parseFloat(prod?.n_pct) || 0) / 100 * doseNum,
-    P: (parseFloat(prod?.p2o5_pct) || 0) / 100 * doseNum,
-    K: (parseFloat(prod?.k2o_pct) || 0) / 100 * doseNum,
-    B: (parseFloat(prod?.b_pct) || 0) / 100 * doseNum,
-    Mg: (parseFloat(prod?.mg_pct) || 0) / 100 * doseNum,
-    Ca: (parseFloat(prod?.ca_pct) || 0) / 100 * doseNum,
-    S: (parseFloat(prod?.s_pct) || 0) / 100 * doseNum,
-    Zn: (parseFloat(prod?.zn_pct) || 0) / 100 * doseNum,
-    Cu: (parseFloat(prod?.cu_pct) || 0) / 100 * doseNum,
-    Mn: (parseFloat(prod?.mn_pct) || 0) / 100 * doseNum,
-    Fe: (parseFloat(prod?.fe_pct) || 0) / 100 * doseNum,
+    N: (parseFloat(produto?.n_pct) || 0) / 100 * doseNum,
+    P: (parseFloat(produto?.p2o5_pct) || 0) / 100 * doseNum,
+    K: (parseFloat(produto?.k2o_pct) || 0) / 100 * doseNum,
+    B: (parseFloat(produto?.b_pct) || 0) / 100 * doseNum,
+    Mg: (parseFloat(produto?.mg_pct) || 0) / 100 * doseNum,
+    Ca: (parseFloat(produto?.ca_pct) || 0) / 100 * doseNum,
+    S: (parseFloat(produto?.s_pct) || 0) / 100 * doseNum,
+    Zn: (parseFloat(produto?.zn_pct) || 0) / 100 * doseNum,
+    Cu: (parseFloat(produto?.cu_pct) || 0) / 100 * doseNum,
+    Mn: (parseFloat(produto?.mn_pct) || 0) / 100 * doseNum,
+    Fe: (parseFloat(produto?.fe_pct) || 0) / 100 * doseNum,
   };
 }
 
@@ -201,11 +249,12 @@ function nutrientesDaDose(produto, dose, rec = {}) {
 }
 
 export function listarNutrientesFornecidosAdubacao2(produto, dose) {
-  const fornecido = calcularNutrientesFornecidos(produto, dose);
+  const produtoNormalizado = normalizarComposicaoProdutoAdubacao2(produto);
+  const fornecido = calcularNutrientesFornecidos(produtoNormalizado, dose);
   return Object.entries(KEY_PARA_LABEL)
     .map(([nutKey, label]) => {
       const valor = fornecido[LABEL_PARA_REC[label] || label] || 0;
-      const temComposicao = (parseFloat(produto?.[nutKey]) || 0) > 0;
+      const temComposicao = (parseFloat(produtoNormalizado?.[nutKey]) || 0) > 0;
       return temComposicao && valor > 0 ? { label, fornecido: valor, unidade: 'kg/ha' } : null;
     })
     .filter(Boolean);
@@ -617,8 +666,8 @@ export function montarProdutosEfetivosPlanejamento({
 
 export function combinarCatalogoInsumos(formulados = [], fontes = []) {
   return [
-    ...listaSeguraAdubacao2(formulados).map(produto => ({ ...produto, _tipo: 'formulado', _origemLabel: 'Fertilizante formulado' })),
-    ...listaSeguraAdubacao2(fontes).map(produto => ({ ...produto, _tipo: 'fonte', _origemLabel: 'Fonte simples' })),
+    ...listaSeguraAdubacao2(formulados).map(produto => normalizarComposicaoProdutoAdubacao2({ ...produto, _tipo: 'formulado', _origemLabel: 'Fertilizante formulado' })),
+    ...listaSeguraAdubacao2(fontes).map(produto => normalizarComposicaoProdutoAdubacao2({ ...produto, _tipo: 'fonte', _origemLabel: 'Fonte simples' })),
   ].filter(produtoValidoAdubacao2);
 }
 
