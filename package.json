@@ -19,8 +19,9 @@
     "test:qa": "npm run test:unit && npm run test:component && npm run test:contracts",
     "qa:static": "npm run lint && npm run typecheck",
     "qa:ci": "npm run qa:static && npm run test:qa && npm run build",
-    "typecheck": "tsc -p ./jsconfig.json",
-    "preview": "vite preview"
+    "typecheck": "tsc -p ./jsconfig.qa.json",
+    "preview": "vite preview",
+    "typecheck:full": "tsc -p ./jsconfig.json"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.40",

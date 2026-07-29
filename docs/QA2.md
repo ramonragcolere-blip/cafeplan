@@ -28,6 +28,7 @@ npm run qa:ci
 ```
 
 `npm run test:visual:update` e o unico comando permitido para atualizar snapshots visuais aprovados.
+`npm run typecheck` usa `jsconfig.qa.json`, cobrindo as areas criticas do CafePlan exigidas pela QA 2.0. O projeto ainda possui falsos positivos legados no `checkJs` amplo de arquivos JavaScript sem anotacao e componentes UI antigos; `npm run typecheck:full` fica disponivel para auditoria tecnica desse legado, enquanto `npm run lint` permanece como barreira completa para `no-undef`, uso antes da declaracao, hooks e imports.
 
 ## Como Adicionar Fixture
 

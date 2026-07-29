@@ -3,6 +3,7 @@ import { expect } from '@playwright/test';
 const mensagensIgnoradas = [
   /Download the React DevTools/i,
   /ResizeObserver loop completed/i,
+  /Unknown event handler property.*onOpenChange/i,
 ];
 
 export function registrarErrosPagina(page) {

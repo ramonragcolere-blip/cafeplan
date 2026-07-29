@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Sprout, ChevronDown, ChevronUp, Search, FlaskConical, Calculator, Package, ShoppingCart, ClipboardCheck, FileDown, LayoutList } from 'lucide-react';
+import { Sprout, ChevronDown, ChevronUp, Search, FlaskConical, Package, ShoppingCart, ClipboardCheck, FileDown, LayoutList } from 'lucide-react';
 import DadosTalhaoCard from '@/components/adubacao/DadosTalhaoCard';
 import AnaliseSoloForm from '@/components/adubacao/AnaliseSoloForm';
 import AnaliseSolo2040Form from '@/components/adubacao/AnaliseSolo2040Form';

@@ -12,6 +12,7 @@ test('smoke: Adubacao 2.0 abre, troca safra e navega por todas as abas sem erro 
     await esperarPaginaVisivel(page);
   }
 
+  await page.getByRole('button', { name: /Análises e Importação/i }).click();
   await expect(page.getByRole('button', { name: /Calcular talhão/i }).first()).toBeVisible();
   await errosPagina.verificarSemErros();
 });

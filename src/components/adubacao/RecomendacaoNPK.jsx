@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Save, Loader2, Calculator, AlertTriangle } from 'lucide-react';
-import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas, alertas2040, META_K } from '@/lib/tabelasNutricionais';
+import { calcN, classificarP, calcB, getDosesBase, classificarZn, classificarCu, classificarMn, calcKSomaCamadas, alertas2040 } from '@/lib/tabelasNutricionais';
 import CalcCalagem from '@/components/adubacao/CalcCalagem';
 
 function Badge({ label, classe }) {
