@@ -1,0 +1,37 @@
+{
+  "extends": "./jsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "maxNodeModuleJsDepth": 0
+  },
+  "include": [
+    "src/pages/Adubacao2.jsx",
+    "src/components/adubacao2/**/*.js",
+    "src/components/adubacao2/**/*.jsx",
+    "src/components/dashboard/**/*.js",
+    "src/components/dashboard/**/*.jsx",
+    "src/components/calendario/**/*.js",
+    "src/components/calendario/**/*.jsx",
+    "src/components/planejamento/**/*.js",
+    "src/components/planejamento/**/*.jsx",
+    "src/lib/**/*.js",
+    "src/lib/**/*.jsx",
+    "src/api/**/*.js",
+    "src/testing/**/*.js",
+    "src/testing/**/*.jsx",
+    "tests/**/*.js",
+    "tests/**/*.jsx",
+    "vite.config.js",
+    "vitest.config.js",
+    "playwright.config.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/vite-plugins",
+    "src/components/ui",
+    "src/components/adubacao"
+  ]
+}

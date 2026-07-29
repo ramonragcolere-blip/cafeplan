@@ -32,3 +32,5 @@ dist-ssr
 
 /tests/fixtures/analise-solo-privadas/
 base44/.app.jsonc
+test-results/
+playwright-report/

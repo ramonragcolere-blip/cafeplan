@@ -1,4 +1,4 @@
-import { addDays, format } from 'date-fns';
+import { addDays } from 'date-fns';
 
 /**
  * Avança uma data pulando os dias não trabalhados (considera dias por semana).

@@ -58,7 +58,7 @@ const ABAS = [
   { id: 'resumo',       label: 'Resumo Geral' },
 ];
 
-class Adubacao2ErrorBoundary extends React.Component {
+export class Adubacao2ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false };

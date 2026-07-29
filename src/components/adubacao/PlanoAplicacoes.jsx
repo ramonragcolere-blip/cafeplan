@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Save, Loader2, Plus, Trash2, Package, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { Save, Loader2, Plus, Trash2, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const NUTRIENTES = [

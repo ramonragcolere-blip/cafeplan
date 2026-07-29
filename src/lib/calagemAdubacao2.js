@@ -164,16 +164,38 @@ function timestampRegistro(registro) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function doseRegistroCalagem(registro) {
+  return normalizarNumeroCalagem(registro?.dose_kg_ha ?? registro?.doseFinalHa ?? registro?.dose_final_kg_ha);
+}
+
+function temProdutoValidoCalagem(registro) {
+  return !produtoNuloAdubacao2({ id: registro?.produto_id, nome: registro?.produto_nome });
+}
+
+function qualidadeRegistroCalagem(registro) {
+  const dose = doseRegistroCalagem(registro);
+  const temDosePositiva = dose != null && dose > 0;
+  const temProduto = temProdutoValidoCalagem(registro);
+  if (temDosePositiva && temProduto) return 3;
+  if (temDosePositiva) return 2;
+  if (temProduto) return 1;
+  return 0;
+}
+
 export function selecionarRegistroCalagem(registros) {
   let selecionado = null;
+  let selecionadoQualidade = -1;
   let selecionadoTimestamp = -1;
   let selecionadoIndice = -1;
   (registros || []).forEach((registro, indice) => {
     if (!registro?.id) return;
+    const qualidade = qualidadeRegistroCalagem(registro);
     const timestamp = timestampRegistro(registro);
-    if (!selecionado || timestamp > selecionadoTimestamp ||
-        (timestamp === selecionadoTimestamp && indice > selecionadoIndice)) {
+    if (!selecionado || qualidade > selecionadoQualidade ||
+        (qualidade === selecionadoQualidade && timestamp > selecionadoTimestamp) ||
+        (qualidade === selecionadoQualidade && timestamp === selecionadoTimestamp && indice > selecionadoIndice)) {
       selecionado = registro;
+      selecionadoQualidade = qualidade;
       selecionadoTimestamp = timestamp;
       selecionadoIndice = indice;
     }

@@ -330,6 +330,24 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
   // ── Envio para planejamento ───────────────────────────────────────────────────
   const resultado = protocolo === 'elevacao' ? resultadoElevacao : resultadoVpct;
 
+  const handleSalvar = () => {
+    salvar({
+      codigo_produtor: codigoProdutor, safra,
+      talhao_id: talhaoId,
+      talhao_nome: talhao?.nome || analise?.talhao_nome || '',
+      meta: protocolo === 'elevacao' ? nivel : `V%→${v2}`,
+      produto_id: produtoId || '',
+      produto_nome: produto?.nome || '',
+      ca_atual: caAtual ?? null,
+      mg_atual: mgAtual ?? null,
+      k_atual: kAtual ?? null,
+      deficit_ca: resultadoElevacao?.defCa ?? null,
+      deficit_mg: resultadoElevacao?.defMg ?? null,
+      dose_kg_ha: resultado?.doseFinalHa ?? null,
+      dose_total_kg: resultado?.totalKg ?? null,
+      observacoes,
+    });
+  };
   const { mutate: enviarPlanejamento, isPending: enviando } = useMutation({
     mutationFn: async () => {
       if (!resultado || !produto || !codigoProdutor || !safra || !talhaoId) return;
@@ -369,24 +387,6 @@ export default function CalcCalagem({ analise, talhao, safraCtx, onEnviarPlaneja
   const semAnalise = caAtual == null && mgAtual == null;
   if (semAnalise) return null;
 
-  const handleSalvar = () => {
-    salvar({
-      codigo_produtor: codigoProdutor, safra,
-      talhao_id: talhaoId,
-      talhao_nome: talhao?.nome || analise?.talhao_nome || '',
-      meta: protocolo === 'elevacao' ? nivel : `V%→${v2}`,
-      produto_id: produtoId || '',
-      produto_nome: produto?.nome || '',
-      ca_atual: caAtual ?? null,
-      mg_atual: mgAtual ?? null,
-      k_atual: kAtual ?? null,
-      deficit_ca: resultadoElevacao?.defCa ?? null,
-      deficit_mg: resultadoElevacao?.defMg ?? null,
-      dose_kg_ha: resultado?.doseFinalHa ?? null,
-      dose_total_kg: resultado?.totalKg ?? null,
-      observacoes,
-    });
-  };
 
   const podeEnviar = resultado && produto && resultado.doseFinalHa > 0 && !!codigoProdutor && !!safra && !!talhaoId;
 
