@@ -317,6 +317,7 @@ export function Adubacao2Conteudo() {
   const [msgCalculo, setMsgCalculo] = useState('');
   // Estado local para edição (antes de salvar)
   const [produtividadeLocal, setProdutividadeLocal] = useState({});
+  const [analisesSoloLocal, setAnalisesSoloLocal] = useState({});
   const [analises2040Local, setAnalises2040Local] = useState({});
   // C2: estado de preços, parcelamentos e produtos efetivos sincronizado do filho
   const [precosExterno, setPrecosExterno] = useState({});
@@ -340,10 +341,22 @@ export function Adubacao2Conteudo() {
 
   const produtor = produtores.find(p => p.id === produtorId) || null;
   const talhoes = useMemo(() => todosTalhoes.filter(t => t.codigo_produtor === produtor?.codigo), [todosTalhoes, produtor]);
-  const analises = useMemo(() => todasAnalises.filter(a => a.safra === safra && talhoes.some(t => t.id === a.talhao_id)), [todasAnalises, safra, talhoes]);
+  const todasAnalisesComLocais = useMemo(() => {
+    const mapa = new Map();
+    todasAnalises.forEach(analise => {
+      if (!analise?.talhao_id || !analise?.safra) return;
+      mapa.set(`${analise.talhao_id}|${analise.safra}`, analise);
+    });
+    Object.values(analisesSoloLocal).forEach(analise => {
+      if (!analise?.talhao_id || !analise?.safra) return;
+      mapa.set(`${analise.talhao_id}|${analise.safra}`, analise);
+    });
+    return Array.from(mapa.values());
+  }, [todasAnalises, analisesSoloLocal]);
+  const analises = useMemo(() => todasAnalisesComLocais.filter(a => a.safra === safra && talhoes.some(t => t.id === a.talhao_id)), [todasAnalisesComLocais, safra, talhoes]);
   const analisesProdutorTodasSafras = useMemo(() =>
-    todasAnalises.filter(a => talhoes.some(t => t.id === a.talhao_id)),
-    [todasAnalises, talhoes]
+    todasAnalisesComLocais.filter(a => talhoes.some(t => t.id === a.talhao_id)),
+    [todasAnalisesComLocais, talhoes]
   );
   const GRUPOS_DEFENSIVO = /herbicida|inseticida|fungicida|acaricida|nematicida|adjuvante|bactericida|glifosato|glufosinato|mancozebe|limpador|detector/i;
 
@@ -677,6 +690,21 @@ export function Adubacao2Conteudo() {
       if (!temPayloadAnaliseSolo(payload, '0-20')) throw new Error('Nenhum dado válido para salvar.');
       const classificacao = classificarExtracaoAnaliseSolo(payload, '0-20');
       const salvo = await salvarAnaliseSoloRef.current(payload);
+      const atualizado = { ...payload, ...(salvo?.id ? { id: salvo.id } : {}) };
+      setAnalisesSoloLocal(prev => ({
+        ...prev,
+        [`${payload.talhao_id}|${payload.safra}`]: atualizado,
+      }));
+      queryClient.setQueryData(['analises_solo', 'completo'], (atuais = []) => {
+        const lista = Array.isArray(atuais) ? atuais : [];
+        const indice = lista.findIndex(item =>
+          (salvo?.id && item?.id === salvo.id)
+          || (item?.talhao_id === payload.talhao_id && item?.safra === payload.safra)
+        );
+        if (indice < 0) return [...lista, atualizado];
+        return lista.map((item, idx) => (idx === indice ? { ...item, ...atualizado } : item));
+      });
+      await queryClient.invalidateQueries({ queryKey: ['analises_solo', 'completo'] });
       return { status: classificacao.status, id: salvo?.id || null, camposAusentes: classificacao.camposAusentes };
     } catch (error) {
       throw new Error(getErrorMessage(error));
