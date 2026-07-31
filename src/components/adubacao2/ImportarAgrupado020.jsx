@@ -9,12 +9,17 @@ import { Upload, Loader2, CheckCircle2, AlertTriangle, GripVertical, FileText, A
 import { base44 } from '@/api/base44Client';
 import {
   classificarExtracaoAnaliseSolo,
+  converterValorAnaliseSolo,
+  formatarUnidadeAnaliseSolo,
   gerarChaveArquivoAnaliseSolo,
   getErrorMessageAnaliseSolo,
   interpretarRespostaAnaliseSolo,
   prepararDadosParaRevisao,
   resumirResultadosImportacaoAnaliseSolo,
+  temPendenciasUnidadeAnaliseSolo,
   temPayloadAnaliseSolo,
+  UNIDADES_INTERNAS_ANALISE_SOLO,
+  UNIDADES_ORIGINAIS_ANALISE_SOLO,
 } from '@/lib/analiseSoloImportacao';
 
 const CAMPOS_0_20 = [
@@ -74,15 +79,37 @@ Primeiro identifique o laboratório:
 - OUTRO: qualquer outro
 
 NÃO converta unidades — retorne os valores EXATAMENTE como aparecem no laudo.
+Exija a unidade individual de cada determinação. Use a unidade da linha do resultado; se ela não estiver na linha, procure no texto completo do PDF.
+Normalize variações como mmolc/dm³, mmolc/dm3, mmol c/dm3, mmol_c/dm3, cmolc/dm³, cmolc/dm3, mg/dm³, mg/dm3, g/dm³, g/dm3 e %.
 
-Retorne um objeto com os campos:
-- laboratorio, ph, materia_organica, fosforo, potassio, calcio, magnesio, enxofre, boro, zinco, cobre, manganes, ferro, ctc, saturacao_bases, h_al, aluminio, sb, data_analise
+Retorne um objeto no formato:
+{
+  "laboratorio": "...",
+  "dados": {
+    "ph": null, "materia_organica": null, "fosforo": null, "potassio": null,
+    "calcio": null, "magnesio": null, "enxofre": null, "boro": null,
+    "zinco": null, "cobre": null, "manganes": null, "ferro": null,
+    "ctc": null, "saturacao_bases": null, "h_al": null, "aluminio": null,
+    "sb": null, "data_analise": null
+  },
+  "unidades": {
+    "materia_organica": "g/dm3", "fosforo": "mg/dm3", "potassio": "mmolc/dm3",
+    "calcio": "mmolc/dm3", "magnesio": "mmolc/dm3", "enxofre": "mg/dm3",
+    "boro": "mg/dm3", "zinco": "mg/dm3", "cobre": "mg/dm3", "manganes": "mg/dm3",
+    "ferro": "mg/dm3", "ctc": "mmolc/dm3", "saturacao_bases": "%"
+  }
+}
 
 Se algum campo não for encontrado, retornar null.
 
 === TEXTO DO PDF ===
 ${textoPDF}
 === FIM ===`;
+
+function formatarNumero(valor) {
+  if (valor == null || valor === '') return '';
+  return Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+}
 
 // ── Dialog "aplicar a outros talhões" ─────────────────────────────────────────
 function PopoverAplicarOutros({ talhoes, pares, idxOrigem, onAplicar, onClose }) {
@@ -332,14 +359,43 @@ function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
   const toNum = v => (v !== '' && v != null) ? Number(v) : undefined;
   const updateDado = (idx, key, value) => {
     setItens(prev => prev.map((item, i) =>
-      i === idx ? { ...item, dados: { ...item.dados, [key]: value } } : item
+      i === idx ? {
+        ...item,
+        dados: { ...item.dados, [key]: value },
+        revisoesUnidade: (item.revisoesUnidade || []).filter(revisao => revisao.campo !== key),
+      } : item
     ));
   };
+  const updateUnidade = (idx, key, unidadeOriginal) => {
+    setItens(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const unidadeDestino = UNIDADES_INTERNAS_ANALISE_SOLO[key];
+      const resultado = converterValorAnaliseSolo({ campo: key, valorOriginal: item.dados?.[key], unidadeOriginal, unidadeDestino });
+      return {
+        ...item,
+        dados: { ...item.dados, [key]: resultado.valor ?? item.dados?.[key] },
+        unidades: { ...(item.unidades || {}), [key]: resultado.destino || unidadeDestino },
+        pendenciasUnidade: (item.pendenciasUnidade || []).filter(pendencia => pendencia.campo !== key),
+        revisoesUnidade: [
+          ...(item.revisoesUnidade || []).filter(revisao => revisao.campo !== key),
+          ...(resultado.convertido ? [{
+            campo: key,
+            valorOriginal: item.dados?.[key],
+            unidadeOriginal: resultado.origem,
+            valorConvertido: resultado.valor,
+            unidadeDestino: resultado.destino,
+          }] : []),
+        ],
+      };
+    }));
+  };
+  const temPendencias = itens.some(temPendenciasUnidadeAnaliseSolo);
 
   return (
     <div className="space-y-5">
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
         Confira os dados extraídos. Talhões com o mesmo PDF têm os mesmos valores iniciais — edite individualmente se necessário.
+        {temPendencias && <span className="block mt-1 font-semibold">Revise as unidades destacadas antes de salvar.</span>}
       </div>
       {itens.map((item, idx) => (
         <div key={item.talhao.id} className="border border-border rounded-xl overflow-hidden">
@@ -358,20 +414,46 @@ function EtapaRevisao({ itens, setItens, onSalvar, salvando }) {
             </div>
           )}
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {CAMPOS_0_20.map(c => (
+            {CAMPOS_0_20.map(c => {
+              const revisao = (item.revisoesUnidade || []).find(rev => rev.campo === c.key);
+              const pendencia = (item.pendenciasUnidade || []).find(pend => pend.campo === c.key);
+              return (
               <div key={c.key}>
                 <Label className="text-xs mb-0.5 block text-muted-foreground">{c.label}</Label>
                 <Input type={c.date ? 'date' : 'number'} step={c.date ? undefined : '0.001'}
                   value={item.dados[c.key] ?? ''}
                   onChange={e => updateDado(idx, c.key, c.date ? e.target.value : toNum(e.target.value))}
-                  className="h-7 text-xs" />
+                  className={`h-7 text-xs ${pendencia ? 'border-amber-500 bg-amber-50' : ''}`} />
+                {item.unidades?.[c.key] && !c.date && (
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Unidade: {formatarUnidadeAnaliseSolo(item.unidades[c.key])}</p>
+                )}
+                {revisao && (
+                  <p className="mt-0.5 text-[10px] text-green-700">
+                    Original: {formatarNumero(revisao.valorOriginal)} {formatarUnidadeAnaliseSolo(revisao.unidadeOriginal)} → Convertido: {formatarNumero(revisao.valorConvertido)} {formatarUnidadeAnaliseSolo(revisao.unidadeDestino)}
+                  </p>
+                )}
+                {pendencia && (
+                  <div className="mt-1">
+                    <Select onValueChange={value => updateUnidade(idx, c.key, value)}>
+                      <SelectTrigger className="h-7 text-xs border-amber-500 bg-amber-50">
+                        <SelectValue placeholder="Unidade original" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {UNIDADES_ORIGINAIS_ANALISE_SOLO.map(unidade => (
+                          <SelectItem key={unidade} value={unidade}>{formatarUnidadeAnaliseSolo(unidade)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
       <DialogFooter>
-        <Button size="sm" onClick={onSalvar} disabled={salvando} className="gap-2">
+        <Button size="sm" onClick={onSalvar} disabled={salvando || temPendencias} className="gap-2">
           {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
           Salvar {itens.length} análise(s)
         </Button>
@@ -470,14 +552,23 @@ export default function ImportarAgrupado020({ talhoes, onImportarAnalise, onClos
           const interpretado = interpretarRespostaAnaliseSolo(resposta, '0-20');
           laboratorio = interpretado.laboratorio || 'OUTRO';
           dadosExtraidos = interpretado.dados;
+          cacheExtracao[chaveArquivo] = {
+            dados: dadosExtraidos,
+            laboratorio,
+            unidades: interpretado.unidades || {},
+            revisoesUnidade: interpretado.revisoesUnidade || [],
+            pendenciasUnidade: interpretado.pendenciasUnidade || [],
+            erro: null,
+          };
           if (!temPayloadAnaliseSolo(dadosExtraidos, '0-20')) {
             erroExtracao = 'Nenhum dado válido foi extraído do PDF.';
+            cacheExtracao[chaveArquivo].erro = erroExtracao;
           }
         } catch (error) {
           erroExtracao = getErrorMessage(error);
           console.error('Erro ao processar PDF de análise de solo 0-20 cm.', error);
         }
-        cacheExtracao[chaveArquivo] = { dados: dadosExtraidos, laboratorio, erro: erroExtracao };
+        cacheExtracao[chaveArquivo] = cacheExtracao[chaveArquivo] || { dados: dadosExtraidos, laboratorio, erro: erroExtracao };
         processados++;
         setProgresso(processados);
       }

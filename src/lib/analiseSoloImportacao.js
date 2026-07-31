@@ -57,6 +57,81 @@ const CAMPOS_NUMERICOS = new Set([
   'saturacao_bases',
 ]);
 
+export const UNIDADES_INTERNAS_ANALISE_SOLO = {
+  materia_organica: 'g/dm3',
+  fosforo: 'mg/dm3',
+  potassio: 'mg/dm3',
+  calcio: 'cmolc/dm3',
+  magnesio: 'cmolc/dm3',
+  aluminio: 'cmolc/dm3',
+  h_al: 'cmolc/dm3',
+  sb: 'cmolc/dm3',
+  soma_bases: 'cmolc/dm3',
+  ctc: 'cmolc/dm3',
+  enxofre: 'mg/dm3',
+  boro: 'mg/dm3',
+  zinco: 'mg/dm3',
+  cobre: 'mg/dm3',
+  manganes: 'mg/dm3',
+  ferro: 'mg/dm3',
+  saturacao_bases: '%',
+};
+
+export const UNIDADES_ORIGINAIS_ANALISE_SOLO = [
+  'mmolc/dm3',
+  'cmolc/dm3',
+  'mg/dm3',
+  'g/dm3',
+  '%',
+];
+
+const CAMPOS_EXIGEM_UNIDADE = new Set(Object.keys(UNIDADES_INTERNAS_ANALISE_SOLO));
+const CAMPOS_BASES_CTC = new Set(['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'soma_bases', 'ctc']);
+const ALIASES_CAMPOS = {
+  k: 'potassio',
+  potassio: 'potassio',
+  potássio: 'potassio',
+  ca: 'calcio',
+  calcio: 'calcio',
+  cálcio: 'calcio',
+  mg: 'magnesio',
+  magnesio: 'magnesio',
+  magnésio: 'magnesio',
+  al: 'aluminio',
+  aluminio: 'aluminio',
+  alumínio: 'aluminio',
+  'h+al': 'h_al',
+  hal: 'h_al',
+  'h al': 'h_al',
+  's.b.': 'sb',
+  sb: 'sb',
+  'soma de bases': 'sb',
+  ctc: 'ctc',
+  'c.t.c.': 'ctc',
+  p: 'fosforo',
+  fosforo: 'fosforo',
+  fósforo: 'fosforo',
+  s: 'enxofre',
+  enxofre: 'enxofre',
+  b: 'boro',
+  boro: 'boro',
+  zn: 'zinco',
+  zinco: 'zinco',
+  cu: 'cobre',
+  cobre: 'cobre',
+  mn: 'manganes',
+  manganes: 'manganes',
+  manganês: 'manganes',
+  fe: 'ferro',
+  ferro: 'ferro',
+  mo: 'materia_organica',
+  'm.o.': 'materia_organica',
+  'materia organica': 'materia_organica',
+  'matéria orgânica': 'materia_organica',
+  v: 'saturacao_bases',
+  'v%': 'saturacao_bases',
+};
+
 export function getCamposAnaliseSolo(profundidade = '0-20') {
   return profundidade === '20-40' ? CAMPOS_ANALISE_2040 : CAMPOS_ANALISE_020;
 }
@@ -90,6 +165,146 @@ export function normalizarDataAnaliseSolo(valor) {
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : undefined;
 }
 
+export function normalizarNomeLaboratorioAnaliseSolo(laboratorio = 'OUTRO') {
+  const texto = String(laboratorio || 'OUTRO')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+
+  if (texto.includes('COOXUPE') || texto.includes('COOPERATIVAREGIONALDECAFEICULTORES')) return 'COOXUPE';
+  if (texto.includes('LABVICOSA') || texto.includes('LABSOLOSVICOSA') || texto.includes('VICOSA')) return 'LAB_VICOSA';
+  return texto || 'OUTRO';
+}
+
+export function normalizarUnidadeAnaliseSolo(unidade) {
+  if (unidade == null) return '';
+  const texto = String(unidade)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/³/g, '3')
+    .replace(/[·•]/g, '')
+    .replace(/_/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+
+  if (texto === '%') return '%';
+  if (/^mmolc?\/?dm3$/.test(texto) || /^mmolc?dm3$/.test(texto)) return 'mmolc/dm3';
+  if (/^cmolc?\/?dm3$/.test(texto) || /^cmolc?dm3$/.test(texto)) return 'cmolc/dm3';
+  if (/^mg\/?dm3$/.test(texto) || /^mgdm3$/.test(texto)) return 'mg/dm3';
+  if (/^g\/?dm3$/.test(texto) || /^gdm3$/.test(texto)) return 'g/dm3';
+  if (/^dag\/?kg$/.test(texto) || /^dagkg$/.test(texto)) return 'dag/kg';
+  return '';
+}
+
+export function formatarUnidadeAnaliseSolo(unidade) {
+  const canonica = normalizarUnidadeAnaliseSolo(unidade) || unidade || '';
+  return String(canonica).replace(/dm3/g, 'dm³');
+}
+
+function normalizarTextoBusca(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function escaparRegex(texto) {
+  return String(texto).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extrairUnidadesDoTextoCompleto(textoCompleto = '') {
+  const texto = normalizarTextoBusca(textoCompleto).replace(/³/g, '3');
+  const unidades = {};
+  Object.entries(ALIASES_CAMPOS).forEach(([alias, campo]) => {
+    if (unidades[campo]) return;
+    const unidade = '(mmol\\s*_?\\s*c\\s*/\\s*dm3|cmol\\s*_?\\s*c\\s*/\\s*dm3|mg\\s*/\\s*dm3|g\\s*/\\s*dm3|%)';
+    const regex = new RegExp(`(?:^|[^a-z0-9])${escaparRegex(alias)}(?:[^a-z0-9]+[a-z0-9.+-]+){0,4}[^a-z0-9%]+${unidade}`, 'i');
+    const match = texto.match(regex);
+    const canonica = normalizarUnidadeAnaliseSolo(match?.[1]);
+    if (canonica) unidades[campo] = canonica;
+  });
+  return unidades;
+}
+
+function unidadesFallbackLaboratorio(laboratorio) {
+  const lab = normalizarNomeLaboratorioAnaliseSolo(laboratorio);
+  if (lab !== 'COOXUPE') return {};
+  return {
+    potassio: 'mmolc/dm3',
+    calcio: 'mmolc/dm3',
+    magnesio: 'mmolc/dm3',
+    aluminio: 'mmolc/dm3',
+    h_al: 'mmolc/dm3',
+    sb: 'mmolc/dm3',
+    soma_bases: 'mmolc/dm3',
+    ctc: 'mmolc/dm3',
+    fosforo: 'mg/dm3',
+    enxofre: 'mg/dm3',
+    boro: 'mg/dm3',
+    zinco: 'mg/dm3',
+    cobre: 'mg/dm3',
+    manganes: 'mg/dm3',
+    ferro: 'mg/dm3',
+    materia_organica: 'g/dm3',
+    saturacao_bases: '%',
+  };
+}
+
+function obterUnidadeOriginal({ campo, unidadesLinha = {}, unidadesTexto = {}, fallbackLab = {} }) {
+  return normalizarUnidadeAnaliseSolo(unidadesLinha[campo])
+    || normalizarUnidadeAnaliseSolo(unidadesTexto[campo])
+    || normalizarUnidadeAnaliseSolo(fallbackLab[campo])
+    || '';
+}
+
+function arredondarAnaliseSolo(valor) {
+  return +Number(valor).toFixed(3);
+}
+
+export function converterValorAnaliseSolo({ campo, valorOriginal, unidadeOriginal, unidadeDestino }) {
+  const numero = normalizarNumeroAnaliseSolo(valorOriginal);
+  const origem = normalizarUnidadeAnaliseSolo(unidadeOriginal);
+  const destino = normalizarUnidadeAnaliseSolo(unidadeDestino);
+
+  if (numero === undefined || !origem || !destino) {
+    return { valor: numero, convertido: false, origem, destino, unidadeDesconhecida: !origem && CAMPOS_EXIGEM_UNIDADE.has(campo) };
+  }
+
+  if (origem === destino) {
+    return { valor: numero, convertido: false, origem, destino, unidadeDesconhecida: false };
+  }
+
+  if (campo === 'potassio') {
+    if (origem === 'mmolc/dm3' && destino === 'mg/dm3') {
+      return { valor: +(numero * 39.1).toFixed(1), convertido: true, origem, destino, unidadeDesconhecida: false };
+    }
+    if (origem === 'cmolc/dm3' && destino === 'mg/dm3') {
+      return { valor: +(numero * 391).toFixed(1), convertido: true, origem, destino, unidadeDesconhecida: false };
+    }
+  }
+
+  if (CAMPOS_BASES_CTC.has(campo)) {
+    if (origem === 'mmolc/dm3' && destino === 'cmolc/dm3') {
+      return { valor: arredondarAnaliseSolo(numero / 10), convertido: true, origem, destino, unidadeDesconhecida: false };
+    }
+    if (origem === 'cmolc/dm3' && destino === 'cmolc/dm3') {
+      return { valor: numero, convertido: false, origem, destino, unidadeDesconhecida: false };
+    }
+  }
+
+  if (
+    (['fosforo', 'enxofre', 'boro', 'zinco', 'cobre', 'manganes', 'ferro'].includes(campo) && origem === 'mg/dm3' && destino === 'mg/dm3')
+    || (campo === 'materia_organica' && origem === 'g/dm3' && destino === 'g/dm3')
+    || (campo === 'saturacao_bases' && origem === '%' && destino === '%')
+  ) {
+    return { valor: numero, convertido: false, origem, destino, unidadeDesconhecida: false };
+  }
+
+  return { valor: numero, convertido: false, origem, destino, unidadeDesconhecida: true };
+}
+
 export function desembrulharRespostaAnaliseSolo(resposta) {
   let parsed = resposta;
   if (typeof resposta === 'string') {
@@ -102,44 +317,67 @@ export function desembrulharRespostaAnaliseSolo(resposta) {
   }
 
   const base = parsed.dados && typeof parsed.dados === 'object' ? parsed.dados : parsed;
-  const laboratorio = parsed.laboratorio || base.laboratorio || 'OUTRO';
-  const { laboratorio: _laboratorio, dados: _dados, ...planos } = base;
-  return { laboratorio, dados: planos };
+  const laboratorio = normalizarNomeLaboratorioAnaliseSolo(parsed.laboratorio || base.laboratorio || 'OUTRO');
+  const unidades = parsed.unidades && typeof parsed.unidades === 'object'
+    ? parsed.unidades
+    : (base.unidades && typeof base.unidades === 'object' ? base.unidades : {});
+  const textoCompleto = parsed.texto_completo || parsed.textoCompleto || base.texto_completo || base.textoCompleto || '';
+  const { laboratorio: _laboratorio, dados: _dados, unidades: _unidades, texto_completo: _textoCompleto, textoCompleto: _textoCompletoCamel, ...planos } = base;
+  const resultado = { laboratorio, dados: planos };
+  if (Object.keys(unidades).length > 0) resultado.unidades = unidades;
+  if (textoCompleto) resultado.textoCompleto = textoCompleto;
+  return resultado;
 }
 
 /**
  * @param {Record<string, unknown>} dados
  * @param {string} laboratorio
  */
-export function converterUnidadesAnaliseSolo(dados = {}, laboratorio = 'OUTRO') {
+export function converterUnidadesAnaliseSolo(dados = {}, laboratorio = 'OUTRO', opcoes = {}) {
   const convertido = { ...dados };
-  const n = (value) => {
-    const numero = normalizarNumeroAnaliseSolo(value);
-    return numero === undefined ? null : numero;
-  };
-  const getNumero = (key) => n(convertido[key]);
+  const unidadesFinais = {};
+  const revisoesUnidade = [];
+  const pendenciasUnidade = [];
+  const unidadesLinha = opcoes.unidades || {};
+  const unidadesTexto = extrairUnidadesDoTextoCompleto(opcoes.textoCompleto || '');
+  const fallbackLab = unidadesFallbackLaboratorio(laboratorio);
 
-  if (laboratorio === 'COOXUPE') {
-    const potassio = getNumero('potassio');
-    if (potassio != null) {
-      convertido.potassio = +(potassio * 39.1).toFixed(1);
-    }
-    ['calcio', 'magnesio', 'aluminio', 'h_al', 'sb', 'ctc'].forEach((key) => {
-      const valor = getNumero(key);
-      if (valor != null) convertido[key] = +(valor / 10).toFixed(3);
-    });
-  } else if (laboratorio === 'LAB_VICOSA') {
-    const potassio = getNumero('potassio');
-    if (potassio != null && potassio < 3) {
-      convertido.potassio = +(potassio * 391).toFixed(1);
-    }
-  }
+  Object.entries(dados || {}).forEach(([campo, valorOriginal]) => {
+    if (!CAMPOS_NUMERICOS.has(campo)) return;
+    const unidadeDestino = UNIDADES_INTERNAS_ANALISE_SOLO[campo];
+    if (!unidadeDestino) return;
 
-  return convertido;
+    const unidadeOriginal = obterUnidadeOriginal({ campo, unidadesLinha, unidadesTexto, fallbackLab });
+    const resultado = converterValorAnaliseSolo({ campo, valorOriginal, unidadeOriginal, unidadeDestino });
+
+    if (resultado.valor !== undefined) convertido[campo] = resultado.valor;
+    if (resultado.origem && !resultado.unidadeDesconhecida) unidadesFinais[campo] = resultado.destino;
+
+    if (resultado.convertido) {
+      revisoesUnidade.push({
+        campo,
+        valorOriginal: normalizarNumeroAnaliseSolo(valorOriginal),
+        unidadeOriginal: resultado.origem,
+        valorConvertido: resultado.valor,
+        unidadeDestino: resultado.destino,
+      });
+    }
+
+    if (resultado.unidadeDesconhecida) {
+      pendenciasUnidade.push({
+        campo,
+        valorOriginal: normalizarNumeroAnaliseSolo(valorOriginal),
+        unidadeOriginal: unidadeOriginal || '',
+        unidadeDestino,
+      });
+    }
+  });
+
+  return { dados: convertido, unidades: unidadesFinais, revisoesUnidade, pendenciasUnidade };
 }
 
 export function interpretarRespostaAnaliseSolo(resposta, profundidade = '0-20') {
-  const { laboratorio, dados } = desembrulharRespostaAnaliseSolo(resposta);
+  const { laboratorio, dados, unidades, textoCompleto } = desembrulharRespostaAnaliseSolo(resposta);
   const permitidos = new Set([...getCamposAnaliseSolo(profundidade), 'laboratorio']);
   /** @type {Record<string, unknown>} */
   const normalizados = {};
@@ -159,10 +397,18 @@ export function interpretarRespostaAnaliseSolo(resposta, profundidade = '0-20') 
     normalizados[key] = value;
   });
 
+  const conversao = converterUnidadesAnaliseSolo(normalizados, laboratorio, { unidades, textoCompleto });
   return {
     laboratorio,
-    dados: converterUnidadesAnaliseSolo(normalizados, laboratorio),
+    dados: conversao.dados,
+    unidades: conversao.unidades,
+    revisoesUnidade: conversao.revisoesUnidade,
+    pendenciasUnidade: conversao.pendenciasUnidade,
   };
+}
+
+export function temPendenciasUnidadeAnaliseSolo(item = {}) {
+  return Array.isArray(item.pendenciasUnidade) && item.pendenciasUnidade.length > 0;
 }
 
 export function gerarChaveArquivoAnaliseSolo(file) {
@@ -232,6 +478,9 @@ export function prepararDadosParaRevisao({ pares = [], cacheExtracao = {}, profu
       chaveArquivo,
       dados,
       laboratorio: extraido?.laboratorio || 'OUTRO',
+      unidades: extraido?.unidades || {},
+      revisoesUnidade: extraido?.revisoesUnidade || [],
+      pendenciasUnidade: extraido?.pendenciasUnidade || [],
       validacao: validarCompletudeExtracao(dados, profundidade),
       erroExtracao: extraido?.erro || null,
     };

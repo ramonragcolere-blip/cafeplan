@@ -11,6 +11,7 @@ import Adubacao2, { Adubacao2Conteudo, Adubacao2ErrorBoundary } from '@/pages/Ad
 import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaGessagem2 from '@/components/adubacao2/AbaGessagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
+import ImportarPDFTalhao from '@/components/adubacao2/ImportarPDFTalhao';
 
 const mockState = vi.hoisted(() => ({ base44: null }));
 
@@ -45,6 +46,22 @@ vi.mock('@/components/ui/select', async () => {
 
 function prepararBase44(seed = criarCafePlanQa2Fixtures()) {
   mockState.base44 = createBase44MemoryClient({ seed });
+  return mockState.base44;
+}
+
+function prepararBase44Importacao(resposta) {
+  mockState.base44 = {
+    integrations: {
+      Core: {
+        UploadFile: vi.fn(async () => ({ file_url: 'mock://laudo-sintetico.pdf' })),
+        ExtractDataFromUploadedFile: vi.fn(async () => ({
+          status: 'success',
+          output: { texto_completo: resposta.texto_completo || 'Laudo sintetico QA CafePlan' },
+        })),
+        InvokeLLM: vi.fn(async () => resposta),
+      },
+    },
+  };
   return mockState.base44;
 }
 
@@ -222,6 +239,76 @@ describe('QA2 Adubacao 2.0 componentes reais', () => {
 
     expect(await screen.findByText('Adubação 2.0')).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/ReferenceError|TypeError/);
+  });
+
+  test('ImportarPDFTalhao mostra valor original, convertido, unidade correta e permite edicao manual', async () => {
+    prepararBase44Importacao({
+      laboratorio: 'cooxupe',
+      dados: {
+        potassio: 4,
+        calcio: 28,
+        magnesio: 11,
+        ctc: 87,
+        fosforo: 27,
+        boro: 0.49,
+        zinco: 3.8,
+      },
+      unidades: {
+        potassio: 'mmolc/dm³',
+        calcio: 'mmolc/dm³',
+        magnesio: 'mmolc/dm³',
+        ctc: 'mmolc/dm³',
+        fosforo: 'mg/dm³',
+        boro: 'mg/dm³',
+        zinco: 'mg/dm³',
+      },
+    });
+    const onImportarAnalise = vi.fn(async () => ({}));
+    const { container } = renderWithProviders(
+      <ImportarPDFTalhao talhao={{ id: 'talhao-a', nome: 'Talhão A' }} onImportarAnalise={onImportarAnalise} />
+    );
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['laudo'], 'laudo-sintetico.pdf', { type: 'application/pdf' })] },
+    });
+
+    expect(await screen.findByDisplayValue('156.4')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2.8')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('1.1')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('8.7')).toBeInTheDocument();
+    expect(screen.getByText('K (mg/dm³)')).toBeInTheDocument();
+    expect(screen.getByText(/Original: 4 mmolc\/dm³ .* Convertido: 156,4 mg\/dm³/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue('156.4'), { target: { value: '160' } });
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar e salvar/i }));
+
+    expect(onImportarAnalise).toHaveBeenCalledWith(
+      { id: 'talhao-a', nome: 'Talhão A' },
+      expect.objectContaining({ potassio: 160, calcio: 2.8, magnesio: 1.1, ctc: 8.7 })
+    );
+  });
+
+  test('ImportarPDFTalhao alerta unidade ausente e bloqueia salvamento ate selecao manual', async () => {
+    prepararBase44Importacao({
+      laboratorio: 'OUTRO',
+      dados: { potassio: 4 },
+      unidades: {},
+    });
+    const onImportarAnalise = vi.fn(async () => ({}));
+    const { container } = renderWithProviders(
+      <ImportarPDFTalhao talhao={{ id: 'talhao-a', nome: 'Talhão A' }} onImportarAnalise={onImportarAnalise} />
+    );
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['laudo'], 'laudo-sem-unidade.pdf', { type: 'application/pdf' })] },
+    });
+
+    expect(await screen.findByText(/Unidade original não identificada/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirmar e salvar/i })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'mmolc/dm3' } });
+    expect(await screen.findByDisplayValue('156.4')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirmar e salvar/i })).not.toBeDisabled();
   });
 });
 
