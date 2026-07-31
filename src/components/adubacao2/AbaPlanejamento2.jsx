@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, Filter, X } from 'lucide-react';
+import { RefreshCw, BarChart2, Save, ChevronRight, ChevronDown, MoreVertical, Filter, X, Copy, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { sugerirProdutosInteligente } from '@/lib/sugerirProdutos2';
 import {
   ajustarDoseLinha,
@@ -31,6 +31,14 @@ import {
   criarMarcacoesPadrao,
   listarElementosManuaisMarcados,
 } from '@/lib/planejamentoAdubacao2';
+import {
+  MODULOS_REPLICACAO_RECOMENDACAO,
+  calcularResumoReplicacaoRecomendacao,
+  detectarAlertasGessagemDestino,
+  formatarDataReplicacao,
+} from '@/lib/replicarRecomendacaoTalhao';
+import { selecionarRegistroCalagem } from '@/lib/calagemAdubacao2';
+import { selecionarRegistroGessagem } from '@/lib/gessagemAdubacao2';
 
 // ── Editor de Parcelamento / Dropdown de troca — importados de PainelTalhaoHelpers ──
 
@@ -1139,9 +1147,257 @@ function seletorPoliticaRecalculo(valor, onChange) {
   );
 }
 
+const LABEL_MODULO_REPLICACAO = {
+  planejamento: 'Planejamento de adubação',
+  calagem: 'Calagem',
+  gessagem: 'Gessagem',
+};
+
+function selecionarPlanejamentoTalhao(registros = [], talhaoId) {
+  return [...(registros || [])]
+    .filter(registro => registro?.talhao_id === talhaoId)
+    .sort((a, b) => Date.parse(b.updated_date || b.created_date || 0) - Date.parse(a.updated_date || a.created_date || 0))[0] || null;
+}
+
+function fmtMoeda(valor) {
+  return valor != null ? valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—';
+}
+
+function fmtListaNumeros(valores = []) {
+  return valores.length > 0 ? valores.map(v => `${fmt(v, 1)} kg/ha`).join(', ') : '—';
+}
+
+function MetadadoReplicacao({ registro }) {
+  const meta = registro?.rastreabilidade_replicacao || registro?.detalhamento?.rastreabilidade_replicacao;
+  if (!meta?.talhao_origem_nome) return null;
+  return (
+    <p className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded px-2 py-1 mt-1">
+      Recomendação replicada do talhão '{meta.talhao_origem_nome}' em {formatarDataReplicacao(meta.replicado_em)}.
+    </p>
+  );
+}
+
+function ModalReplicarRecomendacao({
+  aberto,
+  onClose,
+  produtor,
+  safra,
+  origem,
+  talhoes = [],
+  planejamentos = [],
+  calagens = [],
+  gessagens = [],
+  analises2040PorTalhao = {},
+  onConfirmar,
+}) {
+  const [destinos, setDestinos] = useState([]);
+  const [modulos, setModulos] = useState(() => ({
+    planejamento: true,
+    calagem: true,
+    gessagem: true,
+  }));
+  const [politicaConflito, setPoliticaConflito] = useState('ignorar_existentes');
+  const [confirmacaoFinal, setConfirmacaoFinal] = useState(false);
+  const [confirmacaoGessagem, setConfirmacaoGessagem] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [executando, setExecutando] = useState(false);
+
+  useEffect(() => {
+    if (!aberto) return;
+    setDestinos([]);
+    setModulos({ planejamento: true, calagem: true, gessagem: true });
+    setPoliticaConflito('ignorar_existentes');
+    setConfirmacaoFinal(false);
+    setConfirmacaoGessagem(false);
+    setResultado(null);
+  }, [aberto, origem?.id]);
+
+  const destinosDisponiveis = useMemo(() =>
+    talhoes.filter(talhao => talhao?.id && talhao.id !== origem?.id && (!talhao.codigo_produtor || talhao.codigo_produtor === produtor?.codigo)),
+    [talhoes, origem, produtor]
+  );
+  const origemPlanejamento = useMemo(() => selecionarPlanejamentoTalhao(planejamentos, origem?.id), [planejamentos, origem]);
+  const origemCalagem = useMemo(() => selecionarRegistroCalagem(calagens.filter(c => c.talhao_id === origem?.id)), [calagens, origem]);
+  const origemGessagem = useMemo(() => selecionarRegistroGessagem(gessagens.filter(g => g.talhao_id === origem?.id)), [gessagens, origem]);
+  const resumo = useMemo(() => calcularResumoReplicacaoRecomendacao({
+    talhaoOrigem: origem,
+    planejamento: origemPlanejamento,
+    calagem: origemCalagem,
+    gessagem: origemGessagem,
+  }), [origem, origemPlanejamento, origemCalagem, origemGessagem]);
+  const alertasGessagem = useMemo(() => destinosDisponiveis
+    .filter(talhao => destinos.includes(talhao.id))
+    .map(talhao => ({
+      talhao,
+      ...detectarAlertasGessagemDestino({
+        origem: origemGessagem,
+        destinoAnalise2040: analises2040PorTalhao[talhao.id],
+        talhaoDestino: talhao,
+      }),
+    }))
+    .filter(alerta => alerta.diagnosticoDiferente || alerta.exigeConfirmacaoSemIndicacao),
+    [destinosDisponiveis, destinos, origemGessagem, analises2040PorTalhao]
+  );
+  const modulosSelecionados = MODULOS_REPLICACAO_RECOMENDACAO.filter(modulo => modulos[modulo]);
+  const exigeConfirmacaoGessagem = modulos.gessagem && alertasGessagem.some(alerta => alerta.exigeConfirmacaoSemIndicacao);
+  const podeConfirmar = destinos.length > 0 && modulosSelecionados.length > 0 && confirmacaoFinal && (!exigeConfirmacaoGessagem || confirmacaoGessagem) && !executando;
+
+  if (!aberto || !origem) return null;
+
+  const toggleDestino = (talhaoId) => setDestinos(prev => prev.includes(talhaoId) ? prev.filter(id => id !== talhaoId) : [...prev, talhaoId]);
+  const selecionarTodos = () => setDestinos(prev => prev.length === destinosDisponiveis.length ? [] : destinosDisponiveis.map(t => t.id));
+  const alternarModulo = modulo => setModulos(prev => ({ ...prev, [modulo]: !prev[modulo] }));
+  const executar = async () => {
+    if (!podeConfirmar) return;
+    setExecutando(true);
+    try {
+      const resposta = await onConfirmar?.({
+        talhaoOrigem: origem,
+        talhoesDestino: destinosDisponiveis.filter(t => destinos.includes(t.id)),
+        modulos: modulosSelecionados,
+        politicaConflito,
+      });
+      setResultado(resposta);
+    } finally {
+      setExecutando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-background shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 className="text-base font-semibold">Replicar recomendação</h2>
+            <p className="text-xs text-muted-foreground mt-1">Produtor: {produtor?.nome || produtor?.codigo || '—'} · Safra: {safra} · Origem: {origem.nome}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid gap-4 p-5 lg:grid-cols-[1fr_1.1fr]">
+          <div className="space-y-4">
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Talhões de destino</h3>
+                <button type="button" onClick={selecionarTodos} className="text-xs text-primary underline underline-offset-2">
+                  Selecionar todos
+                </button>
+              </div>
+              <div className="max-h-56 overflow-y-auto rounded border border-border">
+                {destinosDisponiveis.map(talhao => (
+                  <label key={talhao.id} className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2 last:border-0">
+                    <span className="text-sm">{talhao.nome}</span>
+                    <input type="checkbox" checked={destinos.includes(talhao.id)} onChange={() => toggleDestino(talhao.id)} />
+                  </label>
+                ))}
+                {destinosDisponiveis.length === 0 && <p className="px-3 py-4 text-sm text-muted-foreground">Nenhum outro talhão disponível para esta safra.</p>}
+              </div>
+              <p className="text-xs text-muted-foreground">{destinos.length} talhão(ões) serão afetados.</p>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Módulos para copiar</h3>
+              {MODULOS_REPLICACAO_RECOMENDACAO.map(modulo => {
+                const disponivel = modulo === 'planejamento' ? !!origemPlanejamento : modulo === 'calagem' ? !!origemCalagem : !!origemGessagem;
+                return (
+                  <label key={modulo} className="flex items-start gap-2 rounded border border-border px-3 py-2">
+                    <input type="checkbox" checked={modulos[modulo]} onChange={() => alternarModulo(modulo)} className="mt-1" />
+                    <span>
+                      <span className="block text-sm font-medium">{LABEL_MODULO_REPLICACAO[modulo]}</span>
+                      {!disponivel && <span className="text-xs text-amber-700">Não há recomendação disponível para replicar.</span>}
+                    </span>
+                  </label>
+                );
+              })}
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Conflitos</h3>
+              <select value={politicaConflito} onChange={e => setPoliticaConflito(e.target.value)}
+                className="h-9 w-full rounded border border-input bg-background px-2 text-sm">
+                <option value="ignorar_existentes">Ignorar talhões que já possuem recomendação.</option>
+                <option value="substituir">Substituir completamente a recomendação existente.</option>
+                <option value="adicionar_ausentes">Adicionar somente produtos ausentes.</option>
+              </select>
+              <p className="text-xs text-muted-foreground">Adicionar produtos ausentes se aplica apenas ao Planejamento de adubação.</p>
+            </section>
+          </div>
+
+          <div className="space-y-4">
+            <section className="rounded border border-border p-3">
+              <h3 className="text-sm font-semibold mb-2">Resumo da recomendação</h3>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <p className="font-semibold">Planejamento</p>
+                  {resumo.planejamento ? (
+                    <p className="text-muted-foreground">Produtos: {resumo.planejamento.quantidadeProdutos} · Doses: {fmtListaNumeros(resumo.planejamento.dosesKgHa)} · Parcelamentos: {resumo.planejamento.parcelamentos} · Custo/ha: {fmtMoeda(resumo.planejamento.custoHa)}</p>
+                  ) : <p className="text-amber-700">Não há recomendação disponível para replicar.</p>}
+                </div>
+                <div>
+                  <p className="font-semibold">Calagem</p>
+                  {resumo.calagem ? (
+                    <p className="text-muted-foreground">{resumo.calagem.produto || 'Produto não definido'} · Método: {resumo.calagem.metodo || '—'} · Dose: {fmt(resumo.calagem.doseKgHa, 1)} kg/ha · Custo/ha: {fmtMoeda(resumo.calagem.custoHa)}</p>
+                  ) : <p className="text-amber-700">Não há recomendação disponível para replicar.</p>}
+                </div>
+                <div>
+                  <p className="font-semibold">Gessagem</p>
+                  {resumo.gessagem ? (
+                    <p className="text-muted-foreground">{resumo.gessagem.produto || 'Produto não definido'} · Método: {resumo.gessagem.metodo || '—'} · Dose: {fmt(resumo.gessagem.doseKgHa, 1)} kg/ha · Custo/ha: {fmtMoeda(resumo.gessagem.custoHa)}</p>
+                  ) : <p className="text-amber-700">Não há recomendação disponível para replicar.</p>}
+                </div>
+              </div>
+            </section>
+
+            {alertasGessagem.length > 0 && modulos.gessagem && (
+              <section className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <div className="flex gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <div className="space-y-1">
+                    {alertasGessagem.some(a => a.diagnosticoDiferente) && <p>A recomendação de gessagem será replicada, mas o diagnóstico deste talhão é diferente do talhão de origem.</p>}
+                    {alertasGessagem.filter(a => a.exigeConfirmacaoSemIndicacao).map(a => <p key={a.talhao.id}>Sem indicação de gessagem: {a.talhao.nome}</p>)}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {exigeConfirmacaoGessagem && (
+              <label className="flex items-start gap-2 rounded border border-amber-200 px-3 py-2 text-xs">
+                <input type="checkbox" checked={confirmacaoGessagem} onChange={e => setConfirmacaoGessagem(e.target.checked)} className="mt-0.5" />
+                Confirmo replicar gessagem com dose maior que zero para talhão sem indicação.
+              </label>
+            )}
+            <label className="flex items-start gap-2 rounded border border-border px-3 py-2 text-xs">
+              <input type="checkbox" checked={confirmacaoFinal} onChange={e => setConfirmacaoFinal(e.target.checked)} className="mt-0.5" />
+              Confirmo a replicação para os talhões selecionados.
+            </label>
+
+            {resultado && (
+              <section className="rounded border border-green-200 bg-green-50 p-3 text-xs text-green-800">
+                <p className="font-semibold flex items-center gap-1"><CheckCircle2 className="h-4 w-4" /> Resultado final da operação</p>
+                <p>Atualizados: {resultado.atualizados || 0} · Ignorados: {resultado.ignorados?.length || 0} · Erros: {resultado.erros?.length || 0}</p>
+                {resultado.erros?.map((erro, i) => <p key={`${erro.talhao_id}-${i}`}>{erro.talhao_nome || erro.talhao_id}: {erro.erro}</p>)}
+              </section>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" disabled={!podeConfirmar} onClick={executar} className="gap-1.5 bg-green-700 text-white hover:bg-green-800">
+            <Copy className="h-3.5 w-3.5" />
+            {executando ? 'Replicando...' : `Replicar para ${destinos.length} talhão(ões)`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calculando, calculandoTalhaoId = null, podeCacularTodos, onRecalcular, onRecalcularTalhao, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, precosIniciais, parcelamentosIniciais, registrosSalvos, precosNotasMap }) {
+export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calculando, calculandoTalhaoId = null, podeCacularTodos, onRecalcular, onRecalcularTalhao, onSalvar, onPrecosChange, onParcelamentosChange, onProdutosEfetivosChange, onReplicarRecomendacao, produtor, safra, calagens = [], gessagens = [], analises2040PorTalhao = {}, precosIniciais, parcelamentosIniciais, registrosSalvos, precosNotasMap }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [precos, setPrecos] = useState(() => precosIniciais || {});
   const [parcelamentos, setParcelamentos] = useState(() => parcelamentosIniciais || {});
@@ -1155,6 +1411,7 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
   const [extrasPorTalhao, setExtrasPorTalhao] = useState({});
   const [ajustesDosePorTalhao, setAjustesDosePorTalhao] = useState({});
   const [produtosOcultosPorTalhao, setProdutosOcultosPorTalhao] = useState({});
+  const [replicarOrigem, setReplicarOrigem] = useState(null);
 
   const handleExtrasChange = useCallback((talhaoId, extras) => {
     setExtrasPorTalhao(prev => ({ ...prev, [talhaoId]: extras }));
@@ -1623,7 +1880,10 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
                           {expandido ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                       </td>
-                      <td className="px-3 py-2.5 font-medium whitespace-nowrap">{r.talhao.nome}</td>
+                      <td className="px-3 py-2.5 font-medium whitespace-nowrap">
+                        {r.talhao.nome}
+                        <MetadadoReplicacao registro={(registrosSalvos || []).find(s => s.talhao_id === r.talhao.id)} />
+                      </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.talhao.area_ha ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.mediaBienal != null ? r.mediaBienal.toFixed(1) : '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-xs">{r.rec?.N ?? '—'}</td>
@@ -1667,6 +1927,17 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
                               <RefreshCw className="w-3 h-3" />
                             )}
                             Calcular apenas este talhão
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px] whitespace-nowrap gap-1.5"
+                            disabled={!onReplicarRecomendacao || !r.talhao?.id}
+                            onClick={() => setReplicarOrigem(r.talhao)}
+                          >
+                            <Copy className="w-3 h-3" />
+                            Replicar recomendação
                           </Button>
                           <MenuAcoes onRecalcular={() => handleRecalcularTalhaoComFiltro(r.talhao.id)} onLimpar={() => {}} />
                         </div>
@@ -1718,6 +1989,19 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
           </div>
         </div>
       </div>
+      <ModalReplicarRecomendacao
+        aberto={Boolean(replicarOrigem)}
+        onClose={() => setReplicarOrigem(null)}
+        produtor={produtor}
+        safra={safra}
+        origem={replicarOrigem}
+        talhoes={talhoes}
+        planejamentos={registrosSalvos}
+        calagens={calagens}
+        gessagens={gessagens}
+        analises2040PorTalhao={analises2040PorTalhao}
+        onConfirmar={onReplicarRecomendacao}
+      />
     </div>
   );
 }

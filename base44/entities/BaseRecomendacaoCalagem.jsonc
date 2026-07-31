@@ -85,6 +85,10 @@
     "observacoes": {
       "type": "string",
       "description": "Observa\u00e7\u00f5es livres"
+    },
+    "rastreabilidade_replicacao": {
+      "type": "object",
+      "description": "Metadados compatíveis da replicação de recomendação entre talhões"
     }
   },
   "required": [
