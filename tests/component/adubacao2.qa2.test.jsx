@@ -158,6 +158,75 @@ describe('QA2 Adubacao 2.0 componentes reais', () => {
     expect(document.body.textContent).not.toMatch(/ReferenceError|handleRemoverExtra/);
   });
 
+  test('modal real replica recomendacao com destinos, modulos, conflitos, alerta e resultado final', async () => {
+    const fixtures = criarCafePlanQa2Fixtures();
+    const talhaoOrigem = fixtures.Talhao.find(t => t.id === 'talhao-a');
+    const talhoesProdutor = fixtures.Talhao.filter(t => t.codigo_produtor === QA2_PRODUTOR_CODIGO);
+    const todos = [...fixtures.FertilizanteFormulado, ...fixtures.FonteSimples];
+    const planejamento = fixtures.PlanejamentoAdubacao2.find(p => p.talhao_id === talhaoOrigem.id);
+    const onReplicarRecomendacao = vi.fn(async () => ({
+      atualizados: 2,
+      ignorados: [{ talhao_nome: 'Talhão B', modulo: 'planejamento', motivo: 'Destino já possui recomendação.' }],
+      erros: [{ talhao_nome: 'Talhão recém-cadastrado', erro: 'Falha sintética QA2' }],
+    }));
+
+    renderWithProviders(
+      <AbaPlanejamento2
+        resultados={[{ talhao: talhaoOrigem, rec: planejamento.detalhamento.rec || { N: 90 }, produtoSugerido: todos.find(p => p.id === 'ureia'), doseProdutoHa: 240, mediaBienal: 31, temRegistroSalvo: true }]}
+        todos={todos}
+        talhoes={talhoesProdutor}
+        calculando={false}
+        podeCacularTodos
+        onRecalcular={vi.fn()}
+        onRecalcularTalhao={vi.fn()}
+        onSalvar={vi.fn()}
+        onPrecosChange={vi.fn()}
+        onParcelamentosChange={vi.fn()}
+        onProdutosEfetivosChange={vi.fn()}
+        onReplicarRecomendacao={onReplicarRecomendacao}
+        produtor={fixtures.Produtor[0]}
+        safra={QA2_SAFRA_ATUAL}
+        calagens={fixtures.BaseRecomendacaoCalagem}
+        gessagens={fixtures.BaseRecomendacaoGessagem}
+        analises2040PorTalhao={{}}
+        precosIniciais={planejamento.detalhamento.precos}
+        parcelamentosIniciais={{ [talhaoOrigem.id]: planejamento.detalhamento.parcelamentos }}
+        registrosSalvos={fixtures.PlanejamentoAdubacao2}
+        precosNotasMap={{}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Replicar recomendação/i }));
+
+    const modal = await screen.findByRole('dialog');
+    expect(within(modal).getByText(/Origem: Talhão A/i)).toBeInTheDocument();
+    expect(within(modal).queryByLabelText('Talhão A')).not.toBeInTheDocument();
+    expect(within(modal).getByLabelText('Talhão B')).toBeInTheDocument();
+    expect(within(modal).getByLabelText('Talhão recém-cadastrado')).toBeInTheDocument();
+    expect(within(modal).getByLabelText('Planejamento de adubação')).toBeChecked();
+    expect(within(modal).getByLabelText('Calagem')).toBeChecked();
+    expect(within(modal).getByLabelText('Gessagem')).toBeChecked();
+    expect(within(modal).getByText(/Produtos: 3/i)).toBeInTheDocument();
+
+    fireEvent.click(within(modal).getByText('Selecionar todos'));
+    expect(within(modal).getByText('2 talhão(ões) serão afetados.')).toBeInTheDocument();
+    expect(within(modal).getByText(/diagnóstico deste talhão é diferente/i)).toBeInTheDocument();
+    fireEvent.change(within(modal).getByRole('combobox'), { target: { value: 'substituir' } });
+    fireEvent.click(within(modal).getByLabelText(/Confirmo replicar gessagem/i));
+    fireEvent.click(within(modal).getByLabelText(/Confirmo a replicação/i));
+    fireEvent.click(within(modal).getByRole('button', { name: /Replicar para 2 talhão/i }));
+
+    expect(onReplicarRecomendacao).toHaveBeenCalledWith(expect.objectContaining({
+      talhaoOrigem,
+      talhoesDestino: expect.arrayContaining([expect.objectContaining({ id: 'talhao-b' }), expect.objectContaining({ id: 'talhao-novo' })]),
+      modulos: ['planejamento', 'calagem', 'gessagem'],
+      politicaConflito: 'substituir',
+    }));
+    expect(await within(modal).findByText(/Resultado final da operação/i)).toBeInTheDocument();
+    expect(within(modal).getByText(/Atualizados: 2 · Ignorados: 1 · Erros: 1/i)).toBeInTheDocument();
+    expect(within(modal).getByText(/Falha sintética QA2/i)).toBeInTheDocument();
+  });
+
   test('AbaGessagem recebe dados salvos da Calagem para o mesmo produtor safra e talhao', async () => {
     prepararBase44();
     const fixtures = criarCafePlanQa2Fixtures();

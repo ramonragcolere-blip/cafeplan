@@ -33,6 +33,10 @@
     "detalhamento": {
       "type": "object",
       "description": "Detalhamento por nutriente: produto, parcelamento, meses, pre\u00e7o"
+    },
+    "rastreabilidade_replicacao": {
+      "type": "object",
+      "description": "Metadados compatíveis da replicação de recomendação entre talhões"
     }
   },
   "required": [

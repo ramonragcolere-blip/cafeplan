@@ -36,6 +36,7 @@ import {
   montarPayloadPlanejamentoTalhaoAdubacao2,
 } from '@/lib/calculoIndividualAdubacao2';
 import { consolidarComprasAdubacao2 } from '@/lib/calagemAdubacao2';
+import { aplicarReplicacaoRecomendacaoTalhoes } from '@/lib/replicarRecomendacaoTalhao';
 import {
   classificarExtracaoAnaliseSolo,
   criarControladorGravacaoAnalise,
@@ -831,6 +832,164 @@ export function Adubacao2Conteudo() {
     }
   }, [produtor, resultadosCalculo, montarPayloadPlanejamento, upsertPlanejamento, queryClient, toast]);
 
+  function mesclarPorIdOuTalhao(listaAtual, registrosNovos) {
+    const lista = Array.isArray(listaAtual) ? [...listaAtual] : [];
+    (registrosNovos || []).forEach(registro => {
+      if (!registro) return;
+      const indice = lista.findIndex(item =>
+        (registro.id && item?.id === registro.id) ||
+        (item?.codigo_produtor === registro.codigo_produtor && item?.safra === registro.safra && item?.talhao_id === registro.talhao_id)
+      );
+      if (indice >= 0) lista[indice] = { ...lista[indice], ...registro };
+      else lista.push(registro);
+    });
+    return lista;
+  }
+
+  const persistirReplicados = useCallback(async (entidade, criados = [], atualizados = []) => {
+    const persistidos = [];
+    for (const payload of atualizados) {
+      const { id, ...dados } = payload;
+      if (!id) continue;
+      persistidos.push(await entidade.update(id, dados));
+    }
+    for (const payload of criados) {
+      const { id: _idOrigem, ...dados } = payload;
+      persistidos.push(await entidade.create(dados));
+    }
+    return persistidos;
+  }, []);
+
+  const handleReplicarRecomendacao = useCallback(async ({ talhaoOrigem, talhoesDestino, modulos, politicaConflito }) => {
+    if (!produtor?.codigo || !safra || !talhaoOrigem?.id) throw new Error('Contexto de produtor, safra ou talhão inválido.');
+    let usuario = null;
+    try {
+      usuario = await base44.auth.me();
+    } catch (error) {
+      console.warn('Não foi possível identificar o usuário da replicação.', error);
+    }
+
+    const resultado = aplicarReplicacaoRecomendacaoTalhoes({
+      produtor,
+      safra,
+      talhaoOrigem,
+      talhoesDestino,
+      planejamentos: registrosSalvos,
+      calagens: calagensProdutor,
+      gessagens: gessagensProdutor,
+      analises2040PorTalhao: analises2040Local,
+      modulos,
+      politicaConflito,
+      usuario,
+    });
+
+    try {
+      const planejamentosPersistidos = await persistirReplicados(
+        base44.entities.PlanejamentoAdubacao2,
+        resultado.planejamentosCriados,
+        resultado.planejamentosAtualizados,
+      );
+      const calagensPersistidas = await persistirReplicados(
+        base44.entities.BaseRecomendacaoCalagem,
+        resultado.calagensCriadas,
+        resultado.calagensAtualizadas,
+      );
+      const gessagensPersistidas = await persistirReplicados(
+        base44.entities.BaseRecomendacaoGessagem,
+        resultado.gessagensCriadas,
+        resultado.gessagensAtualizadas,
+      );
+
+      queryClient.setQueryData(['planejamento_adubacao2'], atuais => mesclarPorIdOuTalhao(atuais, planejamentosPersistidos));
+      queryClient.setQueryData(['calagem_recomendacoes'], atuais => mesclarPorIdOuTalhao(atuais, calagensPersistidas));
+      queryClient.setQueryData(['gessagem_recomendacoes'], atuais => mesclarPorIdOuTalhao(atuais, gessagensPersistidas));
+
+      if (planejamentosPersistidos.length > 0) {
+        setPrecosExterno(prev => {
+          const next = { ...prev };
+          planejamentosPersistidos.forEach(registro => Object.assign(next, registro?.detalhamento?.precos || {}));
+          precosRef.current = next;
+          return next;
+        });
+        setParcelamentosExterno(prev => {
+          const next = { ...prev };
+          planejamentosPersistidos.forEach(registro => {
+            if (registro?.talhao_id) next[registro.talhao_id] = registro?.detalhamento?.parcelamentos || {};
+          });
+          parcelamentosRef.current = next;
+          return next;
+        });
+        setProdutosEfetivosExterno(prev => {
+          const next = { ...prev };
+          planejamentosPersistidos.forEach(registro => {
+            const det = registro?.detalhamento || {};
+            if (!registro?.talhao_id) return;
+            next[registro.talhao_id] = {
+              produto: det.produtoSugerido || null,
+              doseKgHa: det.dose_utilizada_kg_ha ?? det.doseProdutoHa,
+              dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa,
+              dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa,
+              dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
+              nutriente_alvo: det.nutriente_alvo || 'n_pct',
+              complementos: det.complementos || [],
+              trocas: det.trocas || {},
+              marcados: det.marcados || null,
+              produtos_ocultos: det.produtos_ocultos || [],
+            };
+          });
+          produtosEfetivosRef.current = next;
+          return next;
+        });
+        setResultadosCalculo(prev => {
+          const mapa = new Map((prev || talhoes.map(talhao => ({ talhao, rec: null }))).map(item => [item.talhao?.id, item]));
+          planejamentosPersistidos.forEach(registro => {
+            const talhao = talhoes.find(t => t.id === registro.talhao_id);
+            if (!talhao) return;
+            const det = registro.detalhamento || {};
+            mapa.set(talhao.id, {
+              ...(mapa.get(talhao.id) || {}),
+              talhao,
+              rec: det.rec || null,
+              mediaBienal: det.mediaBienal ?? null,
+              produtoSugerido: det.produtoSugerido || null,
+              doseProdutoHa: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
+              dose_calculada_kg_ha: det.dose_calculada_kg_ha ?? det.doseProdutoHa ?? null,
+              dose_utilizada_kg_ha: det.dose_utilizada_kg_ha ?? det.doseProdutoHa ?? null,
+              dose_ajustada_manualmente: Boolean(det.dose_ajustada_manualmente),
+              nutriente_alvo: det.nutriente_alvo || 'n_pct',
+              temRegistroSalvo: true,
+            });
+          });
+          return talhoes.map(talhao => mapa.get(talhao.id) || { talhao, mediaBienal: null, analise: null, analise2040: null, rec: null, produtoSugerido: null, doseProdutoHa: null, temRegistroSalvo: false });
+        });
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['planejamento_adubacao2'] }),
+        queryClient.invalidateQueries({ queryKey: ['calagem_recomendacoes'] }),
+        queryClient.invalidateQueries({ queryKey: ['gessagem_recomendacoes'] }),
+      ]);
+      const resposta = {
+        ...resultado,
+        planejamentosPersistidos,
+        calagensPersistidas,
+        gessagensPersistidas,
+      };
+      toast({
+        title: 'Replicação concluída',
+        description: `${resultado.atualizados} talhão(ões) atualizado(s), ${resultado.ignorados.length} ignorado(s), ${resultado.erros.length} erro(s).`,
+      });
+      return resposta;
+    } catch (error) {
+      const mensagem = getErrorMessage(error);
+      toast({ title: 'Erro ao replicar recomendação', description: mensagem, variant: 'destructive' });
+      return {
+        ...resultado,
+        erros: [...resultado.erros, { talhao_nome: talhaoOrigem.nome, erro: mensagem }],
+      };
+    }
+  }, [produtor, safra, registrosSalvos, calagensProdutor, gessagensProdutor, analises2040Local, persistirReplicados, queryClient, toast, talhoes]);
+
   const handleCalcularTalhao = useCallback(async (talhaoId, todosParaCalculo, opcoes = {}) => {
     if (!produtor?.codigo || !talhaoId) return;
     const talhao = talhoes.find(t => t.id === talhaoId);
@@ -1242,6 +1401,12 @@ export function Adubacao2Conteudo() {
           onPrecosChange={handlePrecosChange}
           onParcelamentosChange={handleParcelamentosChange}
           onProdutosEfetivosChange={handleProdutosEfetivosChange}
+          onReplicarRecomendacao={handleReplicarRecomendacao}
+          produtor={produtor}
+          safra={safra}
+          calagens={calagensProdutor}
+          gessagens={gessagensProdutor}
+          analises2040PorTalhao={analises2040Local}
           precosIniciais={precosExterno}
           parcelamentosIniciais={parcelamentosExterno}
           registrosSalvos={registrosSalvos}
