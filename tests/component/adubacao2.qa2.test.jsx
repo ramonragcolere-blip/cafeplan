@@ -158,6 +158,95 @@ describe('QA2 Adubacao 2.0 componentes reais', () => {
     expect(document.body.textContent).not.toMatch(/ReferenceError|handleRemoverExtra/);
   });
 
+  test('AbaPlanejamento2 mostra produto salvo manual como principal e sugestao automatica como secundaria', async () => {
+    const fixtures = criarCafePlanQa2Fixtures();
+    const [talhaoA, talhaoB] = fixtures.Talhao.filter(t => t.codigo_produtor === QA2_PRODUTOR_CODIGO);
+    const produtoManual = {
+      id: 'formulado-21-00-09',
+      nome: 'Formulado 21-00-09',
+      grupo: 'Fertilizante Solo',
+      fornecedor: 'Manual',
+      n_pct: 21,
+      p2o5_pct: 0,
+      k2o_pct: 9,
+      b_pct: 0,
+      ativo: true,
+    };
+    const produtoSugerido = {
+      id: 'formulado-27-00-10-turbo',
+      nome: 'Formulado 27-00-10 Turbo',
+      grupo: 'Fertilizante Solo',
+      fornecedor: 'Filtro',
+      n_pct: 27,
+      p2o5_pct: 0,
+      k2o_pct: 10,
+      b_pct: 0,
+      ativo: true,
+    };
+    const todos = [produtoManual, produtoSugerido, ...fixtures.FonteSimples];
+    const rec = { N: 90, P: 0, K: 120, B: 0 };
+    const registrosSalvos = [{
+      id: 'plan-manual',
+      talhao_id: talhaoA.id,
+      detalhamento: {
+        produtoSugerido: { id: produtoManual.id, nome: produtoManual.nome },
+        doseProdutoHa: 428.6,
+        dose_utilizada_kg_ha: 410,
+        dose_ajustada_manualmente: true,
+        nutriente_alvo: 'n_pct',
+        complementos: [],
+      },
+    }];
+
+    renderWithProviders(
+      <AbaPlanejamento2
+        resultados={[
+          {
+            talhao: talhaoA,
+            rec,
+            analise: { talhao_id: talhaoA.id, profundidade: '0-20' },
+            analise2040: { talhao_id: talhaoA.id, profundidade: '20-40' },
+            produtoSugerido,
+            doseProdutoHa: 333.3,
+            mediaBienal: 31,
+            temRegistroSalvo: true,
+          },
+          {
+            talhao: talhaoB,
+            rec,
+            analise: { talhao_id: talhaoB.id, profundidade: '0-20' },
+            analise2040: { talhao_id: talhaoB.id, profundidade: '20-40' },
+            produtoSugerido,
+            doseProdutoHa: 333.3,
+            mediaBienal: 25,
+            temRegistroSalvo: false,
+          },
+        ]}
+        todos={todos}
+        talhoes={[talhaoA, talhaoB]}
+        calculando={false}
+        podeCacularTodos
+        onRecalcular={vi.fn()}
+        onRecalcularTalhao={vi.fn()}
+        onSalvar={vi.fn()}
+        onPrecosChange={vi.fn()}
+        onParcelamentosChange={vi.fn()}
+        onProdutosEfetivosChange={vi.fn()}
+        registrosSalvos={registrosSalvos}
+        precosNotasMap={{}}
+      />
+    );
+
+    const linhaTalhaoA = (await screen.findByText(talhaoA.nome)).closest('tr');
+    const linhaTalhaoB = screen.getByText(talhaoB.nome).closest('tr');
+
+    expect(within(linhaTalhaoA).getByText('Formulado 21-00-09')).toBeInTheDocument();
+    expect(within(linhaTalhaoA).getByText('Produto escolhido manualmente')).toBeInTheDocument();
+    expect(within(linhaTalhaoA).getByText('Sugestão: Formulado 27-00-10 Turbo')).toBeInTheDocument();
+    expect(within(linhaTalhaoB).getByText('Formulado 27-00-10 Turbo')).toBeInTheDocument();
+    expect(within(linhaTalhaoB).getByText('Produto sugerido')).toBeInTheDocument();
+  });
+
   test('modal real replica recomendacao com destinos, modulos, conflitos, alerta e resultado final', async () => {
     const fixtures = criarCafePlanQa2Fixtures();
     const talhaoOrigem = fixtures.Talhao.find(t => t.id === 'talhao-a');

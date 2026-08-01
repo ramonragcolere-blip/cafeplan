@@ -375,10 +375,22 @@ function promoverPrincipalSeNecessario(linhas) {
   return linhasValidas;
 }
 
-export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null, ajustesDose = {}) {
+function juntarProdutosUnicosAdubacao2(...listas) {
+  const mapa = new Map();
+  listas.flatMap(listaSeguraAdubacao2).forEach(produto => {
+    if (!produtoValidoAdubacao2(produto)) return;
+    const chave = produto.id || produto.nome;
+    if (!chave || mapa.has(chave)) return;
+    mapa.set(chave, produto);
+  });
+  return Array.from(mapa.values());
+}
+
+export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = null, doseSalva = null, complementosSalvos = null, recOriginal = null, ajustesDose = {}, opcoes = {}) {
   const _recOrig = recOriginal || rec;
   const todosLista = listaSeguraAdubacao2(todos).filter(produtoValidoAdubacao2);
   const trocasSeguras = objetoSeguroAdubacao2(trocas);
+  const origemProdutoBase = opcoes.produtoSalvoManual === false ? 'Produto sugerido' : 'Produto escolhido manualmente';
   if (!rec || !todosLista.length) return [];
 
   if (produtoSalvo) {
@@ -411,7 +423,7 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
       dose_utilizada_kg_ha: produtoSalvo?.dose_utilizada_kg_ha ?? doseKgHa,
       dose_ajustada_manualmente: Boolean(produtoSalvo?.dose_ajustada_manualmente),
       nutriente_alvo: produtoSalvo?.nutriente_alvo || 'n_pct',
-      origemUso: produtoTrocado ? 'Produto escolhido manualmente' : 'Produto salvo',
+      origemUso: produtoTrocado ? 'Produto escolhido manualmente' : origemProdutoBase,
     }, rec, ajustesDose);
 
     const complementosNormalizados = normalizarComplementosAdubacao2(complementosSalvos);
@@ -433,7 +445,7 @@ export function montarLinhasProdutos(todos, rec, trocas = {}, produtoSalvo = nul
           dose_utilizada_kg_ha: comp.dose_utilizada_kg_ha ?? comp.doseKgHa,
           dose_ajustada_manualmente: Boolean(comp.dose_ajustada_manualmente),
           nutriente_alvo: comp.nutriente_alvo || comp.nutKey || 'dose_manual',
-          origemUso: trocasSeguras[comp.nutKey] ? 'Produto escolhido manualmente' : 'Produto salvo',
+          origemUso: trocasSeguras[comp.nutKey] ? 'Produto escolhido manualmente' : origemProdutoBase,
         }, rec, ajustesDose);
       }
     }
@@ -575,16 +587,45 @@ export function montarProdutosEfetivosPlanejamento({
       if (!marcados.B) delete recFiltrado.B;
     }
 
-    const compsSalvos = normalizarComplementosAdubacao2(registrosLista.find(s => s.talhao_id === r.talhao.id)?.detalhamento?.complementos);
-    let produto = r.substituirSalvo ? null : (r.produtoSugerido || null);
-    let doseKgHa = r.substituirSalvo ? null : (r.doseProdutoHa ?? null);
+    const registroSalvo = registrosLista.find(s => s.talhao_id === r.talhao.id) || null;
+    const detSalvo = objetoSeguroAdubacao2(registroSalvo?.detalhamento);
+    const compsSalvos = normalizarComplementosAdubacao2(detSalvo.complementos);
+    const produtoSalvoNormalizado = !r.substituirSalvo ? normalizarProdutoAdubacao2(detSalvo.produtoSugerido) : null;
+    const produtoSalvoCatalogoBase = produtoSalvoNormalizado
+      ? (todosCatalogoLista.find(p => p.id === produtoSalvoNormalizado.id) || todosFiltradosLista.find(p => p.id === produtoSalvoNormalizado.id) || produtoSalvoNormalizado)
+      : null;
+    const produtoSalvoCatalogo = produtoSalvoCatalogoBase ? {
+      ...produtoSalvoCatalogoBase,
+      dose_calculada_kg_ha: detSalvo.dose_calculada_kg_ha ?? detSalvo.doseProdutoHa ?? null,
+      dose_utilizada_kg_ha: detSalvo.dose_utilizada_kg_ha ?? detSalvo.doseProdutoHa ?? null,
+      dose_ajustada_manualmente: Boolean(detSalvo.dose_ajustada_manualmente),
+      nutriente_alvo: detSalvo.nutriente_alvo || 'n_pct',
+    } : null;
+    const complementosSalvosCatalogo = compsSalvos.map(comp =>
+      comp?.produto?.id
+        ? (todosCatalogoLista.find(p => p.id === comp.produto.id) || todosFiltradosLista.find(p => p.id === comp.produto.id) || comp.produto)
+        : comp?.produto
+    );
+    const todosPlanejamento = r.substituirSalvo
+      ? todosFiltradosLista
+      : juntarProdutosUnicosAdubacao2(todosFiltradosLista, [produtoSalvoCatalogo], complementosSalvosCatalogo);
+    const produtoAutomatico = r.produtoSugerido || null;
+    let produto = r.substituirSalvo ? null : (produtoSalvoCatalogo || produtoAutomatico);
+    let doseKgHa = r.substituirSalvo
+      ? null
+      : (produtoSalvoCatalogo
+        ? (detSalvo.dose_utilizada_kg_ha ?? detSalvo.doseProdutoHa ?? r.doseProdutoHa ?? null)
+        : (r.doseProdutoHa ?? null));
+    const produtoSugeridoAutomatico = produtoSalvoCatalogo && produtoAutomatico && produtoAutomatico.id !== produtoSalvoCatalogo.id
+      ? produtoAutomatico
+      : null;
     const extrasTalhao = objetoSeguroAdubacao2(extrasSeguros[r.talhao.id]);
     const produtosOcultosTalhao = listaSeguraAdubacao2(ocultosSeguros[r.talhao.id]);
     const ocultosSet = new Set(produtosOcultosTalhao.flatMap(chavesProdutoOculto).filter(Boolean));
     if (!produto && idsSalvos.has(r.talhao.id) && !r.substituirSalvo && compsSalvos.length === 0 && Object.keys(extrasTalhao).length === 0) return;
 
     const linhas = montarLinhasProdutos(
-      todosFiltradosLista,
+      todosPlanejamento,
       recFiltrado,
       trocas,
       r.substituirSalvo ? null : produto,
@@ -592,6 +633,7 @@ export function montarProdutosEfetivosPlanejamento({
       r.substituirSalvo ? null : compsSalvos,
       r.rec,
       objetoSeguroAdubacao2(ajustesSeguros[r.talhao.id]),
+      { produtoSalvoManual: Boolean(produtoSalvoCatalogo) },
     ).filter(linha => !linhaEstaOculta(linha, ocultosSet));
     const linhaPrincipal = linhas.find(l => l.ehPrincipal);
     if (linhaPrincipal) {
@@ -653,6 +695,8 @@ export function montarProdutosEfetivosPlanejamento({
         dose_ajustada_manualmente: Boolean(linhaPrincipal?.dose_ajustada_manualmente),
         nutriente_alvo: linhaPrincipal?.nutriente_alvo || 'n_pct',
         linhaId: linhaPrincipal?.linhaId,
+        origemUso: linhaPrincipal?.origemUso || (produtoSalvoCatalogo && !r.substituirSalvo ? 'Produto escolhido manualmente' : 'Produto sugerido'),
+        produtoSugeridoAutomatico,
         complementos,
         trocas,
         marcados: Object.keys(marcados).length > 0 ? marcados : criarMarcacoesPadraoFn(r.rec, elementos),

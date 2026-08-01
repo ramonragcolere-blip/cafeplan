@@ -32,6 +32,8 @@ const formuladoA = { id: 'npk-a', nome: '20-00-20 A', fornecedor: 'Fornecedor A'
 const formuladoB = { id: 'npk-b', nome: '12-00-12 B', fornecedor: 'Fornecedor B', _tipo: 'formulado', n_pct: 12, p2o5_pct: 0, k2o_pct: 12, b_pct: 0 };
 const map = { id: 'map', nome: 'MAP', _tipo: 'fonte', n_pct: 11, p2o5_pct: 52, k2o_pct: 0, b_pct: 0 };
 const acidoBorico = { id: 'boro', nome: 'Ácido bórico', _tipo: 'fonte', n_pct: 0, p2o5_pct: 0, k2o_pct: 0, b_pct: 17 };
+const formulado210009 = { id: 'formulado-21-00-09', nome: 'Formulado 21-00-09', fornecedor: 'Manual', _tipo: 'formulado', n_pct: 21, p2o5_pct: 0, k2o_pct: 9, b_pct: 0 };
+const formulado270010Turbo = { id: 'formulado-27-00-10-turbo', nome: 'Formulado 27-00-10 Turbo', fornecedor: 'Filtro', _tipo: 'formulado', n_pct: 27, p2o5_pct: 0, k2o_pct: 10, b_pct: 0 };
 const recNK = { N: 90, P: 0, K: 120, B: 0 };
 const recNPKB = { N: 90, P: 52, K: 120, B: 1.7 };
 const talhao = { id: 't1', nome: 'Talhao 1', area_ha: 2, num_plantas: 1000, espacamento: '3,5x0,7' };
@@ -113,6 +115,83 @@ test('manter produto salvo preserva produto principal salvo', () => {
   });
 
   assert.equal(mapa.t1.produto.id, 'ureia');
+});
+
+test('produto salvo manual prevalece sobre sugestao automatica no planejamento 0-20, 20-40, compras, resumo e PDF', () => {
+  const resultadoTalhao1 = {
+    talhao,
+    rec: recNK,
+    analise: { ...analiseBase, profundidade: '0-20' },
+    analise2040: { talhao_id: 't1', profundidade: '20-40', calcio: 0.3, aluminio: 0.5 },
+    produtoSugerido: formulado270010Turbo,
+    doseProdutoHa: 333.3,
+    mediaBienal: 30,
+    temRegistroSalvo: true,
+  };
+  const resultadoTalhao2 = {
+    talhao: talhao2,
+    rec: recNK,
+    analise: { ...analiseBase2, profundidade: '0-20' },
+    analise2040: { talhao_id: 't2', profundidade: '20-40', calcio: 0.4, aluminio: 0.4 },
+    produtoSugerido: formulado270010Turbo,
+    doseProdutoHa: 333.3,
+    mediaBienal: 25,
+    temRegistroSalvo: false,
+  };
+  const registrosSalvos = [{
+    talhao_id: 't1',
+    detalhamento: {
+      produtoSugerido: { id: 'formulado-21-00-09', nome: 'Formulado 21-00-09' },
+      doseProdutoHa: 428.6,
+      dose_calculada_kg_ha: 428.6,
+      dose_utilizada_kg_ha: 410,
+      dose_ajustada_manualmente: true,
+      nutriente_alvo: 'n_pct',
+      precos: { 'formulado-21-00-09': 4.2, 'formulado-27-00-10-turbo': 4.8 },
+      parcelamentos: { 'formulado-21-00-09': { parcelas: [{ pct: 100, meses: ['OUT'] }] } },
+    },
+  }];
+
+  const mapa = montarProdutosEfetivosPlanejamento({
+    resultados: [resultadoTalhao1, resultadoTalhao2],
+    registrosSalvos,
+    todosFiltrados: [formulado270010Turbo],
+    todosCatalogo: [formulado210009, formulado270010Turbo],
+  });
+  const compras = consolidarComprasAdubacao2({
+    resultados: [resultadoTalhao1, resultadoTalhao2],
+    produtosEfetivos: mapa,
+    talhoes: [talhao, talhao2],
+  });
+  const resumo = montarGruposResumoAdubacao2({
+    resultados: [resultadoTalhao1, resultadoTalhao2],
+    produtosEfetivos: mapa,
+    talhoes: [talhao, talhao2],
+    registrosSalvos,
+  });
+  const payload = montarPayloadPlanejamentoTalhaoAdubacao2({
+    resultado: resultadoTalhao1,
+    produtor: { codigo: 'P001' },
+    safra: '2026/2027',
+    produtividadeLocal: { t1: { safra1: '30', safra2: '30' } },
+    analises2040Local: { t1: resultadoTalhao1.analise2040 },
+    produtoEfetivo: mapa.t1,
+    precos: registrosSalvos[0].detalhamento.precos,
+    parcelamentos: { t1: registrosSalvos[0].detalhamento.parcelamentos },
+  });
+  const planosPdf = normalizarPlanosAdubacao([], [{ id: 'pl-t1', talhao_id: 't1', detalhamento: payload.detalhamento }]);
+
+  assert.equal(mapa.t1.produto.id, 'formulado-21-00-09');
+  assert.equal(mapa.t1.origemUso, 'Produto escolhido manualmente');
+  assert.equal(mapa.t1.produtoSugeridoAutomatico.id, 'formulado-27-00-10-turbo');
+  assert.equal(mapa.t1.doseKgHa, 410);
+  assert.equal(mapa.t2.produto.id, 'formulado-27-00-10-turbo');
+  assert.equal(compras.find(c => c.produto.id === 'formulado-21-00-09').qtdTotal, 820);
+  assert.equal(compras.find(c => c.produto.id === 'formulado-27-00-10-turbo').qtdTotal, 1028.7);
+  assert.equal(resumo.find(g => g.talhao.id === 't1').linhas[0].produtoId, 'formulado-21-00-09');
+  assert.equal(resumo.find(g => g.talhao.id === 't2').linhas[0].produtoId, 'formulado-27-00-10-turbo');
+  assert.equal(payload.detalhamento.produtoSugerido.id, 'formulado-21-00-09');
+  assert.equal(planosPdf.find(p => p.talhao_id === 't1').produto_id, 'formulado-21-00-09');
 });
 
 test('Ureia salva e substituida quando resultado recalculado traz outro principal', () => {
@@ -334,7 +413,7 @@ test('calculo individual na tabela mostra carregamento somente na linha selecion
 
 test('aba de analises expoe politica de recalculo individual', () => {
   assert.match(fonteAdubacao2, /Pol[ií]tica de rec[aá]lculo/);
-  assert.match(fonteAdubacao2, /Manter produtos salvos/);
+  assert.match(fonteAdubacao2, /Preservar os produtos escolhidos/);
   assert.match(fonteAdubacao2, /Substituir somente sugest[oõ]es autom[aá]ticas/);
   assert.match(fonteAdubacao2, /politicaRecalculoTalhao === 'substituir_automaticos'/);
 });

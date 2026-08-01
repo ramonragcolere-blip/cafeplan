@@ -1209,7 +1209,7 @@ export function Adubacao2Conteudo() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="manter_salvos">Manter produtos salvos</SelectItem>
+                  <SelectItem value="manter_salvos">Preservar os produtos escolhidos</SelectItem>
                   <SelectItem value="substituir_automaticos">Substituir somente sugestões automáticas</SelectItem>
                 </SelectContent>
               </Select>

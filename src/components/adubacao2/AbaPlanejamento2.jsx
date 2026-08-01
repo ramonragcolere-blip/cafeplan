@@ -679,12 +679,13 @@ function PainelTalhao({ resultado, todos, todosSemFiltro, precosProd, onPrecoCha
     if (!marcados['P']) delete recFiltrado.P;
     if (!marcados['K']) delete recFiltrado.K;
     if (!marcados['B']) delete recFiltrado.B;
+    const produtoSalvoManual = !resultado.substituirSalvo && resultado.temRegistroSalvo;
     const prodSalvo = resultado.substituirSalvo ? null : (resultado.produtoSugerido || null);
     const doseSalva = resultado.substituirSalvo ? null : (resultado.doseProdutoHa ?? null);
     const ocultosSet = new Set(listaSeguraAdubacao2(produtosOcultos).flatMap(chavesProdutoOculto).filter(Boolean));
-    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : normalizarComplementosAdubacao2(complementosSalvos), rec, ajustesDose)
+    return montarLinhasProdutos(todos, recFiltrado, trocas, prodSalvo, doseSalva, resultado.substituirSalvo ? null : normalizarComplementosAdubacao2(complementosSalvos), rec, ajustesDose, { produtoSalvoManual })
       .filter(linha => !linhaEstaOculta(linha, ocultosSet));
-  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, complementosSalvos, ajustesDose, produtosOcultos]);
+  }, [todos, rec, marcados, trocas, resultado.produtoSugerido, resultado.doseProdutoHa, resultado.substituirSalvo, resultado.temRegistroSalvo, complementosSalvos, ajustesDose, produtosOcultos]);
 
   const nutrientesNaoAtendidos = useMemo(() => listarNutrientesNaoAtendidos(rec, linhasProdutos), [rec, linhasProdutos]);
   const balancoNutrientes = useMemo(() => calcularBalancoNutrientes(rec, [
@@ -1141,8 +1142,8 @@ function seletorPoliticaRecalculo(valor, onChange) {
   return (
     <select value={valor} onChange={e => onChange(e.target.value)}
       className="h-8 text-xs border border-input rounded px-2 bg-background text-foreground">
-      <option value="manter">Manter produtos salvos</option>
-      <option value="substituir">Substituir salvos pelo filtro atual</option>
+      <option value="manter">Preservar os produtos escolhidos</option>
+      <option value="substituir">Substituir pelos produtos sugeridos pelo filtro</option>
     </select>
   );
 }
@@ -1660,16 +1661,15 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
     setProdutosOcultosPorTalhao(prev => ({ ...prev, [talhaoId]: listaSeguraAdubacao2(ocultos) }));
   }, []);
 
-  // Expõe trocas, marcados e complementos calculados para o pai usar no handleSalvarTudo
-  useEffect(() => {
-    if (!onProdutosEfetivosChange || !resultados) return;
+  const produtosEfetivosPlanejamento = useMemo(() => {
+    if (!resultados) return {};
     const idsSalvos = new Set((registrosSalvos || []).map(r => r.talhao_id));
     const pendente = resultados.some(r =>
       r.rec && idsSalvos.has(r.talhao.id) && r.temRegistroSalvo && !r.produtoSugerido && r.doseProdutoHa == null
     );
-    if (pendente && todos.length === 0) return;
+    if (pendente && todos.length === 0) return null;
 
-    const mapa = montarProdutosEfetivosPlanejamento({
+    return montarProdutosEfetivosPlanejamento({
       resultados,
       registrosSalvos,
       todosFiltrados: produtosCalculo,
@@ -1682,8 +1682,13 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
       criarMarcacoesPadraoFn: criarMarcacoesPadrao,
       elementos: TODOS_ELEMENTOS_GRID,
     });
-    onProdutosEfetivosChange(mapa);
   }, [produtosCalculo, resultados, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
+
+  // Expõe trocas, marcados e complementos calculados para o pai usar no handleSalvarTudo
+  useEffect(() => {
+    if (!onProdutosEfetivosChange || !resultados || !produtosEfetivosPlanejamento) return;
+    onProdutosEfetivosChange(produtosEfetivosPlanejamento);
+  }, [onProdutosEfetivosChange, resultados, produtosEfetivosPlanejamento]);
 
   const metricas = useMemo(() => {
     const resultadosLista = resultadosVisiveis;
@@ -1695,19 +1700,7 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
     let custoFazendaHaSum = 0;
     let custoFazendaHaCount = 0;
     let somaSacasArea = 0;
-    const efetivosMetricas = montarProdutosEfetivosPlanejamento({
-      resultados: comRec,
-      registrosSalvos,
-      todosFiltrados: produtosCalculo,
-      todosCatalogo: todos,
-      trocasPorTalhao,
-      marcadosPorTalhao,
-      extrasPorTalhao,
-      ajustesDosePorTalhao,
-      produtosOcultosPorTalhao,
-      criarMarcacoesPadraoFn: criarMarcacoesPadrao,
-      elementos: TODOS_ELEMENTOS_GRID,
-    });
+    const efetivosMetricas = produtosEfetivosPlanejamento || {};
 
     comRec.forEach(r => {
       const area = r.talhao.area_ha || 0;
@@ -1742,7 +1735,7 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
       custoHaMedio: custoFazendaHaCount > 0 ? custoFazendaHaSum / custoFazendaHaCount : null,
       custoSaca,
     };
-  }, [resultadosVisiveis, produtosCalculo, precos, registrosSalvos, todos, trocasPorTalhao, marcadosPorTalhao, extrasPorTalhao, ajustesDosePorTalhao, produtosOcultosPorTalhao]);
+  }, [resultadosVisiveis, precos, produtosEfetivosPlanejamento]);
 
   if (resultadosVisiveis.length === 0) {
     return (
@@ -1840,8 +1833,18 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
                 // Se tem registro salvo mas produto ainda null (timing), exibe "..." em vez de sugestão.
                 const idsSalvos = new Set((registrosSalvos || []).map(x => x.talhao_id));
                 const temRegistroSalvo = r.temRegistroSalvo || idsSalvos.has(r.talhao.id);
-                let produtoExibido = r.produtoSugerido || null;
-                let doseProdutoHaVivo = r.doseProdutoHa ?? null;
+                const efetivoTalhao = produtosEfetivosPlanejamento?.[r.talhao.id] || null;
+                const produtoEfetivo = !produtoNuloAdubacao2(efetivoTalhao?.produto) ? efetivoTalhao.produto : null;
+                let produtoExibido = produtoEfetivo || r.produtoSugerido || null;
+                let doseProdutoHaVivo = produtoEfetivo ? (efetivoTalhao.doseKgHa ?? efetivoTalhao.dose_utilizada_kg_ha ?? null) : (r.doseProdutoHa ?? null);
+                const origemProdutoExibido = produtoEfetivo
+                  ? (efetivoTalhao.origemUso || 'Produto sugerido')
+                  : (temRegistroSalvo && !r.substituirSalvo ? 'Produto escolhido manualmente' : 'Produto sugerido');
+                const sugestaoAutomaticaSecundaria = produtoEfetivo &&
+                  efetivoTalhao?.produtoSugeridoAutomatico &&
+                  efetivoTalhao.produtoSugeridoAutomatico.id !== produtoEfetivo.id
+                  ? efetivoTalhao.produtoSugeridoAutomatico
+                  : null;
                 let produtoCarregando = false;
 
                 if (!produtoExibido && r.rec) {
@@ -1870,6 +1873,16 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
                 const custoHa = precoNum != null && doseProdutoHaVivo != null ? precoNum * doseProdutoHaVivo : null;
                 const custoTotal = custoHa != null ? custoHa * area : null;
                 const carregandoTalhao = calculandoTalhaoId === r.talhao.id;
+                const resultadoDetalhe = produtoEfetivo ? {
+                  ...r,
+                  produtoSugerido: produtoEfetivo,
+                  doseProdutoHa: doseProdutoHaVivo,
+                  dose_calculada_kg_ha: efetivoTalhao?.dose_calculada_kg_ha ?? r.dose_calculada_kg_ha ?? doseProdutoHaVivo,
+                  dose_utilizada_kg_ha: efetivoTalhao?.dose_utilizada_kg_ha ?? doseProdutoHaVivo,
+                  dose_ajustada_manualmente: Boolean(efetivoTalhao?.dose_ajustada_manualmente),
+                  nutriente_alvo: efetivoTalhao?.nutriente_alvo || r.nutriente_alvo || 'n_pct',
+                  temRegistroSalvo,
+                } : r;
 
                 return (
                   <React.Fragment key={r.talhao.id}>
@@ -1897,13 +1910,18 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
                           <div className="flex flex-col gap-0.5">
                             <span className="font-medium truncate max-w-[160px]">{produtoExibido.nome}</span>
                             <span className="flex flex-wrap gap-1">
-                              <span className={`text-[9px] rounded-full px-1.5 py-0.5 w-fit border ${temRegistroSalvo && !r.substituirSalvo ? 'font-semibold text-green-700 bg-green-50 border-green-200' : 'text-muted-foreground bg-muted border-border'}`}>
-                                {temRegistroSalvo && !r.substituirSalvo ? 'Produto salvo' : 'Produto sugerido'}
+                              <span className={`text-[9px] rounded-full px-1.5 py-0.5 w-fit border ${origemProdutoExibido === 'Produto escolhido manualmente' ? 'font-semibold text-green-700 bg-green-50 border-green-200' : 'text-muted-foreground bg-muted border-border'}`}>
+                                {origemProdutoExibido}
                               </span>
                               <span className="text-[9px] rounded-full px-1.5 py-0.5 w-fit border text-blue-700 bg-blue-50 border-blue-100">
                                 {origemProdutoCatalogoLabel(produtoExibido)}
                               </span>
                             </span>
+                            {sugestaoAutomaticaSecundaria && (
+                              <span className="text-[9px] text-muted-foreground truncate max-w-[160px]">
+                                Sugestão: {sugestaoAutomaticaSecundaria.nome}
+                              </span>
+                            )}
                           </div>
                         ) : <span className="text-muted-foreground">—</span>}
                       </td>
@@ -1947,7 +1965,7 @@ export default function AbaPlanejamento2({ resultados, todos, talhoes = [], calc
                       <tr>
                         <td colSpan={14} className="p-0 border-b border-border">
                           <PainelTalhao
-                            resultado={r}
+                            resultado={resultadoDetalhe}
                             todos={produtosCalculo}
                             todosSemFiltro={todos}
                             precosProd={precos}
