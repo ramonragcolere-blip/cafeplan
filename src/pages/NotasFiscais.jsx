@@ -9,6 +9,7 @@ import DetalhesNotaFiscal from '@/components/notas/DetalhesNotaFiscal';
 import { consolidarPrecosItens } from '@/lib/notasFiscais';
 import { montarCatalogoCategorias, classificarProduto, normalizarNome } from '@/lib/notasFiscaisCategorias';
 import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
+import CardValorUtilizado from '@/components/notas/CardValorUtilizado';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import AbaEstoque from '@/components/estoque/AbaEstoque';
 import AbaAnalises from '@/components/analises/AbaAnalises';
@@ -185,7 +186,7 @@ export default function NotasFiscais() {
       />
 
       {/* Cards resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground mb-1">Total de Notas</p>
           <p className="text-2xl font-bold text-foreground">{notasFiltradas.length}</p>
@@ -202,6 +203,18 @@ export default function NotasFiscais() {
           <p className="text-xs text-muted-foreground mb-1">Valor Total (notas)</p>
           <p className="text-lg font-bold text-primary">{fmtR(notasFiltradas.reduce((s, n) => s + (n.valor_total || 0), 0))}</p>
         </div>
+        <CardValorUtilizado
+          produtorFiltro={produtorFiltro}
+          buscaProduto={buscaProduto}
+          categoriaFiltro={categoriaFiltro}
+          dataInicial={dataInicial}
+          dataFinal={dataFinal}
+          notas={notas}
+          itens={itens}
+          fertilizantes={fertilizantesCatalogo}
+          fontes={fontesSimplesCatalogo}
+          catalogoCategorias={catalogoCategorias}
+        />
       </div>
 
       {/* Tabela de preços consolidada */}
