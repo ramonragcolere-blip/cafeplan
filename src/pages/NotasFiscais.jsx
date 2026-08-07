@@ -9,6 +9,8 @@ import DetalhesNotaFiscal from '@/components/notas/DetalhesNotaFiscal';
 import { consolidarPrecosItens } from '@/lib/notasFiscais';
 import { montarCatalogoCategorias, classificarProduto, normalizarNome } from '@/lib/notasFiscaisCategorias';
 import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import AbaEstoque from '@/components/estoque/AbaEstoque';
 
 const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 
@@ -160,6 +162,13 @@ export default function NotasFiscais() {
         </div>
       </div>
 
+      <Tabs defaultValue="notas" className="w-full">
+        <TabsList>
+          <TabsTrigger value="notas">Notas e Preços</TabsTrigger>
+          <TabsTrigger value="estoque">Controle de Estoque</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="notas" className="space-y-6">
       <PainelFiltrosNotas
         buscaProduto={buscaProduto}
         setBuscaProduto={setBuscaProduto}
@@ -280,6 +289,17 @@ export default function NotasFiscais() {
           </div>
         )}
       </div>
+        </TabsContent>
+
+        <TabsContent value="estoque" className="space-y-4">
+          <AbaEstoque
+            notas={notas}
+            itens={itens}
+            produtores={produtores}
+            produtorFiltro={produtorFiltro}
+          />
+        </TabsContent>
+      </Tabs>
 
       <ImportarNotaFiscal
         open={modalAberto}
