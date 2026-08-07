@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Clock, Loader2, CheckCircle, AlertCircle, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { extrairDadosArquivo, verificarDuplicadaBanco, salvarNotaFiscal, chaveDuplicada } from '@/lib/importacaoNotaFiscal';
+import { analisarPrecosNovaNota } from '@/lib/analisePrecosNotas';
+import BadgeComparacaoPreco, { ResumoAlertasLote } from '@/components/notas/BadgeComparacaoPreco';
 
 const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 const fmtData = (d) => { if (!d) return '—'; const [y, m, day] = String(d).split('-'); return y && m && day ? `${day}/${m}/${y}` : d; };
@@ -28,7 +30,9 @@ function StatusBadge({ status }) {
 // Componente de LOTE. Renderizado DENTRO do Dialog do ImportarNotaFiscal.
 // Processa os arquivos SEQUENCIALMENTE (1 por vez) para evitar travamento e
 // limite de requisições. Não altera filtros da página (só chama refetch ao concluir).
-export default function ImportarLoteNotasFiscal({ produtorId, arquivos, onConcluido, onCancelar }) {
+export default function ImportarLoteNotasFiscal({ produtorId, arquivos, onConcluido, onCancelar,
+  notas: historicoNotas = [], itens: historicoItens = [],
+  fertilizantes = [], fontes = [], catalogoCategorias = [] }) {
   const [etapa, setEtapa] = useState('processando'); // processando | revisao | salvando | sucesso
   const [itens, setItens] = useState(() => arquivos.map(f => ({ arquivo: f.name, status: 'aguardando', erro: '', dados: null })));
   const [idxAberto, setIdxAberto] = useState(null);
@@ -78,6 +82,25 @@ export default function ImportarLoteNotasFiscal({ produtorId, arquivos, onConclu
     () => itens.filter(it => ['pronta', 'duplicada', 'erro', 'importada'].includes(it.status)).length,
     [itens]
   );
+
+  // Alerta de preço por NF (Parte 2). Cada NF do lote compara contra o MESMO
+  // histórico pré-lote (o lote ainda não foi salvo — regra #18). Mesma
+  // metodologia do Banco de Preços (analisePrecosNotas).
+  const analisePorNF = useMemo(() => {
+    if (!produtorId) return {};
+    const map = {};
+    itens.forEach((it, i) => {
+      if (it.dados) {
+        map[i] = analisarPrecosNovaNota({
+          dadosNovaNota: it.dados, produtorId,
+          historicoItens, notas: historicoNotas,
+          fertilizantes, fontes, catalogoCategorias,
+        });
+      }
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itens, produtorId, historicoItens, historicoNotas, fertilizantes, fontes, catalogoCategorias]);
 
   const handleImportar = async () => {
     const alvos = itens.map((it, i) => ({ it, i })).filter(x => x.it.status === 'pronta');
@@ -148,7 +171,7 @@ export default function ImportarLoteNotasFiscal({ produtorId, arquivos, onConclu
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-muted/20">
                   <tr className="border-b border-border">
-                    {['Arquivo', 'NF', 'Fornecedor', 'Data', 'Itens', 'Valor', 'Status'].map(h => (
+                    {['Arquivo', 'NF', 'Fornecedor', 'Data', 'Itens', 'Valor', 'Alertas', 'Status'].map(h => (
                       <th key={h} className="px-2.5 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -169,11 +192,14 @@ export default function ImportarLoteNotasFiscal({ produtorId, arquivos, onConclu
                         <td className="px-2.5 py-2 tabular-nums whitespace-nowrap">{it.dados ? fmtData(it.dados.data_emissao) : '—'}</td>
                         <td className="px-2.5 py-2 text-center tabular-nums">{it.dados ? (it.dados.itens || []).length : '—'}</td>
                         <td className="px-2.5 py-2 tabular-nums whitespace-nowrap">{it.dados ? fmtR(it.dados.valor_total) : '—'}</td>
+                        <td className="px-2.5 py-2 whitespace-nowrap">
+                          {it.dados ? <ResumoAlertasLote analise={analisePorNF[i]} /> : '—'}
+                        </td>
                         <td className="px-2.5 py-2"><StatusBadge status={it.status} /></td>
                       </tr>
                       {idxAberto === i && it.dados && (
                         <tr className="bg-muted/5">
-                          <td colSpan={7} className="px-3 py-3">
+                          <td colSpan={8} className="px-3 py-3">
                             <p className="text-xs font-semibold text-muted-foreground mb-2">Itens extraídos ({(it.dados.itens || []).length})</p>
                             <div className="rounded border border-border overflow-hidden">
                               <table className="w-full text-xs">
@@ -184,18 +210,39 @@ export default function ImportarLoteNotasFiscal({ produtorId, arquivos, onConclu
                                     <th className="px-2 py-1.5 text-center">Un</th>
                                     <th className="px-2 py-1.5 text-right">Preço Unit.</th>
                                     <th className="px-2 py-1.5 text-right">Total</th>
+                                    <th className="px-2 py-1.5 text-center">Comparação</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {(it.dados.itens || []).map((p, k) => (
-                                    <tr key={k} className="border-b border-border/40 last:border-0">
-                                      <td className="px-2 py-1.5 font-medium">{p.produto_nome || '—'}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums">{p.quantidade}</td>
-                                      <td className="px-2 py-1.5 text-center text-muted-foreground">{p.unidade_medida}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtR(p.preco_unitario)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtR(p.preco_total)}</td>
-                                    </tr>
-                                  ))}
+                                  {(it.dados.itens || []).map((p, k) => {
+                                    const alerta = analisePorNF[i]?.[k];
+                                    const econ = alerta?.economia;
+                                    const econTitle = econ && Math.abs(econ.unitaria) > 1e-9
+                                      ? `Economia potencial vs melhor preço histórico (${econ.melhorFornecedor || '—'}): R$ ${Math.abs(econ.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nReferência pelo menor preço histórico registrado.`
+                                      : null;
+                                    return (
+                                      <tr key={k} className="border-b border-border/40 last:border-0">
+                                        <td className="px-2 py-1.5 font-medium max-w-[180px] truncate" title={p.produto_nome}>{p.produto_nome || '—'}</td>
+                                        <td className="px-2 py-1.5 text-right tabular-nums">{p.quantidade}</td>
+                                        <td className="px-2 py-1.5 text-center text-muted-foreground">{p.unidade_medida}</td>
+                                        <td className="px-2 py-1.5 text-right tabular-nums">{fmtR(p.preco_unitario)}</td>
+                                        <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtR(p.preco_total)}</td>
+                                        <td className="px-2 py-1.5 text-center">
+                                          <div className="flex flex-col items-center gap-0.5">
+                                            <BadgeComparacaoPreco alerta={alerta} />
+                                            {econTitle && (
+                                              <span
+                                                title={econTitle}
+                                                className={`text-[10px] ${econ.unitaria > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                                              >
+                                                {econ.unitaria > 0 ? '−' : '+'}R$ {Math.abs(econ.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>

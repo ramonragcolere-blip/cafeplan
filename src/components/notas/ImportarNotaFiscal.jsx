@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Layers } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Layers, ArrowUp, TrendingDown, CircleSlash } from 'lucide-react';
 import { extrairDadosArquivo, verificarDuplicadaBanco, salvarNotaFiscal } from '@/lib/importacaoNotaFiscal';
+import { analisarPrecosNovaNota, contarAumentosAvisos } from '@/lib/analisePrecosNotas';
+import BadgeComparacaoPreco from '@/components/notas/BadgeComparacaoPreco';
 import ImportarLoteNotasFiscal from '@/components/notas/ImportarLoteNotasFiscal';
 
 const LIMITE_LOTE = 20;
 
-export default function ImportarNotaFiscal({ open, onClose, produtores, onImportado }) {
+export default function ImportarNotaFiscal({ open, onClose, produtores, onImportado,
+  notas = [], itens = [], fertilizantes = [], fontes = [], catalogoCategorias = [] }) {
   const [etapa, setEtapa] = useState('upload'); // upload | revisao | salvando | sucesso | lote
   const [produtorId, setProdutorId] = useState('');
   const [arquivo, setArquivo] = useState(null);        // importação individual
@@ -15,6 +18,20 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [processando, setProcessando] = useState(false);
+
+  // Alerta de preço (Parte 2): compara cada item da nova NF contra o histórico
+  // já existente no banco (a nova NF ainda não foi salva -> não contamina a
+  // média). Mesma regra do Banco de Preços (analisePrecosNotas).
+  const analisePrecos = useMemo(() => {
+    if (etapa !== 'revisao' || !dados || !produtorId) return [];
+    return analisarPrecosNovaNota({
+      dadosNovaNota: dados, produtorId,
+      historicoItens: itens, notas,
+      fertilizantes, fontes, catalogoCategorias,
+    });
+  }, [etapa, dados, produtorId, itens, notas, fertilizantes, fontes, catalogoCategorias]);
+
+  const resumoAlertas = useMemo(() => contarAumentosAvisos(analisePrecos), [analisePrecos]);
 
   const resetar = () => {
     setEtapa('upload'); setProdutorId(''); setArquivo(null); setArquivosLote([]);
@@ -155,6 +172,11 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
             arquivos={arquivosLote}
             onConcluido={() => { onImportado?.(); handleClose(); }}
             onCancelar={() => setEtapa('upload')}
+            notas={notas}
+            itens={itens}
+            fertilizantes={fertilizantes}
+            fontes={fontes}
+            catalogoCategorias={catalogoCategorias}
           />
         )}
 
@@ -169,6 +191,29 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
               <div className="col-span-2"><span className="text-muted-foreground">Valor Total:</span> <strong className="text-primary">{fmtR(dados.valor_total)}</strong></div>
             </div>
 
+            {/* Resumo de alertas de preço (Parte 2) — não bloqueia a importação */}
+            {resumoAlertas.total > 0 && (resumoAlertas.aumentos > 0 || resumoAlertas.quedas > 0 || resumoAlertas.semHistorico > 0) && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
+                <span className="font-semibold text-muted-foreground">Comparação de preços:</span>
+                {resumoAlertas.aumentos > 0 && (
+                  <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
+                    <ArrowUp className="w-3.5 h-3.5" /> {resumoAlertas.aumentos} {resumoAlertas.aumentos === 1 ? 'item com aumento' : 'itens com aumento'}
+                  </span>
+                )}
+                {resumoAlertas.quedas > 0 && (
+                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <TrendingDown className="w-3.5 h-3.5" /> {resumoAlertas.quedas} {resumoAlertas.quedas === 1 ? 'item com queda' : 'itens com queda'}
+                  </span>
+                )}
+                {resumoAlertas.semHistorico > 0 && (
+                  <span className="inline-flex items-center gap-1 text-muted-foreground font-medium">
+                    <CircleSlash className="w-3.5 h-3.5" /> {resumoAlertas.semHistorico} sem histórico
+                  </span>
+                )}
+                <span className="text-muted-foreground">— passe o mouse na coluna "Comparação" para detalhes</span>
+              </div>
+            )}
+
             <div>
               <p className="text-sm font-semibold mb-2">Itens da Nota ({(dados.itens || []).length})</p>
               <div className="rounded-lg border border-border overflow-hidden">
@@ -180,18 +225,40 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
                       <th className="px-3 py-2 text-center font-semibold text-muted-foreground">Un</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Preço Unit.</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Total</th>
+                      <th className="px-3 py-2 text-center font-semibold text-muted-foreground">Comparação</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(dados.itens || []).map((it, i) => (
-                      <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/10">
-                        <td className="px-3 py-2 font-medium">{it.produto_nome}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{it.quantidade}</td>
-                        <td className="px-3 py-2 text-center text-muted-foreground">{it.unidade_medida}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtR(it.preco_unitario)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtR(it.preco_total)}</td>
-                      </tr>
-                    ))}
+                    {(dados.itens || []).map((it, i) => {
+                      const alerta = analisePrecos[i];
+                      // economia potencial na qtd desta NF (vs melhor preço histórico)
+                      const econ = alerta?.economia;
+                      const econTitle = econ && Math.abs(econ.unitaria) > 1e-9
+                        ? `Economia potencial vs melhor preço histórico (${econ.melhorFornecedor || '—'}): R$ ${Math.abs(econ.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nReferência pelo menor preço histórico registrado.`
+                        : null;
+                      return (
+                        <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/10">
+                          <td className="px-3 py-2 font-medium max-w-[220px] truncate" title={it.produto_nome}>{it.produto_nome}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{it.quantidade}</td>
+                          <td className="px-3 py-2 text-center text-muted-foreground">{it.unidade_medida}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{fmtR(it.preco_unitario)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtR(it.preco_total)}</td>
+                          <td className="px-3 py-2 text-center">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <BadgeComparacaoPreco alerta={alerta} />
+                              {econTitle && (
+                                <span
+                                  title={econTitle}
+                                  className={`text-[10px] ${econ.unitaria > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                                >
+                                  {econ.unitaria > 0 ? '−' : '+'}R$ {Math.abs(econ.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

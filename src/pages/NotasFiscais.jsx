@@ -2,15 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { FileText, Plus, TrendingUp, Package, Filter, X, Eye } from 'lucide-react';
+import { FileText, Plus, Package, Filter, X, Eye } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ImportarNotaFiscal from '@/components/notas/ImportarNotaFiscal';
 import DetalhesNotaFiscal from '@/components/notas/DetalhesNotaFiscal';
-import { consolidarPrecosItens } from '@/lib/notasFiscais';
+import { consolidarBancoPrecos } from '@/lib/analisePrecosNotas';
 import { montarCatalogoCategorias, classificarProduto, normalizarNome } from '@/lib/notasFiscaisCategorias';
 import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
 import CardValorUtilizado from '@/components/notas/CardValorUtilizado';
 import CardValorEstoque from '@/components/notas/CardValorEstoque';
+import TabelaBancoPrecos from '@/components/notas/TabelaBancoPrecos';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import AbaEstoque from '@/components/estoque/AbaEstoque';
 import AbaAnalises from '@/components/analises/AbaAnalises';
@@ -111,8 +112,20 @@ export default function NotasFiscais() {
     return notasCandidatas.filter(n => idsNotasComItensFiltrados.has(n.id));
   }, [itemFiltroAtivo, notasCandidatas, idsNotasComItensFiltrados]);
 
-  // Média ponderada pela quantidade comprada; evita distorção entre notas pequenas e grandes.
-  const tabelaPrecos = useMemo(() => consolidarPrecosItens(itensFiltrados), [itensFiltrados]);
+  // Banco de Preços: agrupa por produto (insumo_id -> match -> nome) + unidade
+  // comparável (conversão de embalagem reutilizada do estoque). Média ponderada
+  // pela quantidade comparável. Identificação e preço comparável idênticos aos
+  // do alerta de importação (mesma lib analisePrecosNotas).
+  const tabelaPrecos = useMemo(
+    () => consolidarBancoPrecos({
+      itens: itensFiltrados,
+      notas,
+      fertilizantes: fertilizantesCatalogo,
+      fontes: fontesSimplesCatalogo,
+      catalogoCategorias,
+    }),
+    [itensFiltrados, notas, fertilizantesCatalogo, fontesSimplesCatalogo, catalogoCategorias]
+  );
 
   const temFiltroAtivo = produtorAtivo || buscaProduto.trim() !== '' || categoriaFiltro !== 'todos' || periodoAtivo;
 
@@ -228,47 +241,9 @@ export default function NotasFiscais() {
         />
       </div>
 
-      {/* Tabela de preços consolidada */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-primary" />
-          <h2 className="font-semibold text-sm">Banco de Preços Consolidado</h2>
-          <span className="text-xs text-muted-foreground ml-1">({tabelaPrecos.length} produtos)</span>
-        </div>
-        {tabelaPrecos.length === 0 ? (
-          <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-            Nenhum dado disponível ainda. Importe uma nota fiscal para visualizar os preços.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/10">
-                  {['Produto', 'Unidade', 'Menor Preço', 'Maior Preço', 'Preço Médio', 'Nº Notas'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tabelaPrecos.map((row, i) => (
-                  <tr key={i} className={`border-b border-border/50 last:border-0 hover:bg-muted/10 ${i % 2 === 1 ? 'bg-muted/5' : ''}`}>
-                    <td className="px-4 py-2.5 font-medium max-w-[260px] truncate">{row.produto_nome}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded font-mono">{row.unidade_medida || '—'}</span>
-                    </td>
-                    <td className="px-4 py-2.5 tabular-nums text-green-700 font-medium">{fmtR(row.menor_preco)}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-destructive font-medium">{fmtR(row.maior_preco)}</td>
-                    <td className="px-4 py-2.5 tabular-nums font-semibold text-primary">{fmtR(row.preco_medio)}</td>
-                    <td className="px-4 py-2.5 text-center">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">{row.num_notas}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Banco de Preços Consolidado (evoluído: comparativo por fornecedor +
+          economia potencial + detalhe expandível com histórico) */}
+      <TabelaBancoPrecos rows={tabelaPrecos} />
 
       {/* Lista de notas importadas */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -343,6 +318,11 @@ export default function NotasFiscais() {
         onClose={() => setModalAberto(false)}
         produtores={produtores}
         onImportado={handleImportado}
+        notas={notas}
+        itens={itens}
+        fertilizantes={fertilizantesCatalogo}
+        fontes={fontesSimplesCatalogo}
+        catalogoCategorias={catalogoCategorias}
       />
 
       <DetalhesNotaFiscal
