@@ -1,0 +1,83 @@
+{
+  "name": "ConfiguracaoEstoqueProduto",
+  "type": "object",
+  "properties": {
+    "produtor_id": {
+      "type": "string",
+      "description": "ID do produtor"
+    },
+    "produto_chave": {
+      "type": "string",
+      "description": "Chave do produto no estoque (ex.: fert_<id>, fonte_<id>, nf_<nome normalizado>)"
+    },
+    "produto_nome": {
+      "type": "string",
+      "description": "Nome do produto"
+    },
+    "produto_id": {
+      "type": "string",
+      "description": "ID do produto na Base de Insumos, quando vinculado (opcional)"
+    },
+    "produto_tipo": {
+      "type": "string",
+      "enum": [
+        "fert",
+        "fonte",
+        "nf"
+      ],
+      "description": "Tipo do produto: fert, fonte ou nf"
+    },
+    "dose_ha": {
+      "type": "number",
+      "description": "Dose/ha manual espec\u00edfica do estoque (override)"
+    },
+    "unidade_dose": {
+      "type": "string",
+      "description": "Unidade da dose (L/ha, mL/ha, kg/ha, g/ha)"
+    }
+  },
+  "required": [
+    "produtor_id",
+    "produto_chave",
+    "dose_ha",
+    "unidade_dose"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

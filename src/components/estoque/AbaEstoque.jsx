@@ -2,17 +2,22 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { montarCatalogoCategorias } from '@/lib/notasFiscaisCategorias';
-import { construirEstoque, fmtData } from '@/lib/estoqueInsumos';
+import { construirEstoque } from '@/lib/estoqueInsumos';
 import FiltrosEstoque from '@/components/estoque/FiltrosEstoque';
 import CardsEstoque from '@/components/estoque/CardsEstoque';
 import AlertasEstoque from '@/components/estoque/AlertasEstoque';
 import TabelaEstoque from '@/components/estoque/TabelaEstoque';
 import ModalRegistrarUso from '@/components/estoque/ModalRegistrarUso';
 import ModalDetalheEstoque from '@/components/estoque/ModalDetalheEstoque';
+import ModalEditarMovimento from '@/components/estoque/ModalEditarMovimento';
+import ConfirmaExcluirMovimento from '@/components/estoque/ConfirmaExcluirMovimento';
+import ModalEditarDose from '@/components/estoque/ModalEditarDose';
+import ModalCadastrarInsumo from '@/components/estoque/ModalCadastrarInsumo';
+import DetalhesNotaFiscal from '@/components/notas/DetalhesNotaFiscal';
 
 // Aba de Controle de Estoque. Entradas derivam das NFs (itens) já carregadas
-// na página; só saídas são persistidas (MovimentoEstoqueInsumo). Não altera
-// filtros da página, nem dados das NFs.
+// na página; só saídas e configurações de dose são persistidas. Não altera
+// filtros da página, nem dados das NFs, nem Banco de Preços.
 export default function AbaEstoque({ notas, itens, produtores, produtorFiltro }) {
   const [busca, setBusca] = useState('');
   const [categoria, setCategoria] = useState('todos');
@@ -21,14 +26,20 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
   const [dataFinal, setDataFinal] = useState('');
   const [rowUso, setRowUso] = useState(null);
   const [rowDetalhe, setRowDetalhe] = useState(null);
+  const [movEdicao, setMovEdicao] = useState(null); // {row, mov}
+  const [movExcluir, setMovExcluir] = useState(null); // {row, mov}
+  const [rowDose, setRowDose] = useState(null);
+  const [rowCadastrar, setRowCadastrar] = useState(null); // {row, doseInicial, unidadeInicial}
+  const [notaDetalhe, setNotaDetalhe] = useState(null);
 
-  // Saídas registradas (mesma RLS por produtor/created_by_id)
-  const { data: saidas = [], refetch: refetchSaidas } = useQuery({
+  const { data: saidas = [] } = useQuery({
     queryKey: ['movimentos_estoque', produtorFiltro],
     queryFn: () => base44.entities.MovimentoEstoqueInsumo.list('-data_movimento', 5000),
   });
-
-  // Base de Insumos para relação/dose (mesmas entidades já usadas pelas notas)
+  const { data: configs = [] } = useQuery({
+    queryKey: ['configs_estoque', produtorFiltro],
+    queryFn: () => base44.entities.ConfiguracaoEstoqueProduto.list(undefined, 5000),
+  });
   const { data: fertilizantes = [] } = useQuery({
     queryKey: ['fertilizantes_formulados', 'catalogo_estoque'],
     queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000),
@@ -43,12 +54,10 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
     [fertilizantes, fontes]
   );
 
-  // Linhas de estoque (por produtor + produto)
   const rows = useMemo(() => construirEstoque({
-    itens, notas, saidas, fertilizantes, fontes, catalogoCategorias, produtorFiltro,
-  }), [itens, notas, saidas, fertilizantes, fontes, catalogoCategorias, produtorFiltro]);
+    itens, notas, saidas, fertilizantes, fontes, catalogoCategorias, configs, produtorFiltro,
+  }), [itens, notas, saidas, fertilizantes, fontes, catalogoCategorias, configs, produtorFiltro]);
 
-  // Filtros independentes do estoque
   const rowsFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return rows.filter(r => {
@@ -67,6 +76,25 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
   };
   const showProdutor = produtorFiltro === 'todos';
 
+  const produtorNome = (id) => {
+    const p = (produtores || []).find(x => x.id === id);
+    return p ? (p.nome || p.codigo_produtor || id) : id;
+  };
+
+  const abrirNota = (notaId) => {
+    const nota = (notas || []).find(n => n.id === notaId) || null;
+    setNotaDetalhe(nota);
+  };
+
+  const abrirCadastrarViaDetalhe = (row) => {
+    setRowDetalhe(null);
+    setRowCadastrar({ row, doseInicial: null, unidadeInicial: 'L/ha' });
+  };
+
+  const abrirCadastrarViaDose = (row, doseVal, unidade) => {
+    setRowCadastrar({ row, doseInicial: doseVal, unidadeInicial: unidade });
+  };
+
   return (
     <div className="space-y-4">
       <CardsEstoque rows={rowsFiltradas} />
@@ -82,7 +110,7 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
       />
 
       <div className="px-1 text-xs text-muted-foreground">
-        Estoque por produtor · entradas automáticas das NFs importadas · saídas registradas manualmente.
+        Estoque por produtor · entradas automáticas das NFs importadas · saídas e doses editáveis manualmente.
       </div>
 
       <TabelaEstoque
@@ -90,18 +118,41 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
         showProdutor={showProdutor}
         onRegistrarUso={setRowUso}
         onVerDetalhe={setRowDetalhe}
+        onEditarDose={setRowDose}
       />
 
-      <ModalRegistrarUso
-        row={rowUso}
-        open={!!rowUso}
-        onClose={() => setRowUso(null)}
-        onSalvo={refetchSaidas}
-      />
+      <ModalRegistrarUso row={rowUso} open={!!rowUso} onClose={() => setRowUso(null)} />
       <ModalDetalheEstoque
-        row={rowDetalhe}
-        open={!!rowDetalhe}
-        onClose={() => setRowDetalhe(null)}
+        row={rowDetalhe} open={!!rowDetalhe} onClose={() => setRowDetalhe(null)}
+        onEditarMovimento={(row, mov) => { setRowDetalhe(null); setMovEdicao({ row, mov }); }}
+        onExcluirMovimento={(row, mov) => { setRowDetalhe(null); setMovExcluir({ row, mov }); }}
+        onAbrirNota={abrirNota}
+        onEditarDose={(row) => { setRowDetalhe(null); setRowDose(row); }}
+        onCadastrarInsumo={abrirCadastrarViaDetalhe}
+      />
+      <ModalEditarMovimento
+        movimento={movEdicao?.mov} row={movEdicao?.row}
+        open={!!movEdicao} onClose={() => setMovEdicao(null)}
+      />
+      <ConfirmaExcluirMovimento
+        movimento={movExcluir?.mov} open={!!movExcluir} onClose={() => setMovExcluir(null)}
+      />
+      <ModalEditarDose
+        row={rowDose} open={!!rowDose} onClose={() => setRowDose(null)}
+        onCadastrarNaBase={abrirCadastrarViaDose}
+      />
+      <ModalCadastrarInsumo
+        row={rowCadastrar?.row}
+        doseInicial={rowCadastrar?.doseInicial}
+        unidadeInicial={rowCadastrar?.unidadeInicial}
+        open={!!rowCadastrar} onClose={() => setRowCadastrar(null)}
+      />
+
+      <DetalhesNotaFiscal
+        nota={notaDetalhe}
+        itens={itens}
+        produtorNome={produtorNome}
+        onClose={() => setNotaDetalhe(null)}
       />
     </div>
   );

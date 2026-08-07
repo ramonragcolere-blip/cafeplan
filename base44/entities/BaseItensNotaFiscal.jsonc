@@ -14,6 +14,18 @@
       "type": "string",
       "description": "Nome do produto na nota"
     },
+    "insumo_id": {
+      "type": "string",
+      "description": "ID do produto na Base de Insumos (FertilizanteFormulado/FonteSimples) quando vinculado"
+    },
+    "insumo_tipo": {
+      "type": "string",
+      "enum": [
+        "formulado",
+        "fonte"
+      ],
+      "description": "Tipo do insumo vinculado: formulado (FertilizanteFormulado) ou fonte (FonteSimples)"
+    },
     "produto_id_sugerido": {
       "type": "string",
       "description": "ID do produto na base de fertilizantes (opcional)"

@@ -1,4 +1,5 @@
 import { base44 } from '@/api/base44Client';
+import { construirInsumosIndex, matchInsumoExato } from '@/lib/estoqueInsumos';
 
 // Lógica compartilhada entre a importação individual (ImportarNotaFiscal)
 // e a importação em lote (ImportarLoteNotasFiscal). Mantém o comportamento
@@ -136,17 +137,37 @@ export async function salvarNotaFiscal(produtorId, dados) {
       arquivo_url: dados.arquivo_url || '',
     });
 
+    // Base de Insumos para vínculo automático (somente correspondência exata),
+    // tornando o sistema progressivamente mais inteligente a cada importação.
+    let insumosIndex = null;
+    try {
+      const [ferts, fontes] = await Promise.all([
+        base44.entities.FertilizanteFormulado.list(undefined, 5000),
+        base44.entities.FonteSimples.list(undefined, 5000),
+      ]);
+      insumosIndex = construirInsumosIndex(ferts, fontes);
+    } catch {
+      // vínculo automático é opcional; a importação não é bloqueada.
+      insumosIndex = null;
+    }
+
     const itensPayload = (dados.itens || [])
       .filter(it => String(it.produto_nome || '').trim())
-      .map(it => ({
-        nota_fiscal_id: notaCriada.id,
-        produtor_id: produtorId,
-        produto_nome: String(it.produto_nome || '').trim(),
-        quantidade: Number(it.quantidade) || 0,
-        unidade_medida: String(it.unidade_medida || '').toUpperCase(),
-        preco_unitario: Number(it.preco_unitario) || 0,
-        preco_total: Number(it.preco_total) || 0,
-      }));
+      .map(it => {
+        const nomeItem = String(it.produto_nome || '').trim();
+        const insumo = insumosIndex ? matchInsumoExato(nomeItem, insumosIndex) : null;
+        return {
+          nota_fiscal_id: notaCriada.id,
+          produtor_id: produtorId,
+          produto_nome: nomeItem,
+          insumo_id: insumo ? insumo.id : null,
+          insumo_tipo: insumo ? (insumo.tipo === 'fert' ? 'formulado' : 'fonte') : null,
+          quantidade: Number(it.quantidade) || 0,
+          unidade_medida: String(it.unidade_medida || '').toUpperCase(),
+          preco_unitario: Number(it.preco_unitario) || 0,
+          preco_total: Number(it.preco_total) || 0,
+        };
+      });
 
     if (itensPayload.length > 0) await base44.entities.BaseItensNotaFiscal.bulkCreate(itensPayload);
     return { nota: notaCriada, itens: itensPayload };

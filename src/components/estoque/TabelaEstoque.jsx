@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, PencilLine } from 'lucide-react';
+import { Eye, PencilLine, Pencil } from 'lucide-react';
 import { fmtQtd, fmtData } from '@/lib/estoqueInsumos';
 
 const SITUACAO_CLS = {
@@ -9,13 +9,28 @@ const SITUACAO_CLS = {
   'Sem estoque': 'bg-muted text-muted-foreground border-border',
 };
 
-function DoseBadge({ row }) {
-  if (!row.dose) return <span className="text-muted-foreground">—</span>;
+function DoseCell({ row, onEditarDose }) {
+  if (!row.dose) {
+    return (
+      <button type="button" onClick={() => onEditarDose(row)}
+        title="Definir dose/ha"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary border border-transparent hover:border-primary/30 rounded px-1.5 py-0.5">
+        <Pencil className="w-3 h-3" /> Definir
+      </button>
+    );
+  }
   const u = row.dose.unit === 'l' ? 'L' : row.dose.unit === 'kg' ? 'kg' : row.dose.unit;
-  return <span className="tabular-nums">{fmtQtd(row.dose.valor)} {u}/ha</span>;
+  return (
+    <button type="button" onClick={() => onEditarDose(row)}
+      title="Editar dose/ha"
+      className="inline-flex items-center gap-1 tabular-nums hover:text-primary group">
+      {fmtQtd(row.dose.valor)} {u}/ha
+      <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 text-primary" />
+    </button>
+  );
 }
 
-export default function TabelaEstoque({ rows, showProdutor, onRegistrarUso, onVerDetalhe }) {
+export default function TabelaEstoque({ rows, showProdutor, onRegistrarUso, onVerDetalhe, onEditarDose }) {
   const cols = [
     ...(showProdutor ? ['Produtor'] : []),
     'Produto', 'Categoria', 'Última entrada', 'Entrada', 'Usado', 'Saldo', 'Unidade', 'Dose/ha', 'Ha possíveis', 'Situação', '',
@@ -53,10 +68,10 @@ export default function TabelaEstoque({ rows, showProdutor, onRegistrarUso, onVe
                   <td className="px-3 py-2.5 tabular-nums">{fmtQtd(r.total_saida)}</td>
                   <td className={`px-3 py-2.5 tabular-nums font-semibold ${semEstoque ? 'text-muted-foreground' : baixo ? 'text-destructive' : 'text-foreground'}`}>{fmtQtd(r.saldo)}</td>
                   <td className="px-3 py-2.5"><span className="text-xs font-mono text-muted-foreground">{r.unidade || '—'}</span></td>
-                  <td className="px-3 py-2.5"><DoseBadge row={r} /></td>
+                  <td className="px-3 py-2.5"><DoseCell row={r} onEditarDose={onEditarDose} /></td>
                   <td className="px-3 py-2.5 tabular-nums">
                     {r.ha_possiveis != null ? `${fmtQtd(r.ha_possiveis)} ha` : (
-                      <span className="text-muted-foreground" title="Não foi possível calcular porque a conversão da embalagem não está definida.">—</span>
+                      <span className="text-muted-foreground" title="Defina a dose/ha ou a unidade do saldo não é compatível.">—</span>
                     )}
                   </td>
                   <td className="px-3 py-2.5">

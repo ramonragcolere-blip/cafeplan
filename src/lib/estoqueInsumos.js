@@ -14,6 +14,9 @@ const UN_EMBALAGEM = ['FR', 'GL', 'CX', 'CXA', 'SC', 'PC', 'UN', 'UNID', 'UND', 
 // Regex que localiza volume/massa explícito na descrição (ex.: "5 L", "1L", "500 ML", "20 KG").
 const RE_VOLUME = /(\d+(?:[.,]\d+)?)\s?(l|lt|lts|litro|litros|ml|mls|kg|kgs|quilo|quilos|g|gr|gramas?|toneladas?|t)\b/g;
 
+// Unidades de dose suportadas na edição manual.
+export const UNIDADES_DOSE = ['L/ha', 'mL/ha', 'kg/ha', 'g/ha'];
+
 function parseNum(str) {
   if (str == null || str === '') return null;
   const n = parseFloat(String(str).replace(',', '.'));
@@ -67,16 +70,12 @@ function extrairVolumeBase(nome) {
 }
 
 // Converte um item de NF para a unidade base do estoque.
-// - Se a unidade da NF já é volume/massa (L, ML, KG, G, T) → converte para l/kg.
-// - Se é embalagem (GL, FR, SC...) e a descrição traz volume explícito → multiplica.
-// - Caso contrário mantém a unidade original (ex.: GL sem tamanho conhecido).
 export function converterItem(item) {
   const qtd = Number(item.quantidade) || 0;
   const cu = canonUnidade(item.unidade_medida);
   if (['l', 'ml', 'kg', 'g', 't'].includes(cu)) {
     return toBase(qtd, cu);
   }
-  // embalagem: tenta extrair conteúdo da descrição
   if (UN_EMBALAGEM.includes(cu)) {
     const vol = extrairVolumeBase(item.produto_nome);
     if (vol) return { q: qtd * vol.valor, unit: vol.unit };
@@ -84,32 +83,53 @@ export function converterItem(item) {
   return { q: qtd, unit: cu };
 }
 
+function toBaseDoseToken(numStr, unitTok) {
+  const valor = parseNum(numStr);
+  if (valor == null) return null;
+  const u = unitTok.toLowerCase();
+  if (['l', 'lt', 'lts', 'litro', 'litros'].includes(u)) return { valor, unit: 'l' };
+  if (['ml', 'mls'].includes(u)) return { valor: valor / 1000, unit: 'l' };
+  if (['kg', 'kgs', 'quilo', 'quilos'].includes(u)) return { valor, unit: 'kg' };
+  if (['g', 'gr', 'grama', 'gramas'].includes(u)) return { valor: valor / 1000, unit: 'kg' };
+  if (['t', 'ton'].includes(u)) return { valor: valor * 1000, unit: 'kg' };
+  return null;
+}
+
 // Interpreta dose_producao (string) + unidade_aplicacao. Retorna {valor, unit}
 // em l/kg, ou null se não for possível interpretar com segurança.
+// Aceita: "0,5 L/ha", "0.5 L/ha", "500 mL/ha", "2 kg/ha", "0,5 /ha" + unidade,
+// e dose numérica pura combinada com unidade_aplicacao (ex.: "0.5" + "L/ha").
 export function parseDose(doseStr, unidadeAplicacao) {
-  const s = String(doseStr || '').toLowerCase();
-  const m = s.match(/(\d+(?:[.,]\d+)?)\s*(l|lt|lts|litro|litros|ml|mls|kg|kgs|quilo|quilos|g|gr|gramas?|t|ton)\s*\/\s*ha/);
-  if (m) {
-    const valor = parseNum(m[1]);
-    let unit;
-    if (['l', 'lt', 'lts', 'litro', 'litros'].includes(m[2])) unit = 'l';
-    else if (['ml', 'mls'].includes(m[2])) return { valor: valor / 1000, unit: 'l' };
-    else if (['kg', 'kgs', 'quilo', 'quilos'].includes(m[2])) unit = 'kg';
-    else if (['g', 'gr', 'grama', 'gramas'].includes(m[2])) return { valor: valor / 1000, unit: 'kg' };
-    else if (['t', 'ton'].includes(m[2])) return { valor: valor * 1000, unit: 'kg' };
-    if (valor != null && unit) return { valor, unit };
+  const s = String(doseStr || '').trim();
+  if (!s) return null;
+  const sl = s.toLowerCase();
+  const m = sl.match(/(\d+(?:[.,]\d+)?)\s*(l|lt|lts|litro|litros|ml|mls|kg|kgs|quilo|quilos|g|gr|gramas?|t|ton)\s*\/\s*ha/);
+  if (m) return toBaseDoseToken(m[1], m[2]);
+  // "0,5 /ha" + unidade_aplicacao base
+  const m2 = sl.match(/(\d+(?:[.,]\d+)?)\s*\/\s*ha/);
+  if (m2 && unidadeAplicacao) {
+    const cu = canonUnidade(String(unidadeAplicacao).split('/')[0] || unidadeAplicacao);
+    if (['l', 'ml', 'kg', 'g'].includes(cu)) {
+      const b = toBase(parseNum(m2[1]), cu);
+      return { valor: b.q, unit: b.unit };
+    }
   }
-  // Sem unidade explícita na dose: usa unidade_aplicacao (se for base l/kg).
-  const mNum = s.match(/(\d+(?:[.,]\d+)?)\s*\/\s*ha/);
-  if (mNum) {
-    const valor = parseNum(mNum[1]);
-    const cu = canonUnidade(unidadeAplicacao);
-    if (valor != null && (cu === 'l' || cu === 'kg' || cu === 'ml' || cu === 'g')) {
-      const b = toBase(valor, cu);
+  // dose numérica pura + unidade_aplicacao (ex.: "0.5" + "L/ha")
+  if (/^\d+([.,]\d+)?$/.test(s) && unidadeAplicacao) {
+    const cu = canonUnidade(String(unidadeAplicacao).split('/')[0] || unidadeAplicacao);
+    if (['l', 'ml', 'kg', 'g'].includes(cu)) {
+      const b = toBase(parseFloat(s.replace(',', '.')), cu);
       return { valor: b.q, unit: b.unit };
     }
   }
   return null;
+}
+
+// Monta string padronizada de dose a partir de valor + unidade (ex.: "0.5 L/ha").
+export function formatDose(valor, unidadeDose) {
+  const v = parseNum(valor);
+  if (v == null || !unidadeDose) return '';
+  return `${v} ${unidadeDose}`.replace('.', ',').replace(' ,', ' ');
 }
 
 function contemPalavra(desc, cn) {
@@ -136,8 +156,7 @@ export function construirInsumosIndex(fertilizantes = [], fontes = []) {
   return idx;
 }
 
-// Relaciona item da NF à Base de Insumos por palavra inteira no nome,
-// priorizando nomes mais específicos (mais longos). Retorna o registro ou null.
+// Correspondência por palavra (qualquer posição) — usada para uso/visualização.
 export function matchInsumo(nome, insumosIndex = []) {
   const desc = normalizarNome(nome);
   if (!desc) return null;
@@ -145,6 +164,59 @@ export function matchInsumo(nome, insumosIndex = []) {
     if (contemPalavra(desc, ins.nomeNorm)) return ins;
   }
   return null;
+}
+
+// Correspondência EXATA (nome normalizado igual) — usada para gravar vínculo
+// automático em importações, evitando associação incorreta por texto parcial.
+export function matchInsumoExato(nome, insumosIndex = []) {
+  const desc = normalizarNome(nome);
+  if (!desc) return null;
+  for (const ins of insumosIndex) {
+    if (desc === ins.nomeNorm) return ins;
+  }
+  return null;
+}
+
+// Mapeia categoria do filtro para grupo da Base de Insumos (FertilizanteFormulado).
+const CATEGORIA_TO_GRUPO = {
+  'Fungicida': 'Fungicida',
+  'Inseticida': 'Inseticida',
+  'Herbicida': 'Herbicida',
+  'Acaricida': 'Acaricida',
+  'Adjuvante': 'Adjuvante',
+  'Corretivo': 'Corretivo',
+  'Nutrição foliar': 'Fertilizante Foliar',
+  'Adubo/Fertilizante': 'Fertilizante Solo',
+  'Outros': 'Outro',
+};
+export function categoriaToGrupo(categoria) {
+  return CATEGORIA_TO_GRUPO[categoria] || 'Outro';
+}
+
+// Sugere um nome limpo de insumo a partir da descrição da NF, removendo
+// prefixos de categoria e apresentações (tamanhos) APENAS quando identificados
+// com segurança. O nome comercial (marca) nunca é cortado arriscadamente.
+export function sugerirNomeInsumo(nome) {
+  let s = String(nome || '').trim();
+  const prefixes = ['Fertilizante Foliar', 'Fungicida', 'Inseticida', 'Herbicida', 'Acaricida', 'Adjuvante', 'Corretivo', 'Fertilizante', 'Adubo'];
+  for (const p of prefixes) {
+    const re = new RegExp('^' + p + '\\s+', 'i');
+    if (re.test(s)) { s = s.replace(re, '').trim(); break; }
+  }
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/\s+\d+(?:[.,]\d+)?\s?(l|lt|lts|litro|litros|ml|mls|kg|kgs|quilo|quilos|g|gr|gramas?)$/i, '').trim();
+  } while (s !== prev);
+  return s || String(nome || '').trim();
+}
+
+// Tenta identificar o tipo de formulação pelo nome. Retorna valor do enum
+// ou 'outro'. Só usa correspondência com limites de palavra (ex.: "ORKESTRA SC").
+export function detectarTipoFormulacao(nome) {
+  const m = String(nome || '').match(/\b(SC|EC|WG|SL|EW|PM)\b/i);
+  if (!m) return 'outro';
+  return m[1].toUpperCase();
 }
 
 function chaveProduto(insumo, nome) {
@@ -162,16 +234,30 @@ export function calcularSituacao(saldo, totalEntrada) {
   return { situacao: 'Normal', pct, alerta: false };
 }
 
-// Constrói as linhas de estoque a partir das NFs + saídas.
-// Cada linha é por PRODUTOR + PRODUTO. Entradas vêm dos itens das NFs;
-// saídas vêm de MovimentoEstoqueInsumo (mesma chave produto).
-export function construirEstoque({ itens = [], notas = [], saidas = [], fertilizantes = [], fontes = [], catalogoCategorias = [], produtorFiltro = 'todos' } = {}) {
+// Constrói as linhas de estoque a partir das NFs + saídas + configs de dose.
+// Prioridade de identificação do produto:
+//   1) BaseItensNotaFiscal.insumo_id/insumo_tipo (vínculo direto)
+//   2) matchInsumo() por palavra
+//   3) não cadastrado
+// Prioridade de dose/ha:
+//   1) ConfiguracaoEstoqueProduto (override do estoque)
+//   2) Base de Insumos (FertilizanteFormulado.dose_producao)
+//   3) sem dose
+export function construirEstoque({
+  itens = [], notas = [], saidas = [], fertilizantes = [], fontes = [],
+  catalogoCategorias = [], configs = [], produtorFiltro = 'todos',
+} = {}) {
   const notasMap = {};
   (notas || []).forEach(n => { notasMap[n.id] = n; });
 
+  const fertMap = {};
+  (fertilizantes || []).forEach(f => { fertMap[f.id] = f; });
+  const fonteMap = {};
+  (fontes || []).forEach(f => { fonteMap[f.id] = f; });
   const insumosIndex = construirInsumosIndex(fertilizantes, fontes);
+  const configsMap = {};
+  (configs || []).forEach(c => { configsMap[`${c.produtor_id}||${c.produto_chave}`] = c; });
 
-  // Acumulador: key `${produtor_id}||${chaveProduto}` -> row
   const mapa = {};
 
   const getRow = (produtorId, insumo, nome) => {
@@ -181,10 +267,13 @@ export function construirEstoque({ itens = [], notas = [], saidas = [], fertiliz
       mapa[key] = {
         key,
         produtor_id: produtorId,
+        produto_chave: cp,
         produto_id: insumo?.id || null,
         produto_tipo: insumo ? insumo.tipo : 'nf',
         produto_nome: insumo ? insumo.record.nome : nome,
         insumo: insumo || null,
+        insumo_nome: insumo ? insumo.record.nome : null,
+        vinculado: !!insumo,
         categoria: 'Outros',
         unidade: '',
         total_entrada: 0,
@@ -194,9 +283,23 @@ export function construirEstoque({ itens = [], notas = [], saidas = [], fertiliz
         entradas: [],
         saidas: [],
         ids_itens_nf: new Set(),
+        item_ids: [],
+        config: null,
       };
     }
     return mapa[key];
+  };
+
+  const resolverInsumo = (item, nome) => {
+    if (item.insumo_id) {
+      if (item.insumo_tipo === 'fonte' && fonteMap[item.insumo_id]) {
+        return { tipo: 'fonte', id: item.insumo_id, record: fonteMap[item.insumo_id] };
+      }
+      if (item.insumo_tipo === 'formulado' && fertMap[item.insumo_id]) {
+        return { tipo: 'fert', id: item.insumo_id, record: fertMap[item.insumo_id] };
+      }
+    }
+    return matchInsumo(nome, insumosIndex);
   };
 
   // 1) Entradas a partir dos itens das NFs
@@ -207,13 +310,13 @@ export function construirEstoque({ itens = [], notas = [], saidas = [], fertiliz
     const nome = String(item.produto_nome || '').trim();
     if (!nome) return;
     const nota = item.nota_fiscal_id ? notasMap[item.nota_fiscal_id] : null;
-    const insumo = matchInsumo(nome, insumosIndex);
+    const insumo = resolverInsumo(item, nome);
     const row = getRow(pid, insumo, nome);
     row.categoria = classificarProduto(nome, catalogoCategorias);
     const conv = converterItem(item);
-    row.unidade = conv.unit; // unify unidade pela primeira ocorrência
+    row.unidade = conv.unit;
     row.total_entrada += Number(conv.q) || 0;
-    if (item.id) row.ids_itens_nf.add(item.id);
+    if (item.id) { row.ids_itens_nf.add(item.id); row.item_ids.push(item.id); }
     row.entradas.push({
       data: nota?.data_emissao || '',
       numero: nota?.numero_nota || '',
@@ -227,7 +330,7 @@ export function construirEstoque({ itens = [], notas = [], saidas = [], fertiliz
     }
   });
 
-  // 2) Saídas a partir de MovimentoEstoqueInsumo (mesma chave: produtor + produto)
+  // 2) Saídas a partir de MovimentoEstoqueInsumo — preserva o objeto completo
   (saidas || []).forEach(s => {
     const pid = s.produtor_id;
     if (!pid) return;
@@ -236,22 +339,28 @@ export function construirEstoque({ itens = [], notas = [], saidas = [], fertiliz
       ? `${s.produto_tipo}_${s.produto_id}`
       : `nf_${normalizarNome(s.produto_nome)}`;
     const key = `${pid}||${cp}`;
-    // Pode haver saída sem entrada registrada ainda — cria linha para ela
     if (!mapa[key]) {
       mapa[key] = {
-        key, produtor_id: pid, produto_id: s.produto_id || null, produto_tipo: s.produto_tipo || 'nf',
-        produto_nome: s.produto_nome, insumo: null, categoria: 'Outros', unidade: s.unidade || '',
+        key, produtor_id: pid, produto_chave: cp, produto_id: s.produto_id || null,
+        produto_tipo: s.produto_tipo || 'nf', produto_nome: s.produto_nome,
+        insumo: null, insumo_nome: null, vinculado: false, categoria: 'Outros', unidade: s.unidade || '',
         total_entrada: 0, total_saida: 0, saldo: 0, ultima_entrada: '', entradas: [], saidas: [],
-        ids_itens_nf: new Set(),
+        ids_itens_nf: new Set(), item_ids: [], config: null,
       };
     }
     const row = mapa[key];
     row.total_saida += Number(s.quantidade) || 0;
     row.saidas.push({
-      data: s.data_movimento || '',
+      id: s.id || null,
+      produtor_id: s.produtor_id,
+      produto_id: s.produto_id || null,
+      produto_tipo: s.produto_tipo || 'nf',
+      produto_nome: s.produto_nome,
+      data_movimento: s.data_movimento || '',
       quantidade: Number(s.quantidade) || 0,
+      unidade: s.unidade || '',
+      tipo_movimento: s.tipo_movimento || 'saida',
       observacao: s.observacao || '',
-      tipo: s.tipo_movimento || 'saida',
     });
   });
 
@@ -259,17 +368,24 @@ export function construirEstoque({ itens = [], notas = [], saidas = [], fertiliz
   const rows = Object.values(mapa).map(row => {
     const saldo = Math.max(0, row.total_entrada - row.total_saida);
     row.saldo = saldo;
+    row.item_ids = Array.from(row.ids_itens_nf);
+    row.config = configsMap[`${row.produtor_id}||${row.produto_chave}`] || null;
     const { situacao, pct, alerta } = calcularSituacao(saldo, row.total_entrada);
     row.situacao = situacao;
     row.pct = pct;
     row.alerta = alerta;
-    // dose/ha: FertilizanteFormulado.dose_producao (FonteSimples não tem dose)
-    let dose = null;
-    if (row.insumo?.tipo === 'fert') {
-      dose = parseDose(row.insumo.record.dose_producao, row.insumo.record.unidade_aplicacao);
+
+    // dose: override do estoque -> Base de Insumos -> sem dose
+    const doseBase = row.insumo?.tipo === 'fert'
+      ? parseDose(row.insumo.record.dose_producao, row.insumo.record.unidade_aplicacao)
+      : null;
+    let dose = doseBase;
+    if (row.config?.dose_ha != null && row.config.unidade_dose) {
+      const dOver = parseDose(`${row.config.dose_ha} ${row.config.unidade_dose}`);
+      if (dOver) dose = dOver;
     }
     row.dose = dose;
-    // hectares possíveis: só se unidades compatíveis
+    row.dose_fonte = row.config?.dose_ha != null && row.config.unidade_dose ? 'estoque' : (doseBase ? 'base' : null);
     if (dose && saldo > 0 && row.unidade === dose.unit) {
       row.ha_possiveis = Math.round((saldo / dose.valor) * 100) / 100;
     } else {
@@ -291,6 +407,22 @@ export function fmtData(d) {
   if (!d) return '—';
   const [y, m, day] = String(d).split('-');
   return y && m && day ? `${day}/${m}/${y}` : d;
+}
+
+// Monta nome da unidade de dose a partir de unidade_aplicacao ou string de dose.
+// Ex.: "L/ha" -> "L/ha"; "mL/ha" -> "mL/ha".
+export function normalizarUnidadeDose(s) {
+  const u = String(s || '').trim();
+  const m = u.match(/(l|lt|lts|ml|mls|kg|kgs|g|gr)/i);
+  if (!m) return 'L/ha';
+  const tok = m[1].toLowerCase();
+  let base;
+  if (['l', 'lt', 'lts'].includes(tok)) base = 'L';
+  else if (['ml', 'mls'].includes(tok)) base = 'mL';
+  else if (['kg', 'kgs'].includes(tok)) base = 'kg';
+  else if (['g', 'gr'].includes(tok)) base = 'g';
+  else base = 'L';
+  return `${base}/ha`;
 }
 
 export { UN_EMBALAGEM };
