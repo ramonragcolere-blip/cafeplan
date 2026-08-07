@@ -11,6 +11,7 @@ import { montarCatalogoCategorias, classificarProduto, normalizarNome } from '@/
 import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import AbaEstoque from '@/components/estoque/AbaEstoque';
+import AbaAnalises from '@/components/analises/AbaAnalises';
 
 const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 
@@ -166,6 +167,7 @@ export default function NotasFiscais() {
         <TabsList>
           <TabsTrigger value="notas">Notas e Preços</TabsTrigger>
           <TabsTrigger value="estoque">Controle de Estoque</TabsTrigger>
+          <TabsTrigger value="analises">Análises</TabsTrigger>
         </TabsList>
 
         <TabsContent value="notas" className="space-y-6">
@@ -297,6 +299,17 @@ export default function NotasFiscais() {
             itens={itens}
             produtores={produtores}
             produtorFiltro={produtorFiltro}
+          />
+        </TabsContent>
+
+        <TabsContent value="analises" className="space-y-4">
+          <AbaAnalises
+            notas={notas}
+            itens={itens}
+            produtores={produtores}
+            fertilizantes={fertilizantesCatalogo}
+            fontes={fontesSimplesCatalogo}
+            catalogoCategorias={catalogoCategorias}
           />
         </TabsContent>
       </Tabs>
