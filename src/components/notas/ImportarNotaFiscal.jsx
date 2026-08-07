@@ -1,74 +1,87 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Layers, ArrowUp, TrendingDown, CircleSlash } from 'lucide-react';
-import { extrairDadosArquivo, verificarDuplicadaBanco, salvarNotaFiscal } from '@/lib/importacaoNotaFiscal';
-import { analisarPrecosNovaNota, contarAumentosAvisos } from '@/lib/analisePrecosNotas';
-import BadgeComparacaoPreco from '@/components/notas/BadgeComparacaoPreco';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Layers, X, ImageIcon, ImagePlus } from 'lucide-react';
+import {
+  extrairDadosArquivo, extrairDadosImagens, verificarDuplicadaBanco, salvarNotaFiscal,
+  classificarArquivo, ACCEPT_INPUT,
+} from '@/lib/importacaoNotaFiscal';
 import ImportarLoteNotasFiscal from '@/components/notas/ImportarLoteNotasFiscal';
+import RevisaoNotaFiscal from '@/components/notas/RevisaoNotaFiscal';
 
 const LIMITE_LOTE = 20;
+const ACCEPT_IMAGEM = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
 
+// Modal de importação individual (XML/PDF/IMAGEM). 1 arquivo -> revisão
+// editável; >1 arquivo -> lote. Imagens podem ter fotos adicionais (frente/
+// continuação) interpretadas JUNTAS como uma única nota.
 export default function ImportarNotaFiscal({ open, onClose, produtores, onImportado,
   notas = [], itens = [], fertilizantes = [], fontes = [], catalogoCategorias = [] }) {
   const [etapa, setEtapa] = useState('upload'); // upload | revisao | salvando | sucesso | lote
   const [produtorId, setProdutorId] = useState('');
-  const [arquivo, setArquivo] = useState(null);        // importação individual
-  const [arquivosLote, setArquivosLote] = useState([]); // importação em lote
+  const [arquivo, setArquivo] = useState(null);
+  const [arquivosLote, setArquivosLote] = useState([]);
+  const [fotosExtras, setFotosExtras] = useState([]); // fotos adicionais da mesma nota (individual imagem)
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [processando, setProcessando] = useState(false);
-
-  // Alerta de preço (Parte 2): compara cada item da nova NF contra o histórico
-  // já existente no banco (a nova NF ainda não foi salva -> não contamina a
-  // média). Mesma regra do Banco de Preços (analisePrecosNotas).
-  const analisePrecos = useMemo(() => {
-    if (etapa !== 'revisao' || !dados || !produtorId) return [];
-    return analisarPrecosNovaNota({
-      dadosNovaNota: dados, produtorId,
-      historicoItens: itens, notas,
-      fertilizantes, fontes, catalogoCategorias,
-    });
-  }, [etapa, dados, produtorId, itens, notas, fertilizantes, fontes, catalogoCategorias]);
-
-  const resumoAlertas = useMemo(() => contarAumentosAvisos(analisePrecos), [analisePrecos]);
+  const [origemImagem, setOrigemImagem] = useState(false);
 
   const resetar = () => {
     setEtapa('upload'); setProdutorId(''); setArquivo(null); setArquivosLote([]);
-    setDados(null); setErro(''); setProcessando(false);
+    setFotosExtras([]); setDados(null); setErro(''); setProcessando(false); setOrigemImagem(false);
   };
   const handleClose = () => { resetar(); onClose(); };
 
   const onFilesChange = (e) => {
     const files = Array.from(e.target.files || []);
     setErro('');
-    if (files.length === 0) { setArquivo(null); setArquivosLote([]); return; }
+    if (files.length === 0) { setArquivo(null); setArquivosLote([]); setFotosExtras([]); return; }
+    const naoSuportados = files.filter((f) => classificarArquivo(f).tipo === 'nao_suportado');
+    if (naoSuportados.length > 0) {
+      setErro(`Formato não suportado: ${naoSuportados.map((f) => f.name).join(', ')}. Aceita XML, PDF, JPG, JPEG, PNG ou WEBP.`);
+      setArquivo(null); setArquivosLote([]); setFotosExtras([]);
+      e.target.value = '';
+      return;
+    }
     if (files.length > LIMITE_LOTE) {
       setErro(`É possível importar no máximo ${LIMITE_LOTE} notas fiscais por vez. Selecione até ${LIMITE_LOTE} arquivos.`);
-      setArquivo(null); setArquivosLote([]);
+      setArquivo(null); setArquivosLote([]); setFotosExtras([]);
       e.target.value = '';
       return;
     }
     if (files.length === 1) { setArquivo(files[0]); setArquivosLote([]); }
-    else { setArquivosLote(files); setArquivo(null); }
+    else { setArquivosLote(files); setArquivo(null); setFotosExtras([]); }
   };
+
+  const onAddFotoExtra = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (classificarArquivo(f).tipo !== 'imagem') { setErro('A foto adicional deve ser uma imagem (JPG, PNG ou WEBP).'); return; }
+    if (!f.size) { setErro(`Arquivo "${f.name}" está vazio.`); return; }
+    setErro('');
+    setFotosExtras((prev) => [...prev, f]);
+  };
+  const removerExtra = (i) => setFotosExtras((prev) => prev.filter((_, j) => j !== i));
 
   // Inicia processamento: 1 arquivo -> fluxo individual (revisão); >1 -> lote.
   const handleProcessar = async () => {
     if (!produtorId) { setErro('Selecione um produtor.'); return; }
-    if (arquivosLote.length > LIMITE_LOTE) {
-      setErro(`É possível importar no máximo ${LIMITE_LOTE} notas fiscais por vez. Selecione até ${LIMITE_LOTE} arquivos.`);
-      return;
-    }
+    if (arquivosLote.length > LIMITE_LOTE) { setErro(`Máximo de ${LIMITE_LOTE} notas por vez.`); return; }
     if (arquivosLote.length > 1) { setEtapa('lote'); return; }
     if (!arquivo) { setErro('Selecione um arquivo.'); return; }
     setErro(''); setProcessando(true);
     try {
-      const extraido = await extrairDadosArquivo(arquivo);
+      const ehImg = classificarArquivo(arquivo).tipo === 'imagem';
+      setOrigemImagem(ehImg);
+      const extraido = (ehImg && fotosExtras.length > 0)
+        ? await extrairDadosImagens([arquivo, ...fotosExtras])
+        : await extrairDadosArquivo(arquivo);
       setDados(extraido);
       setEtapa('revisao');
     } catch (e) {
-      setErro('Erro ao processar arquivo: ' + e.message);
+      setErro(humanizarErro(e));
     } finally { setProcessando(false); }
   };
 
@@ -89,18 +102,17 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
     }
   };
 
-  const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
-  const produtorSel = (produtores || []).find(p => p.id === produtorId);
+  const produtorSel = (produtores || []).find((p) => p.id === produtorId);
   const nomeProdutor = produtorSel ? (produtorSel.nome || produtorSel.codigo_produtor || '—') : '—';
   const ehLote = arquivosLote.length > 1;
+  const imgIndividual = !!(arquivo && !ehLote && classificarArquivo(arquivo).tipo === 'imagem');
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary" />
-            Importar Nota Fiscal
+            <FileText className="w-5 h-5 text-primary" /> Importar Nota Fiscal
           </DialogTitle>
         </DialogHeader>
 
@@ -109,10 +121,10 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
           <div className="space-y-4 py-2">
             <div>
               <label className="block text-sm font-medium mb-1">Produtor</label>
-              <select value={produtorId} onChange={e => setProdutorId(e.target.value)}
+              <select value={produtorId} onChange={(e) => setProdutorId(e.target.value)}
                 className="w-full h-9 text-sm border border-input rounded px-3 bg-background">
                 <option value="">Selecione um produtor…</option>
-                {(produtores || []).map(p => (
+                {(produtores || []).map((p) => (
                   <option key={p.id} value={p.id}>{p.nome || p.codigo_produtor}</option>
                 ))}
               </select>
@@ -125,18 +137,51 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
 
             <div>
               <label className="block text-sm font-medium mb-1">
-                Arquivo(s) XML ou PDF da NF-e — até {LIMITE_LOTE} por vez
+                XML, PDF ou foto da Nota Fiscal — até {LIMITE_LOTE} por vez
               </label>
               <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors ${(arquivo || arquivosLote.length > 0) ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/30'}`}>
-                {ehLote ? <Layers className="w-7 h-7 text-primary" /> : <Upload className={`w-7 h-7 ${arquivo ? 'text-primary' : 'text-muted-foreground'}`} />}
-                <span className="text-sm font-medium">
+                {ehLote ? <Layers className="w-7 h-7 text-primary" />
+                  : (imgIndividual ? <ImageIcon className="w-7 h-7 text-primary" />
+                  : <Upload className={`w-7 h-7 ${arquivo ? 'text-primary' : 'text-muted-foreground'}`} />)}
+                <span className="text-sm font-medium text-center">
                   {arquivo ? arquivo.name
                     : ehLote ? `${arquivosLote.length} arquivos selecionados`
-                    : 'Clique para selecionar XML ou PDF (1 ou vários)'}
+                    : 'Clique para selecionar XML, PDF ou foto (1 ou vários)'}
                 </span>
-                <span className="text-xs text-muted-foreground">Aceita XML, PDF ou combinação. Até {LIMITE_LOTE} arquivos por vez.</span>
-                <input type="file" accept=".xml,.pdf" multiple className="hidden" onChange={onFilesChange} />
+                <span className="text-xs text-muted-foreground text-center">Aceita XML, PDF, JPG, PNG e WEBP · até {LIMITE_LOTE} arquivos por vez</span>
+                <span className="text-[11px] text-muted-foreground text-center">Para fotos, enquadre a nota inteira e evite reflexos ou cortes.</span>
+                <input type="file" accept={ACCEPT_INPUT} multiple className="hidden" onChange={onFilesChange} />
               </label>
+
+              {/* Fotos adicionais da mesma nota (somente individual de imagem) */}
+              {imgIndividual && (
+                <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Fotos adicionais desta mesma nota (opcional)</p>
+                    <label className="cursor-pointer inline-flex items-center gap-1 h-7 px-3 rounded-md border border-input bg-transparent text-xs hover:bg-accent">
+                      <ImagePlus className="w-3.5 h-3.5" /> Adicionar outra foto
+                      <input type="file" accept={ACCEPT_IMAGEM} className="hidden" onChange={onAddFotoExtra} />
+                    </label>
+                  </div>
+                  {fotosExtras.length > 0 ? (
+                    <ul className="space-y-1">
+                      {fotosExtras.map((f, i) => (
+                        <li key={i} className="flex items-center gap-2 text-xs">
+                          <ImageIcon className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span className="font-mono truncate flex-1">{f.name}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removerExtra(i)}>
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Use quando a nota precisar de mais de uma foto (frente/continuação/outra página). As fotos serão interpretadas juntas como uma única nota.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {ehLote && (
                 <div className="mt-2 border border-border rounded-lg max-h-40 overflow-y-auto">
@@ -180,99 +225,18 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
           />
         )}
 
-        {/* Etapa: Revisão (individual) */}
+        {/* Etapa: Revisão editável (individual) */}
         {etapa === 'revisao' && dados && (
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3 bg-muted/20 rounded-xl p-4 text-sm">
-              <div><span className="text-muted-foreground">Nº da Nota:</span> <strong>{dados.numero || '—'}</strong></div>
-              <div><span className="text-muted-foreground">Data:</span> <strong>{dados.data_emissao || '—'}</strong></div>
-              <div><span className="text-muted-foreground">Fornecedor:</span> <strong>{dados.fornecedor_nome || '—'}</strong></div>
-              <div><span className="text-muted-foreground">CNPJ:</span> <strong>{dados.fornecedor_cnpj || '—'}</strong></div>
-              <div className="col-span-2"><span className="text-muted-foreground">Valor Total:</span> <strong className="text-primary">{fmtR(dados.valor_total)}</strong></div>
-            </div>
-
-            {/* Resumo de alertas de preço (Parte 2) — não bloqueia a importação */}
-            {resumoAlertas.total > 0 && (resumoAlertas.aumentos > 0 || resumoAlertas.quedas > 0 || resumoAlertas.semHistorico > 0) && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
-                <span className="font-semibold text-muted-foreground">Comparação de preços:</span>
-                {resumoAlertas.aumentos > 0 && (
-                  <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
-                    <ArrowUp className="w-3.5 h-3.5" /> {resumoAlertas.aumentos} {resumoAlertas.aumentos === 1 ? 'item com aumento' : 'itens com aumento'}
-                  </span>
-                )}
-                {resumoAlertas.quedas > 0 && (
-                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                    <TrendingDown className="w-3.5 h-3.5" /> {resumoAlertas.quedas} {resumoAlertas.quedas === 1 ? 'item com queda' : 'itens com queda'}
-                  </span>
-                )}
-                {resumoAlertas.semHistorico > 0 && (
-                  <span className="inline-flex items-center gap-1 text-muted-foreground font-medium">
-                    <CircleSlash className="w-3.5 h-3.5" /> {resumoAlertas.semHistorico} sem histórico
-                  </span>
-                )}
-                <span className="text-muted-foreground">— passe o mouse na coluna "Comparação" para detalhes</span>
-              </div>
-            )}
-
-            <div>
-              <p className="text-sm font-semibold mb-2">Itens da Nota ({(dados.itens || []).length})</p>
-              <div className="rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-muted/20 border-b border-border">
-                      <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Produto</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Qtd</th>
-                      <th className="px-3 py-2 text-center font-semibold text-muted-foreground">Un</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Preço Unit.</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Total</th>
-                      <th className="px-3 py-2 text-center font-semibold text-muted-foreground">Comparação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(dados.itens || []).map((it, i) => {
-                      const alerta = analisePrecos[i];
-                      // economia potencial na qtd desta NF (vs melhor preço histórico)
-                      const econ = alerta?.economia;
-                      const econTitle = econ && Math.abs(econ.unitaria) > 1e-9
-                        ? `Economia potencial vs melhor preço histórico (${econ.melhorFornecedor || '—'}): R$ ${Math.abs(econ.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nReferência pelo menor preço histórico registrado.`
-                        : null;
-                      return (
-                        <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/10">
-                          <td className="px-3 py-2 font-medium max-w-[220px] truncate" title={it.produto_nome}>{it.produto_nome}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{it.quantidade}</td>
-                          <td className="px-3 py-2 text-center text-muted-foreground">{it.unidade_medida}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtR(it.preco_unitario)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtR(it.preco_total)}</td>
-                          <td className="px-3 py-2 text-center">
-                            <div className="flex flex-col items-center gap-0.5">
-                              <BadgeComparacaoPreco alerta={alerta} />
-                              {econTitle && (
-                                <span
-                                  title={econTitle}
-                                  className={`text-[10px] ${econ.unitaria > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}
-                                >
-                                  {econ.unitaria > 0 ? '−' : '+'}R$ {Math.abs(econ.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {erro && <p className="text-sm text-destructive flex items-center gap-1"><AlertCircle className="w-4 h-4" />{erro}</p>}
-
-            <div className="flex justify-between gap-2 pt-2">
-              <Button variant="outline" onClick={() => setEtapa('upload')}>← Voltar</Button>
-              <Button onClick={handleSalvar} className="bg-green-700 hover:bg-green-800 text-white">
-                Confirmar e Salvar
-              </Button>
-            </div>
-          </div>
+          <RevisaoNotaFiscal
+            dados={dados} setDados={setDados} produtorId={produtorId}
+            historicoItens={itens} notas={notas}
+            fertilizantes={fertilizantes} fontes={fontes} catalogoCategorias={catalogoCategorias}
+            ehImagem={origemImagem}
+            onVoltar={() => setEtapa('upload')}
+            onSalvar={handleSalvar}
+            salvando={false}
+            erro={erro}
+          />
         )}
 
         {/* Etapa: Salvando (individual) */}
@@ -294,4 +258,13 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
       </DialogContent>
     </Dialog>
   );
+}
+
+// Mensagem amigável para falhas de interpretação visual (#11).
+function humanizarErro(e) {
+  const msg = e?.message || String(e);
+  if (/ileg|não foi possível interpretar|imagem|image/i.test(msg)) {
+    return 'Não foi possível interpretar esta imagem com segurança. Tente uma foto mais nítida, com a nota inteira visível e sem reflexos.';
+  }
+  return 'Erro ao processar arquivo: ' + msg;
 }

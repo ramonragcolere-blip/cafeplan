@@ -9,6 +9,8 @@ const fmtR = (v) => v != null
   ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   : '—';
 
+const ehImagemArquivo = (url) => /\.(jpe?g|png|webp)$/i.test(String(url || ''));
+
 const fmtData = (d) => {
   if (!d) return '—';
   const [y, m, day] = String(d).split('-');
@@ -121,12 +123,15 @@ export default function DetalhesNotaFiscal({ nota, itens = [], produtorNome, onC
               </div>
             </div>
 
-            {/* Botão arquivo original */}
+            {/* Botão arquivo/imagem original (#18) */}
             {nota.arquivo_url ? (
-              <div className="flex justify-end">
+              <div className="flex justify-end items-center gap-3">
+                {ehImagemArquivo(nota.arquivo_url) && (
+                  <img src={nota.arquivo_url} alt="nota fiscal" className="h-16 w-auto rounded border border-border object-cover" />
+                )}
                 <a href={nota.arquivo_url} target="_blank" rel="noopener noreferrer">
                   <Button variant="outline" className="gap-2">
-                    <ExternalLink className="w-4 h-4" /> Abrir arquivo original
+                    <ExternalLink className="w-4 h-4" /> {ehImagemArquivo(nota.arquivo_url) ? 'Abrir imagem original' : 'Abrir arquivo original'}
                   </Button>
                 </a>
               </div>
