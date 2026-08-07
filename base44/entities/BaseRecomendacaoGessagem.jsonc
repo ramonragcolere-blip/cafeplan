@@ -4,27 +4,27 @@
   "properties": {
     "codigo_produtor": {
       "type": "string",
-      "description": "Código do produtor"
+      "description": "C\u00f3digo do produtor"
     },
     "safra": {
       "type": "string",
-      "description": "Safra agrícola"
+      "description": "Safra agr\u00edcola"
     },
     "talhao_id": {
       "type": "string",
-      "description": "ID do talhão"
+      "description": "ID do talh\u00e3o"
     },
     "talhao_nome": {
       "type": "string",
-      "description": "Nome do talhão"
+      "description": "Nome do talh\u00e3o"
     },
     "ca_2040": {
       "type": "number",
-      "description": "Ca em 20-40 cm (cmolc/dm³)"
+      "description": "Ca em 20-40 cm (cmolc/dm\u00b3)"
     },
     "al_2040": {
       "type": "number",
-      "description": "Al em 20-40 cm (cmolc/dm³)"
+      "description": "Al em 20-40 cm (cmolc/dm\u00b3)"
     },
     "saturacao_aluminio": {
       "type": "number",
@@ -32,11 +32,11 @@
     },
     "magnesio_2040": {
       "type": "number",
-      "description": "Mg em 20-40 cm (cmolc/dm³)"
+      "description": "Mg em 20-40 cm (cmolc/dm\u00b3)"
     },
     "potassio_2040": {
       "type": "number",
-      "description": "K em 20-40 cm (mg/dm³)"
+      "description": "K em 20-40 cm (mg/dm\u00b3)"
     },
     "argila_pct": {
       "type": "number",
@@ -44,11 +44,11 @@
     },
     "dose_calcario_kg_ha": {
       "type": "number",
-      "description": "Dose de calcário considerada no método Lopes (kg/ha)"
+      "description": "Dose de calc\u00e1rio considerada no m\u00e9todo Lopes (kg/ha)"
     },
     "cao_calcario_pct": {
       "type": "number",
-      "description": "CaO do calcário (%)"
+      "description": "CaO do calc\u00e1rio (%)"
     },
     "cao_gesso_pct": {
       "type": "number",
@@ -64,30 +64,30 @@
     },
     "indicada": {
       "type": "boolean",
-      "description": "Indica se a análise 20-40 cm recomenda gessagem"
+      "description": "Indica se a an\u00e1lise 20-40 cm recomenda gessagem"
     },
     "motivos": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "Critérios que indicaram gessagem"
+      "description": "Crit\u00e9rios que indicaram gessagem"
     },
     "faixa_5a_min_t_ha": {
       "type": "number",
-      "description": "Faixa mínima da 5ª Aproximação (t/ha)"
+      "description": "Faixa m\u00ednima da 5\u00aa Aproxima\u00e7\u00e3o (t/ha)"
     },
     "faixa_5a_max_t_ha": {
       "type": "number",
-      "description": "Faixa máxima da 5ª Aproximação (t/ha)"
+      "description": "Faixa m\u00e1xima da 5\u00aa Aproxima\u00e7\u00e3o (t/ha)"
     },
     "dose_lopes_kg_ha": {
       "type": "number",
-      "description": "Dose calculada pelo método Lopes (kg/ha)"
+      "description": "Dose calculada pelo m\u00e9todo Lopes (kg/ha)"
     },
     "calcario_ajustado_kg_ha": {
       "type": "number",
-      "description": "Calcário ajustado no método Lopes (kg/ha)"
+      "description": "Calc\u00e1rio ajustado no m\u00e9todo Lopes (kg/ha)"
     },
     "dose_matematica_kg_ha": {
       "type": "number",
@@ -103,11 +103,11 @@
     },
     "dose_sugerida_kg_ha": {
       "type": "number",
-      "description": "Dose técnica sugerida (kg/ha)"
+      "description": "Dose t\u00e9cnica sugerida (kg/ha)"
     },
     "dose_final_kg_ha": {
       "type": "number",
-      "description": "Dose final escolhida pelo técnico (kg/ha)"
+      "description": "Dose final escolhida pelo t\u00e9cnico (kg/ha)"
     },
     "produto_id": {
       "type": "string",
@@ -147,15 +147,15 @@
     },
     "preco_unitario": {
       "type": "number",
-      "description": "Preço unitário informado pelo usuário"
+      "description": "Pre\u00e7o unit\u00e1rio informado pelo usu\u00e1rio"
     },
     "unidade_preco": {
       "type": "string",
-      "description": "Unidade do preço: t ou kg"
+      "description": "Unidade do pre\u00e7o: t ou kg"
     },
     "quantidade_total_kg": {
       "type": "number",
-      "description": "Quantidade total no talhão (kg)"
+      "description": "Quantidade total no talh\u00e3o (kg)"
     },
     "custo_ha": {
       "type": "number",
@@ -163,7 +163,7 @@
     },
     "custo_total": {
       "type": "number",
-      "description": "Custo total do talhão"
+      "description": "Custo total do talh\u00e3o"
     },
     "ca_fornecido_kg_ha": {
       "type": "number",
@@ -175,24 +175,62 @@
     },
     "orientacao": {
       "type": "string",
-      "description": "Orientação de aplicação"
+      "description": "Orienta\u00e7\u00e3o de aplica\u00e7\u00e3o"
     },
     "alerta_lixiviacao": {
       "type": "string",
-      "description": "Alerta técnico sobre Mg e K"
+      "description": "Alerta t\u00e9cnico sobre Mg e K"
     },
     "observacoes": {
       "type": "string",
-      "description": "Observações livres"
+      "description": "Observa\u00e7\u00f5es livres"
     },
     "rastreabilidade_replicacao": {
       "type": "object",
-      "description": "Metadados compatíveis da replicação de recomendação entre talhões"
+      "description": "Metadados compat\u00edveis da replica\u00e7\u00e3o de recomenda\u00e7\u00e3o entre talh\u00f5es"
     }
   },
   "required": [
     "codigo_produtor",
     "safra",
     "talhao_id"
-  ]
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
 }
