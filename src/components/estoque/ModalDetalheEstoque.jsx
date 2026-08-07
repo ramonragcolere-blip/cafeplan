@@ -114,7 +114,7 @@ export default function ModalDetalheEstoque({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-muted/10 border-b border-border">
-                    {['Data', 'Quantidade', 'Unidade', 'Tipo', 'Observação', ''].map(h => (
+                    {['Data', 'Quantidade', 'Unidade', 'Tipo', 'Talhões', 'Observação', ''].map(h => (
                       <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -130,7 +130,20 @@ export default function ModalDetalheEstoque({
                         <td className="px-3 py-2 text-right tabular-nums">{fmtQtd(s.quantidade)}</td>
                         <td className="px-3 py-2 font-mono text-muted-foreground">{s.unidade || row.unidade || '—'}</td>
                         <td className="px-3 py-2"><span className="text-xs bg-secondary px-2 py-0.5 rounded">{s.tipo_movimento}</span></td>
-                        <td className="px-3 py-2 max-w-[200px] truncate text-muted-foreground">{s.observacao || '—'}</td>
+                        <td className="px-3 py-2 max-w-[220px]">
+                          {(s.talhoes_aplicacao && s.talhoes_aplicacao.length) ? (
+                            <div className="space-y-0.5">
+                              {s.talhoes_aplicacao.map((t, j) => (
+                                <div key={t.talhao_id || j} className="text-xs text-muted-foreground tabular-nums">
+                                  {t.talhao_nome} · {(Number(t.area_ha) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ha · {(Number(t.quantidade_rateada) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {s.unidade || row.unidade || ''}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">{s.tipo_movimento === 'saida' ? 'Talhão não informado' : '—'}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 max-w-[200px] truncate text-muted-foreground" title={s.observacao}>{s.observacao || '—'}</td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           {manual ? (
                             <div className="inline-flex items-center gap-1">

@@ -4,12 +4,13 @@ import { base44 } from '@/api/base44Client';
 import { BarChart3 } from 'lucide-react';
 import FiltrosAnalises, { iso, safraHoje } from '@/components/analises/FiltrosAnalises';
 import CardsAnalises from '@/components/analises/CardsAnalises';
-import { GraficoTemporal, GraficoPorProduto, GraficoPorCategoria, DistribuicaoMensal } from '@/components/analises/GraficosAnalises';
+import { GraficoTemporal, GraficoPorProduto, GraficoPorCategoria, DistribuicaoMensal, GraficoPorTalhao } from '@/components/analises/GraficosAnalises';
 import ResumoCategoriaTabela from '@/components/analises/ResumoCategoriaTabela';
 import ModalDrillDown from '@/components/analises/ModalDrillDown';
+import { MapPin } from 'lucide-react';
 import {
   construirAplicacoes, filtrarAplicacoes, cardsAplicacoes, cardsCustos,
-  resumoPorCategoria, safrasDisponiveis, filtrarDrillDown,
+  resumoPorCategoria, safrasDisponiveis, filtrarDrillDown, countSemTalhao,
 } from '@/lib/analisesEstoque';
 
 // Aba de Análises — pura visualização sobre MovimentoEstoqueInsumo (saídas),
@@ -22,7 +23,7 @@ export default function AbaAnalises({
   const [indicador, setIndicador] = useState('aplicacoes'); // 'aplicacoes' | 'area' | 'custo'
   const [filtros, setFiltros] = useState({
     produtor: 'todos', produto: '', categoria: 'todos',
-    dataInicial: '', dataFinal: '', safra: 'todas',
+    dataInicial: '', dataFinal: '', safra: 'todas', talhao: 'todos',
   });
   const [agruparPor, setAgruparPor] = useState('produto');
   const [categoriaFoco, setCategoriaFoco] = useState(null);
@@ -35,6 +36,10 @@ export default function AbaAnalises({
   const { data: configs = [] } = useQuery({
     queryKey: ['configs_estoque', 'analises'],
     queryFn: () => base44.entities.ConfiguracaoEstoqueProduto.list(undefined, 5000),
+  });
+  const { data: talhoes = [] } = useQuery({
+    queryKey: ['talhoes', 'analises'],
+    queryFn: () => base44.entities.Talhao.list(undefined, 5000),
   });
 
   const aplicacoes = useMemo(
@@ -113,12 +118,21 @@ export default function AbaAnalises({
 
       <FiltrosAnalises
         filtros={filtros} setFiltros={setFiltros}
-        produtores={produtores || []} safras={safras}
+        produtores={produtores || []} talhoes={talhoes} safras={safras}
         modo={modo} indicador={indicador} setIndicador={setIndicador}
         onAtalho={onAtalho}
       />
 
       <CardsAnalises modo={modo} cards={cards} />
+
+      {(filtros.talhao === 'todos' || filtros.talhao === undefined) && countSemTalhao(aplicacoesFiltradas) > 0 && (
+        <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-xs text-amber-800">
+          <MapPin className="w-4 h-4 shrink-0" />
+          <span>
+            {countSemTalhao(aplicacoesFiltradas)} {countSemTalhao(aplicacoesFiltradas) === 1 ? 'aplicação antiga sem talhão informado' : 'aplicações antigas sem talhão informado'} — não aparecem ao filtrar por talhão específico.
+          </span>
+        </div>
+      )}
 
       {aplicacoesFiltradas.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-10 text-center text-sm text-muted-foreground">
@@ -148,6 +162,11 @@ export default function AbaAnalises({
           <DistribuicaoMensal
             aplicacoes={aplicacoesFiltradas} metrica={metrica}
             categoriaFoco={categoriaFoco} onDrillDown={onDrillDown}
+          />
+
+          <GraficoPorTalhao
+            aplicacoes={aplicacoesFiltradas} metrica={metrica}
+            onSelecionarTalhao={(id) => setFiltros((f) => ({ ...f, talhao: id }))}
           />
 
           <ResumoCategoriaTabela resumo={resumo} />

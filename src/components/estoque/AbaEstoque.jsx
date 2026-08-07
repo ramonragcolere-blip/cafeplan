@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { montarCatalogoCategorias } from '@/lib/notasFiscaisCategorias';
 import { construirEstoque } from '@/lib/estoqueInsumos';
+import { talhoesDoProdutor } from '@/lib/talhoesAplicacao';
 import FiltrosEstoque from '@/components/estoque/FiltrosEstoque';
 import CardsEstoque from '@/components/estoque/CardsEstoque';
 import AlertasEstoque from '@/components/estoque/AlertasEstoque';
@@ -47,6 +48,12 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
   const { data: fontes = [] } = useQuery({
     queryKey: ['fontes_simples', 'catalogo_estoque'],
     queryFn: () => base44.entities.FonteSimples.list(undefined, 5000),
+  });
+  // Talhões carregados uma única vez; filtrados por produtor ao abrir modais
+  // (relação Talhao.codigo_produtor === Produtor.codigo).
+  const { data: talhoes = [] } = useQuery({
+    queryKey: ['talhoes', 'estoque'],
+    queryFn: () => base44.entities.Talhao.list(undefined, 5000),
   });
 
   const catalogoCategorias = useMemo(
@@ -121,7 +128,10 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
         onEditarDose={setRowDose}
       />
 
-      <ModalRegistrarUso row={rowUso} open={!!rowUso} onClose={() => setRowUso(null)} />
+      <ModalRegistrarUso
+        row={rowUso} open={!!rowUso} onClose={() => setRowUso(null)}
+        talhoes={talhoesDoProdutor(talhoes, produtores, rowUso?.produtor_id)}
+      />
       <ModalDetalheEstoque
         row={rowDetalhe} open={!!rowDetalhe} onClose={() => setRowDetalhe(null)}
         onEditarMovimento={(row, mov) => { setRowDetalhe(null); setMovEdicao({ row, mov }); }}
@@ -133,6 +143,7 @@ export default function AbaEstoque({ notas, itens, produtores, produtorFiltro })
       <ModalEditarMovimento
         movimento={movEdicao?.mov} row={movEdicao?.row}
         open={!!movEdicao} onClose={() => setMovEdicao(null)}
+        talhoes={talhoesDoProdutor(talhoes, produtores, movEdicao?.row?.produtor_id)}
       />
       <ConfirmaExcluirMovimento
         movimento={movExcluir?.mov} open={!!movExcluir} onClose={() => setMovExcluir(null)}

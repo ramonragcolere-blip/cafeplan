@@ -7,14 +7,19 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { fmtQtd } from '@/lib/estoqueInsumos';
+import SeletorTalhoesUso from '@/components/estoque/SeletorTalhoesUso';
+import { computarTalhoesAplicacao } from '@/lib/talhoesAplicacao';
 
 // Modal para registrar saída de estoque. Cria MovimentoEstoqueInsumo (tipo=saida).
 // Não permite quantidade maior que o saldo disponível.
-export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
+// Saídas (uso/aplicação) exigem ao menos um talhão quando o produtor possui
+// talhões cadastrados; a quantidade é distribuída (rateada) entre os talhões.
+export default function ModalRegistrarUso({ row, open, onClose, talhoes = [], produtores = [] }) {
   const qc = useQueryClient();
   const [quantidade, setQuantidade] = useState('');
   const [dataMov, setDataMov] = useState('');
   const [obs, setObs] = useState('');
+  const [talhoesSel, setTalhoesSel] = useState({ ids: [], mode: 'proporcional', manual: {} });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -23,6 +28,7 @@ export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
       setQuantidade('');
       setDataMov(new Date().toISOString().slice(0, 10));
       setObs('');
+      setTalhoesSel({ ids: [], mode: 'proporcional', manual: {} });
       setErro('');
     }
   }, [open, row?.key]);
@@ -30,6 +36,8 @@ export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
   if (!row) return null;
   const saldo = Number(row.saldo) || 0;
   const unidade = row.unidade || '';
+  const dose = row.dose || null;
+  const produtorId = row.produtor_id;
 
   const handleSalvar = async () => {
     setErro('');
@@ -37,10 +45,22 @@ export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
     if (isNaN(q) || q <= 0) { setErro('Informe uma quantidade válida.'); return; }
     if (q > saldo) { setErro('A quantidade utilizada não pode ser maior que o saldo disponível.'); return; }
     if (!dataMov) { setErro('Informe a data da utilização.'); return; }
+
+    const { talhoes_aplicacao, area_total, erro: erroRateio } = computarTalhoesAplicacao({
+      talhoes, ids: talhoesSel.ids, mode: talhoesSel.mode, manual: talhoesSel.manual, quantidadeTotal: q,
+    });
+
+    // Saída exige pelo menos um talhão (quando o produtor possui talhões).
+    if (talhoes.length > 0 && talhoes_aplicacao.length === 0) {
+      setErro('Selecione pelo menos um talhão onde o produto foi utilizado.');
+      return;
+    }
+    if (erroRateio) { setErro(erroRateio); return; }
+
     setSalvando(true);
     try {
       await base44.entities.MovimentoEstoqueInsumo.create({
-        produtor_id: row.produtor_id,
+        produtor_id: produtorId,
         produto_id: row.produto_id || null,
         produto_tipo: row.produto_tipo || 'nf',
         produto_nome: row.produto_nome,
@@ -49,9 +69,10 @@ export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
         unidade,
         data_movimento: dataMov,
         observacao: obs || '',
+        talhoes_aplicacao: talhoes_aplicacao,
+        area_total_aplicada: area_total,
       });
       await qc.invalidateQueries({ queryKey: ['movimentos_estoque'] });
-      onSalvo?.();
       onClose?.();
     } catch (e) {
       setErro('Erro ao registrar uso: ' + (e?.message || String(e)));
@@ -62,7 +83,7 @@ export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose?.(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar uso</DialogTitle>
           <DialogDescription>Registro de saída de estoque.</DialogDescription>
@@ -85,6 +106,12 @@ export default function ModalRegistrarUso({ row, open, onClose, onSalvo }) {
               placeholder={`Ex.: 2 ${unidade}`}
             />
           </div>
+          <SeletorTalhoesUso
+            talhoes={talhoes} quantidadeTotal={parseFloat(String(quantidade).replace(',', '.')) || 0}
+            unidade={unidade} dose={dose}
+            value={talhoesSel} onChange={setTalhoesSel}
+            obrigatorio
+          />
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Data da utilização</label>
             <Input type="date" value={dataMov} onChange={e => setDataMov(e.target.value)} className="h-9 text-sm" />

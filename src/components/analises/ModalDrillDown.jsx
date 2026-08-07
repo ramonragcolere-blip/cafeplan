@@ -18,7 +18,7 @@ export default function ModalDrillDown({ open, onClose, titulo, descricao, itens
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-background">
                 <tr className="border-b border-border">
-                  {['Data', ...(consolidado ? ['Produtor'] : []), 'Produto', 'Categoria', 'Qtd. utilizada', 'Dose/ha', 'Área est.', 'Custo unit.', 'Custo aplic.', 'Observação'].map((h) => (
+                  {['Data', ...(consolidado ? ['Produtor'] : []), 'Produto', 'Categoria', 'Talhões', 'Qtd. utilizada', 'Dose/ha', 'Área est.', 'Custo unit.', 'Custo aplic.', 'Observação'].map((h) => (
                     <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>

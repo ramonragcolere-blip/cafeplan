@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -27,16 +27,35 @@ function safraHoje() {
 }
 
 export default function FiltrosAnalises({
-  filtros, setFiltros, produtores, safras, modo, indicador, setIndicador, onAtalho,
+  filtros, setFiltros, produtores, talhoes = [], safras, modo, indicador, setIndicador, onAtalho,
 }) {
   const set = (k, v) => setFiltros((f) => ({ ...f, [k]: v }));
   const temFiltro = !!(filtros.produtor !== 'todos' || filtros.produto || filtros.categoria !== 'todos'
-    || filtros.dataInicial || filtros.dataFinal || filtros.safra !== 'todas');
+    || filtros.dataInicial || filtros.dataFinal || filtros.safra !== 'todas' || (filtros.talhao && filtros.talhao !== 'todos'));
 
   const limpar = () => setFiltros({
     produtor: 'todos', produto: '', categoria: 'todos',
-    dataInicial: '', dataFinal: '', safra: 'todas',
+    dataInicial: '', dataFinal: '', safra: 'todas', talhao: 'todos',
   });
+
+  // Opções de talhão: com produtor específico, só os daquele produtor;
+  // com "Todos", "Produtor — Talhão" para distinguir nomes iguais.
+  const talhaoOptions = useMemo(() => {
+    const prodId = filtros.produtor;
+    if (prodId && prodId !== 'todos') {
+      const produtor = (produtores || []).find((p) => p.id === prodId);
+      const cod = produtor?.codigo;
+      return (talhoes || []).filter((t) => t.codigo_produtor === cod)
+        .map((t) => ({ id: t.id, label: t.nome }));
+    }
+    return (talhoes || []).map((t) => {
+      const p = (produtores || []).find((x) => x.codigo === t.codigo_produtor);
+      const pref = p ? `${p.nome || p.fazenda || p.codigo} — ` : '';
+      return { id: t.id, label: `${pref}${t.nome}` };
+    });
+  }, [talhoes, produtores, filtros.produtor]);
+
+  const trocarProdutor = (v) => setFiltros((f) => ({ ...f, produtor: v, talhao: 'todos' }));
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 space-y-3">
@@ -46,7 +65,7 @@ export default function FiltrosAnalises({
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1 min-w-[180px]">
           <label className="text-xs text-muted-foreground">Produtor</label>
-          <Select value={filtros.produtor} onValueChange={(v) => set('produtor', v)}>
+          <Select value={filtros.produtor} onValueChange={trocarProdutor}>
             <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Todos os produtores" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos os produtores</SelectItem>
@@ -96,6 +115,19 @@ export default function FiltrosAnalises({
             <SelectContent>
               <SelectItem value="todas">Todas as safras</SelectItem>
               {safras.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1 min-w-[200px]">
+          <label className="text-xs text-muted-foreground">Talhão</label>
+          <Select value={filtros.talhao || 'todos'} onValueChange={(v) => set('talhao', v)}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Todos os talhões" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os talhões</SelectItem>
+              {talhaoOptions.map((t) => (
+                <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

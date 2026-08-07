@@ -7,9 +7,15 @@
 //  - Época = MovimentoEstoqueInsumo.data_movimento (mês/ano).
 //  - Área estimada = qtd_base / dose.valor (quando dose.ha válida e unidade
 //    compatível). Sem dose => não inventa (null => "—").
+//    Quando há filtro de talhão, a área passa a ser a histórica do talhão
+//    (talhoes_aplicacao.area_ha), não a estimada por dose.
 //  - Custo = custo médio ponderado HISTÓRICO das compras (NFs) até a data da
 //    aplicação, com conversão de embalagem via converterItem. Compra futura
 //    NÃO recalcula aplicação antiga. Sem preço => não inventa (null).
+//  - Talhões: cada saída pode conter talhoes_aplicacao [{talhao_id, talhao_nome,
+//    area_ha, quantidade_rateada}]. Com filtro de talhão ativo, cada saída é
+//    "expandida" no shard daquele talhão, usando quantidade/custo RATEADOS
+//    (sem duplicar a quantidade total em cada talhão).
 // Reaproveita conversão/dose de estoqueInsumos e categorias de
 // notasFiscaisCategorias — NÃO cria classificação paralela.
 import {
@@ -99,6 +105,7 @@ export function custoUnitarioHistorico(itensPorChave, pid, ch, dataLimite, unida
 
 // Constrói a lista de aplicações a partir das saídas. Cada aplicação é um
 // objeto "pronto para gráfico" com quantidade base, dose, hectares e custo.
+// Inclui talhoes_aplicacao (snapshot histórico) e area_total_aplicada.
 export function construirAplicacoes({
   saidas = [], itens = [], notas = [], fertilizantes = [], fontes = [],
   catalogoCategorias = [], configs = [],
@@ -161,6 +168,15 @@ export function construirAplicacoes({
     const custoUnit = custoUnitarioHistorico(itensPorChave, pid, ch, data, unidadeBase);
     const custo = custoUnit != null && qtdBase > 0 ? Math.round(custoUnit * qtdBase * 100) / 100 : null;
 
+    const talhoesAplicacao = Array.isArray(s.talhoes_aplicacao)
+      ? s.talhoes_aplicacao.map((x) => ({
+        talhao_id: x.talhao_id,
+        talhao_nome: x.talhao_nome,
+        area_ha: Number(x.area_ha) || 0,
+        quantidade_rateada: Number(x.quantidade_rateada) || 0,
+      }))
+      : [];
+
     aplicacoes.push({
       id: s.id || null,
       produtor_id: pid,
@@ -185,19 +201,48 @@ export function construirAplicacoes({
       tem_custo: custo != null,
       observacao: s.observacao || '',
       chave: ch,
+      talhoes_aplicacao: talhoesAplicacao,
+      area_total_aplicada: s.area_total_aplicada != null ? Number(s.area_total_aplicada) : null,
     });
   });
   aplicacoes.sort((a, b) => (a.data || '').localeCompare(b.data || ''));
   return aplicacoes;
 }
 
-// Aplica filtros independentes (todos opcionais).
+// Expande uma aplicação no shard de um talhão específico, usando quantidade e
+// custo RATEADOS (proporcionais à área). Retorna null se o talhão não participate.
+// A área do shard passa a ser a histórica do talhão (não a estimada por dose).
+export function expandirAplicacaoPorTalhao(aplicacao, talhaoId) {
+  const arr = Array.isArray(aplicacao.talhoes_aplicacao) ? aplicacao.talhoes_aplicacao : [];
+  const entry = arr.find((x) => x.talhao_id === talhaoId);
+  if (!entry) return null;
+  const qtdRateada = Number(entry.quantidade_rateada) || 0;
+  const fracao = aplicacao.quantidade > 0 ? qtdRateada / aplicacao.quantidade : 0;
+  const qtdBaseShard = (aplicacao.qtd_base || 0) * fracao;
+  const custoShard = aplicacao.custo != null ? aplicacao.custo * fracao : null;
+  return {
+    ...aplicacao,
+    id: `${aplicacao.id || ''}__${talhaoId}`,
+    talhao_id: entry.talhao_id,
+    talhao_nome: entry.talhao_nome,
+    talhoes_aplicacao: [entry],
+    area_total_aplicada: Number(entry.area_ha) || 0,
+    quantidade: qtdRateada,
+    qtd_base: Math.round(qtdBaseShard * 100000) / 100000,
+    ha_estimado: Number(entry.area_ha) || 0,
+    custo: custoShard != null ? Math.round(custoShard * 100) / 100 : null,
+  };
+}
+
+// Aplica filtros independentes (todos opcionais). Quando o filtro de talhão
+// está ativo, cada aplicação que contém aquele talhão é expandida no shard
+// correspondente (quantidade/custo rateados) — evita duplicar a qtd total.
 export function filtrarAplicacoes(aplicacoes, {
   produtor = 'todos', produto = '', categoria = 'todos',
-  dataInicial = '', dataFinal = '', safra = 'todas',
+  dataInicial = '', dataFinal = '', safra = 'todas', talhao = 'todos',
 } = {}) {
   const termo = normalizarNome(produto);
-  return aplicacoes.filter((a) => {
+  const base = aplicacoes.filter((a) => {
     if (produtor !== 'todos' && a.produtor_id !== produtor) return false;
     if (termo && !normalizarNome(a.produto_nome_padrao).includes(termo) && !normalizarNome(a.produto_nome).includes(termo)) return false;
     if (categoria !== 'todos' && a.categoria !== categoria) return false;
@@ -206,6 +251,15 @@ export function filtrarAplicacoes(aplicacoes, {
     if (safra !== 'todas' && a.safra !== safra) return false;
     return true;
   });
+  if (talhao && talhao !== 'todos') {
+    const shards = [];
+    base.forEach((a) => {
+      const s = expandirAplicacaoPorTalhao(a, talhao);
+      if (s) shards.push(s);
+    });
+    return shards;
+  }
+  return base;
 }
 
 // Agrega por produto. Cada item: {nome, categoria, unidade_base, aplicacoes,
@@ -248,6 +302,51 @@ export function agregarPorCategoria(aplicacoes, categoriaFoco = null) {
     custo: Math.round(r.custo * 100) / 100,
     custo_medio: r.com_custo ? Math.round((r.custo / r.aplicacoes) * 100) / 100 : null,
   }));
+}
+
+// Agrega por talhão. Cada aplicação é expandida em um shard por talhão (com
+// quantidade/custo rateados). Aplicações sem talhão entram no bucket
+// "Talhão não informado".
+export function agregarPorTalhao(aplicacoes) {
+  const map = {};
+  const naoInfo = { nome: 'Talhão não informado', talhao_id: null, aplicacoes: 0, area: 0, custo: 0, com_area: 0, com_custo: 0, qtd_total: 0 };
+  aplicacoes.forEach((a) => {
+    const arr = Array.isArray(a.talhoes_aplicacao) ? a.talhoes_aplicacao : [];
+    if (!arr.length) {
+      naoInfo.aplicacoes += 1;
+      naoInfo.qtd_total += a.qtd_base || 0;
+      if (a.ha_estimado != null) { naoInfo.area += a.ha_estimado; naoInfo.com_area += 1; }
+      if (a.custo != null) { naoInfo.custo += a.custo; naoInfo.com_custo += 1; }
+      return;
+    }
+    arr.forEach((entry) => {
+      const tid = entry.talhao_id;
+      const fracao = a.quantidade > 0 && entry.quantidade_rateada != null
+        ? (Number(entry.quantidade_rateada) || 0) / a.quantidade : 0;
+      if (!map[tid]) map[tid] = {
+        nome: entry.talhao_nome || '—', talhao_id: tid, aplicacoes: 0, area: 0, custo: 0,
+        com_area: 0, com_custo: 0, qtd_total: 0, unidade_base: a.unidade_base,
+      };
+      const r = map[tid];
+      r.aplicacoes += 1;
+      r.area += Number(entry.area_ha) || 0; r.com_area += 1;
+      r.qtd_total += (a.qtd_base || 0) * fracao;
+      if (a.custo != null) { r.custo += a.custo * fracao; r.com_custo += 1; }
+    });
+  });
+  const out = Object.values(map).map((r) => ({
+    ...r,
+    qtd_total: Math.round(r.qtd_total * 100) / 100,
+    area: Math.round(r.area * 100) / 100,
+    custo: Math.round(r.custo * 100) / 100,
+  }));
+  if (naoInfo.aplicacoes > 0) {
+    naoInfo.qtd_total = Math.round(naoInfo.qtd_total * 100) / 100;
+    naoInfo.area = naoInfo.com_area ? Math.round(naoInfo.area * 100) / 100 : null;
+    naoInfo.custo = Math.round(naoInfo.custo * 100) / 100;
+    out.push(naoInfo);
+  }
+  return out;
 }
 
 // valor da métrica de uma aplicação conforme indicador.
@@ -359,6 +458,14 @@ export function safrasDisponiveis(aplicacoes) {
   const set = new Set();
   aplicacoes.forEach((a) => { if (a.safra) set.add(a.safra); });
   return [...set].sort();
+}
+
+// Conta aplicações sem talhão informado (registros antigos).
+export function countSemTalhao(aplicacoes) {
+  return aplicacoes.reduce((s, a) => {
+    const arr = Array.isArray(a.talhoes_aplicacao) ? a.talhoes_aplicacao : [];
+    return s + (arr.length ? 0 : 1);
+  }, 0);
 }
 
 // Drill-down: filtra aplicações por dimensão clicada.

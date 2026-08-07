@@ -361,6 +361,8 @@ export function construirEstoque({
       unidade: s.unidade || '',
       tipo_movimento: s.tipo_movimento || 'saida',
       observacao: s.observacao || '',
+      talhoes_aplicacao: Array.isArray(s.talhoes_aplicacao) ? s.talhoes_aplicacao : [],
+      area_total_aplicada: s.area_total_aplicada != null ? Number(s.area_total_aplicada) : null,
     });
   });
 

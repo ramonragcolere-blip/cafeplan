@@ -8,17 +8,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { fmtQtd } from '@/lib/estoqueInsumos';
+import SeletorTalhoesUso from '@/components/estoque/SeletorTalhoesUso';
+import { computarTalhoesAplicacao, estadoTalhoesDeMovimento } from '@/lib/talhoesAplicacao';
 
 // Edita um MovimentoEstoqueInsumo existente.
 // Validação: a quantidade editada não pode exceder
 //   saldo atual + quantidade original da saída
 // (a própria saída sendo editada "volta" para o saldo).
-export default function ModalEditarMovimento({ movimento, row, open, onClose, onConcluido }) {
+// Saídas (tipo=saida) permitem editar os talhões e a distribuição (rateio);
+// ajustes não exigem talhão.
+export default function ModalEditarMovimento({ movimento, row, open, onClose, onConcluido, talhoes = [] }) {
   const qc = useQueryClient();
   const [quantidade, setQuantidade] = useState('');
   const [dataMov, setDataMov] = useState('');
   const [tipo, setTipo] = useState('saida');
   const [obs, setObs] = useState('');
+  const [talhoesSel, setTalhoesSel] = useState({ ids: [], mode: 'proporcional', manual: {} });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -28,6 +33,7 @@ export default function ModalEditarMovimento({ movimento, row, open, onClose, on
       setDataMov(movimento.data_movimento || new Date().toISOString().slice(0, 10));
       setTipo(movimento.tipo_movimento || 'saida');
       setObs(movimento.observacao || '');
+      setTalhoesSel(estadoTalhoesDeMovimento(movimento));
       setErro('');
     }
   }, [open, movimento?.id]);
@@ -37,6 +43,7 @@ export default function ModalEditarMovimento({ movimento, row, open, onClose, on
   const qtdOriginal = Number(movimento.quantidade) || 0;
   const maxDisponivel = saldoAtual + qtdOriginal;
   const unidade = movimento.unidade || row?.unidade || '';
+  const dose = row?.dose || null;
 
   const handleSalvar = async () => {
     setErro('');
@@ -47,6 +54,23 @@ export default function ModalEditarMovimento({ movimento, row, open, onClose, on
       return;
     }
     if (!dataMov) { setErro('Informe a data do movimento.'); return; }
+
+    // Talhões só se aplicam a saídas (uso/aplicação).
+    let talhoesAplicacao = [];
+    let areaTotal = 0;
+    if (tipo === 'saida') {
+      const r = computarTalhoesAplicacao({
+        talhoes, ids: talhoesSel.ids, mode: talhoesSel.mode, manual: talhoesSel.manual, quantidadeTotal: q,
+      });
+      if (talhoes.length > 0 && r.talhoes_aplicacao.length === 0) {
+        setErro('Selecione pelo menos um talhão onde o produto foi utilizado.');
+        return;
+      }
+      if (r.erro) { setErro(r.erro); return; }
+      talhoesAplicacao = r.talhoes_aplicacao;
+      areaTotal = r.area_total;
+    }
+
     setSalvando(true);
     try {
       await base44.entities.MovimentoEstoqueInsumo.update(movimento.id, {
@@ -54,6 +78,8 @@ export default function ModalEditarMovimento({ movimento, row, open, onClose, on
         data_movimento: dataMov,
         tipo_movimento: tipo,
         observacao: obs || '',
+        talhoes_aplicacao: talhoesAplicacao,
+        area_total_aplicada: tipo === 'saida' ? areaTotal : null,
       });
       await qc.invalidateQueries({ queryKey: ['movimentos_estoque'] });
       onConcluido?.();
@@ -67,7 +93,7 @@ export default function ModalEditarMovimento({ movimento, row, open, onClose, on
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose?.(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Editar movimentação</DialogTitle>
           <DialogDescription>{row?.produto_nome}</DialogDescription>
@@ -99,6 +125,14 @@ export default function ModalEditarMovimento({ movimento, row, open, onClose, on
               </Select>
             </div>
           </div>
+          {tipo === 'saida' && (
+            <SeletorTalhoesUso
+              talhoes={talhoes} quantidadeTotal={parseFloat(String(quantidade).replace(',', '.')) || 0}
+              unidade={unidade} dose={dose}
+              value={talhoesSel} onChange={setTalhoesSel}
+              obrigatorio
+            />
+          )}
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Observação (opcional)</label>
             <Textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} className="text-sm" />

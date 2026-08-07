@@ -45,6 +45,17 @@
       "format": "date",
       "description": "Data do movimento"
     },
+    "talhoes_aplicacao": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Talh\u00f5es onde o produto foi aplicado (sa\u00eddas). Snapshot hist\u00f3rico: [{talhao_id, talhao_nome, area_ha, quantidade_rateada}]"
+    },
+    "area_total_aplicada": {
+      "type": "number",
+      "description": "Snapshot da soma das \u00e1reas dos talh\u00f5es na aplica\u00e7\u00e3o (ha)"
+    },
     "observacao": {
       "type": "string",
       "description": "Observa\u00e7\u00e3o livre"

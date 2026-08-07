@@ -5,7 +5,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CORES, fmtR, fmtNum } from '@/components/analises/helpers';
 import {
-  dadosGraficoTemporal, dadosDistribuicaoMensal, agregarPorProduto, agregarPorCategoria, MESES,
+  dadosGraficoTemporal, dadosDistribuicaoMensal, agregarPorProduto, agregarPorCategoria, agregarPorTalhao, MESES,
 } from '@/lib/analisesEstoque';
 
 const COR = (i) => CORES[i % CORES.length];
@@ -210,6 +210,63 @@ export function GraficoPorCategoria({ aplicacoes, metrica, categoriaFoco, setCat
                 }}>
                 {dados.map((d, i) => (
                   <Cell key={d.categoria} fill={categoriaFoco && d.categoria !== categoriaFoco ? '#cbd5e1' : COR(i)} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ GRÁFICO POR TALHÃO (barras horizontais, clicável) ============
+function TooltipTalhao({ active, payload, metrica }) {
+  if (!active || !payload || !payload.length) return null;
+  const r = payload[0].payload;
+  const fmtV = metrica === 'custo' ? fmtR : (metrica === 'area' ? (v) => `${fmtNum(v)} ha` : fmtNum);
+  return (
+    <div className="bg-card border border-border rounded-lg shadow-lg p-3 text-xs max-w-[260px]">
+      <p className="font-semibold">{r.nome}</p>
+      <div className="mt-1 space-y-0.5">
+        <p>Nº aplicações: <span className="font-semibold">{r.aplicacoes}</span></p>
+        <p>Área aplicada: <span className="font-semibold">{r.area != null ? `${fmtNum(r.area)} ha` : '—'}</span></p>
+        {metrica === 'custo' && <p>Custo total: <span className="font-semibold">{fmtR(r.custo)}</span></p>}
+        {r.talhao_id == null && <p className="text-muted-foreground">Registros antigos sem talhão informado</p>}
+        {r.talhao_id != null && <p className="text-muted-foreground mt-1">Clique para filtrar este talhão</p>}
+      </div>
+    </div>
+  );
+}
+
+export function GraficoPorTalhao({ aplicacoes, metrica, onSelecionarTalhao }) {
+  const dados = useMemo(() => {
+    const arr = agregarPorTalhao(aplicacoes);
+    const key = metrica === 'custo' ? 'custo' : metrica === 'area' ? 'area' : 'aplicacoes';
+    return arr
+      .map((r) => ({ ...r, valor: r[key] || 0 }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 15);
+  }, [aplicacoes, metrica]);
+  const titulo = metrica === 'custo' ? 'Custo por Talhão' : metrica === 'area' ? 'Área aplicada por Talhão' : 'Aplicações por Talhão';
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <CabecalhoGrafico titulo={titulo} sub="Top 15 — clique em um talhão para filtrar" />
+      {!dados.length ? <Vazio texto="Sem talhões com aplicações no período." /> : (
+        <div className="p-4">
+          <ResponsiveContainer width="100%" height={Math.max(220, dados.length * 36)}>
+            <BarChart data={dados} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => metrica === 'custo' ? fmtR(v) : fmtNum(v)} />
+              <YAxis type="category" dataKey="nome" tick={{ fontSize: 11 }} width={140} />
+              <Tooltip content={<TooltipTalhao metrica={metrica} />} cursor={{ fill: 'rgba(0,0,0,0.05)' }} />
+              <Bar dataKey="valor" radius={[0, 4, 4, 0]} cursor={dados.some((d) => d.talhao_id != null) ? 'pointer' : 'default'}
+                onClick={(payload) => {
+                  const id = payload.payload.talhao_id;
+                  if (id != null) onSelecionarTalhao?.(id);
+                }}>
+                {dados.map((d, i) => (
+                  <Cell key={d.nome || i} fill={d.talhao_id == null ? '#cbd5e1' : COR(i)} />
                 ))}
               </Bar>
             </BarChart>
