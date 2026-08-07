@@ -6,7 +6,7 @@ import { FileText, Plus, TrendingUp, Package, Filter, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ImportarNotaFiscal from '@/components/notas/ImportarNotaFiscal';
 import { consolidarPrecosItens } from '@/lib/notasFiscais';
-import { montarCatalogoCategorias, classificarProduto } from '@/lib/notasFiscaisCategorias';
+import { montarCatalogoCategorias, classificarProduto, normalizarNome } from '@/lib/notasFiscaisCategorias';
 import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
 
 const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
@@ -49,50 +49,68 @@ export default function NotasFiscais() {
     refetchItens();
   };
 
-  // Catálogo: mapa nome -> categoria para classificar itens por nome do produto
+  // Catálogo de produtos: FertilizanteFormulado (defensivos + fertilizantes)
+  // e FonteSimples (fontes de nutrientes). Lista ordenada por nome mais longo.
   const catalogoCategorias = useMemo(
     () => montarCatalogoCategorias(fertilizantesCatalogo, fontesSimplesCatalogo),
     [fertilizantesCatalogo, fontesSimplesCatalogo]
   );
 
-  // Período ativo quando há data inicial ou final informada
+  // Flags de filtros ativos (cada filtro é independente e opcional)
+  const produtorAtivo = produtorFiltro !== 'todos';
   const periodoAtivo = !!(dataInicial || dataFinal);
+  const itemFiltroAtivo = buscaProduto.trim() !== '' || categoriaFiltro !== 'todos';
+  // Restringe itens ao conjunto de notas candidatas quando há período ou busca/categoria
+  const restringirPorNota = periodoAtivo || itemFiltroAtivo;
 
-  // Filtragem de notas por produtor e período (data de emissão)
-  const notasFiltradas = useMemo(() => {
+  // Notas candidatas pelos filtros de nível nota: produtor e período (data_emissao).
+  // Quando não há período, nenhuma restrição de data é aplicada.
+  const notasCandidatas = useMemo(() => {
     return notas.filter(n => {
-      if (produtorFiltro !== 'todos' && n.produtor_id !== produtorFiltro) return false;
+      if (produtorAtivo && n.produtor_id !== produtorFiltro) return false;
       const data = n.data_emissao;
       if (dataInicial && (!data || data < dataInicial)) return false;
       if (dataFinal && (!data || data > dataFinal)) return false;
       return true;
     });
-  }, [notas, produtorFiltro, dataInicial, dataFinal]);
+  }, [notas, produtorAtivo, produtorFiltro, dataInicial, dataFinal]);
 
-  // IDs das notas que passaram nos filtros (restringe itens ao período quando ativo)
-  const notasIdsSet = useMemo(() => new Set(notasFiltradas.map(n => n.id)), [notasFiltradas]);
+  const notasCandSet = useMemo(() => new Set(notasCandidatas.map(n => n.id)), [notasCandidatas]);
 
-  // Filtragem de itens por produtor, período (via nota), nome do produto e categoria
-  const itensFiltrados = useMemo(() => {
-    const termo = buscaProduto.trim().toLowerCase();
+  // Itens candidatos pelos filtros de nível item: produtor, busca por nome e categoria.
+  // A busca e a classificação são normalizadas (sem acento/maiúscula) e por prefixo,
+  // reconhecendo embalagens/volume após o nome do produto cadastrado.
+  const itensCandidatos = useMemo(() => {
+    const termo = normalizarNome(buscaProduto);
     return itens.filter(i => {
-      if (produtorFiltro !== 'todos' && i.produtor_id !== produtorFiltro) return false;
-      if (periodoAtivo && i.nota_fiscal_id && !notasIdsSet.has(i.nota_fiscal_id)) return false;
-      if (termo && !String(i.produto_nome || '').toLowerCase().includes(termo)) return false;
+      if (produtorAtivo && i.produtor_id !== produtorFiltro) return false;
+      if (termo && !normalizarNome(i.produto_nome).includes(termo)) return false;
       if (categoriaFiltro !== 'todos' && classificarProduto(i.produto_nome, catalogoCategorias) !== categoriaFiltro) return false;
       return true;
     });
-  }, [itens, produtorFiltro, periodoAtivo, notasIdsSet, buscaProduto, categoriaFiltro, catalogoCategorias]);
+  }, [itens, produtorAtivo, produtorFiltro, buscaProduto, categoriaFiltro, catalogoCategorias]);
+
+  // Itens finais: itens candidatos restritos às notas candidatas quando há
+  // filtro relevante (período ou busca/categoria). Sem esses filtros, mantém
+  // todos os itens do produtor (comportamento original, preserva orfãos).
+  const itensFiltrados = useMemo(() => {
+    if (!restringirPorNota) return itensCandidatos;
+    return itensCandidatos.filter(i => i.nota_fiscal_id && notasCandSet.has(i.nota_fiscal_id));
+  }, [itensCandidatos, restringirPorNota, notasCandSet]);
+
+  // Notas finais: quando há busca/categoria, somente as notas que possuem ao
+  // menos um item final. Caso contrário, todas as notas candidatas (produtor/período).
+  const notasFiltradas = useMemo(() => {
+    if (!itemFiltroAtivo) return notasCandidatas;
+    const idsNotasComItem = new Set();
+    itensFiltrados.forEach(i => { if (i.nota_fiscal_id) idsNotasComItem.add(i.nota_fiscal_id); });
+    return notasCandidatas.filter(n => idsNotasComItem.has(n.id));
+  }, [itemFiltroAtivo, notasCandidatas, itensFiltrados]);
 
   // Média ponderada pela quantidade comprada; evita distorção entre notas pequenas e grandes.
   const tabelaPrecos = useMemo(() => consolidarPrecosItens(itensFiltrados), [itensFiltrados]);
 
-  const temFiltroAtivo =
-    produtorFiltro !== 'todos' ||
-    buscaProduto.trim() !== '' ||
-    categoriaFiltro !== 'todos' ||
-    dataInicial !== '' ||
-    dataFinal !== '';
+  const temFiltroAtivo = produtorAtivo || itemFiltroAtivo || periodoAtivo;
 
   const limparFiltros = () => {
     setProdutorFiltro('todos');

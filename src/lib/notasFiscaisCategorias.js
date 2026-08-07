@@ -1,5 +1,6 @@
 // Categorias simplificadas para o filtro do módulo Notas Fiscais.
-// Reaproveita o campo `grupo` já existente em FertilizanteFormulado e a
+// Reaproveita o campo `grupo` já existente em FertilizanteFormulado (que
+// também contempla defensivos: Fungicida, Inseticida, Herbicida, etc.) e a
 // natureza de FonteSimples (fontes de nutrientes) para classificar cada item.
 export const CATEGORIAS_NOTAS = [
   'Fungicida',
@@ -56,26 +57,49 @@ export function mapGrupoToCategoria(grupo) {
   return GRUPO_TO_CATEGORIA[grupo] || 'Outros';
 }
 
-// Monta um mapa nome->categoria a partir dos catálogos de fertilizantes
-// formulados e fontes simples. Usado para classificar itens de nota por nome.
-export function montarCatalogoCategorias(fertilizantes = [], fontesSimples = []) {
-  const map = new Map();
-  const normalizar = (nome) => String(nome || '').trim().toLowerCase();
-  (fertilizantes || []).forEach(f => {
-    const key = normalizar(f.nome);
-    if (key) map.set(key, mapGrupoToCategoria(f.grupo));
-  });
-  (fontesSimples || []).forEach(f => {
-    const key = normalizar(f.nome);
-    if (key) map.set(key, 'Adubo/Fertilizante');
-  });
-  return map;
+// Normaliza nomes para comparação: remove maiúsculas, acentos, pontuação,
+// hífens/barras e espaços duplicados. Permite reconhecer "PRIORI XTRA 1L"
+// como contendo o produto cadastrado "Priori Xtra".
+export function normalizarNome(nome) {
+  return String(nome || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos/diacríticos
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')    // pontuação, hífens, barras -> espaço
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// Classifica um produto pelo nome usando o catálogo montado.
-// Produtos não encontrados no catálogo caem em "Outros".
-export function classificarProduto(nome, catalogoCategorias = new Map()) {
-  const key = String(nome || '').trim().toLowerCase();
-  if (!key) return 'Outros';
-  return catalogoCategorias.get(key) || 'Outros';
+// Monta a lista de produtos do catálogo a partir de FertilizanteFormulado e
+// FonteSimples. Cada entrada: { nomeNorm, categoria }.
+// Ordenada pelo nome normalizado mais longo primeiro, para que a
+// correspondência por prefixo pegue sempre o produto mais específico.
+export function montarCatalogoCategorias(fertilizantes = [], fontesSimples = []) {
+  const lista = [];
+  const push = (nome, categoria) => {
+    const nomeNorm = normalizarNome(nome);
+    if (!nomeNorm || nomeNorm.length < 3) return; // evita nomes genéricos curtos
+    lista.push({ nomeNorm, categoria });
+  };
+  (fertilizantes || []).forEach(f => push(f.nome, mapGrupoToCategoria(f.grupo)));
+  (fontesSimples || []).forEach(f => push(f.nome, 'Adubo/Fertilizante'));
+  lista.sort((a, b) => b.nomeNorm.length - a.nomeNorm.length);
+  return lista;
+}
+
+// Classifica um produto pelo nome usando a lista montada do catálogo.
+// Correspondência por prefixo com separador de palavra permite reconhecer
+// descrições de NF que trazem embalagem/volume após o nome do produto:
+//   "PRIORI XTRA 1L" -> "priori xtra"  (Fungicida)
+//   "TUTOR 1KG"      -> "tutor"        (...)
+//   "VERTIMEC 84 1L" -> "vertimec 84" (ou "vertimec", o mais específico)
+// Produtos não encontrados em nenhuma base caem em "Outros".
+export function classificarProduto(nome, catalogoLista = []) {
+  const desc = normalizarNome(nome);
+  if (!desc) return 'Outros';
+  for (const c of catalogoLista) {
+    const cn = c.nomeNorm;
+    if (desc === cn || desc.startsWith(cn + ' ')) return c.categoria;
+  }
+  return 'Outros';
 }
