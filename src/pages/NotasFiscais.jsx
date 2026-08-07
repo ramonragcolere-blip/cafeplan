@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { FileText, Plus, TrendingUp, Package, Filter, X } from 'lucide-react';
+import { FileText, Plus, TrendingUp, Package, Filter, X, Eye } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ImportarNotaFiscal from '@/components/notas/ImportarNotaFiscal';
+import DetalhesNotaFiscal from '@/components/notas/DetalhesNotaFiscal';
 import { consolidarPrecosItens } from '@/lib/notasFiscais';
 import { montarCatalogoCategorias, classificarProduto, normalizarNome } from '@/lib/notasFiscaisCategorias';
 import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
@@ -18,6 +19,7 @@ export default function NotasFiscais() {
   const [categoriaFiltro, setCategoriaFiltro] = useState('todos');
   const [dataInicial, setDataInicial] = useState('');
   const [dataFinal, setDataFinal] = useState('');
+  const [notaSelecionada, setNotaSelecionada] = useState(null);
 
   const { data: produtores = [] } = useQuery({
     queryKey: ['produtores', 'completo'],
@@ -256,12 +258,21 @@ export default function NotasFiscais() {
               </thead>
               <tbody>
                 {notasFiltradas.map((n, i) => (
-                  <tr key={n.id} className={`border-b border-border/50 last:border-0 hover:bg-muted/10 ${i % 2 === 1 ? 'bg-muted/5' : ''}`}>
+                  <tr
+                    key={n.id}
+                    onClick={() => setNotaSelecionada(n)}
+                    className={`border-b border-border/50 last:border-0 hover:bg-primary/5 cursor-pointer transition-colors ${i % 2 === 1 ? 'bg-muted/5' : ''}`}
+                  >
                     <td className="px-4 py-2.5 font-mono font-medium">{n.numero_nota || '—'}</td>
                     <td className="px-4 py-2.5">{n.fornecedor_nome || '—'}</td>
                     <td className="px-4 py-2.5 text-muted-foreground">{produtorNome(n.produtor_id)}</td>
                     <td className="px-4 py-2.5 tabular-nums">{n.data_emissao || '—'}</td>
-                    <td className="px-4 py-2.5 tabular-nums font-semibold text-primary">{fmtR(n.valor_total)}</td>
+                    <td className="px-4 py-2.5 tabular-nums font-semibold text-primary">
+                      <span className="inline-flex items-center justify-between gap-2 w-full">
+                        {fmtR(n.valor_total)}
+                        <Eye className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -275,6 +286,13 @@ export default function NotasFiscais() {
         onClose={() => setModalAberto(false)}
         produtores={produtores}
         onImportado={handleImportado}
+      />
+
+      <DetalhesNotaFiscal
+        nota={notaSelecionada}
+        itens={itens}
+        produtorNome={produtorNome}
+        onClose={() => setNotaSelecionada(null)}
       />
     </div>
   );
