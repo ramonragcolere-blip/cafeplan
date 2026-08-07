@@ -1,188 +1,81 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Layers } from 'lucide-react';
+import { extrairDadosArquivo, verificarDuplicadaBanco, salvarNotaFiscal } from '@/lib/importacaoNotaFiscal';
+import ImportarLoteNotasFiscal from '@/components/notas/ImportarLoteNotasFiscal';
 
-function parseXMLNFe(xmlText) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, 'application/xml');
-  if (doc.querySelector('parsererror')) throw new Error('XML inválido ou corrompido.');
-  const ns = 'http://www.portalfiscal.inf.br/nfe';
-
-  const get = (parent, tag) => {
-    const el = parent.getElementsByTagNameNS(ns, tag)[0] || parent.getElementsByTagName(tag)[0];
-    return el ? el.textContent.trim() : '';
-  };
-
-  const ide = doc.querySelector('ide') || doc.getElementsByTagName('ide')[0];
-  const emit = doc.querySelector('emit') || doc.getElementsByTagName('emit')[0];
-  const total = doc.querySelector('ICMSTot') || doc.getElementsByTagName('ICMSTot')[0];
-
-  const numero = ide ? get(ide, 'nNF') : '';
-  const dataEmissao = ide ? get(ide, 'dhEmi').slice(0, 10) : '';
-  const fornecedorNome = emit ? get(emit, 'xNome') : '';
-  const fornecedorCnpj = emit ? get(emit, 'CNPJ') : '';
-  const valorTotal = total ? parseFloat(get(total, 'vNF')) || 0 : 0;
-
-  const dets = doc.getElementsByTagNameNS(ns, 'det');
-  const detsFallback = doc.getElementsByTagName('det');
-  const detsList = dets.length > 0 ? dets : detsFallback;
-
-  const itens = [];
-  for (const det of detsList) {
-    const prod = det.getElementsByTagNameNS(ns, 'prod')[0] || det.getElementsByTagName('prod')[0];
-    if (!prod) continue;
-    itens.push({
-      produto_nome: get(prod, 'xProd'),
-      quantidade: parseFloat(get(prod, 'qCom')) || 0,
-      unidade_medida: get(prod, 'uCom'),
-      preco_unitario: parseFloat(get(prod, 'vUnCom')) || 0,
-      preco_total: parseFloat(get(prod, 'vProd')) || 0,
-    });
-  }
-
-  return { numero, fornecedor_nome: fornecedorNome, fornecedor_cnpj: fornecedorCnpj, data_emissao: dataEmissao, valor_total: valorTotal, itens };
-}
+const LIMITE_LOTE = 20;
 
 export default function ImportarNotaFiscal({ open, onClose, produtores, onImportado }) {
-  const [etapa, setEtapa] = useState('upload'); // upload | revisao | salvando | sucesso
+  const [etapa, setEtapa] = useState('upload'); // upload | revisao | salvando | sucesso | lote
   const [produtorId, setProdutorId] = useState('');
-  const [arquivo, setArquivo] = useState(null);
+  const [arquivo, setArquivo] = useState(null);        // importação individual
+  const [arquivosLote, setArquivosLote] = useState([]); // importação em lote
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [processando, setProcessando] = useState(false);
 
   const resetar = () => {
-    setEtapa('upload');
-    setProdutorId('');
-    setArquivo(null);
-    setDados(null);
-    setErro('');
-    setProcessando(false);
+    setEtapa('upload'); setProdutorId(''); setArquivo(null); setArquivosLote([]);
+    setDados(null); setErro(''); setProcessando(false);
   };
-
   const handleClose = () => { resetar(); onClose(); };
 
+  const onFilesChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    setErro('');
+    if (files.length === 0) { setArquivo(null); setArquivosLote([]); return; }
+    if (files.length > LIMITE_LOTE) {
+      setErro(`É possível importar no máximo ${LIMITE_LOTE} notas fiscais por vez. Selecione até ${LIMITE_LOTE} arquivos.`);
+      setArquivo(null); setArquivosLote([]);
+      e.target.value = '';
+      return;
+    }
+    if (files.length === 1) { setArquivo(files[0]); setArquivosLote([]); }
+    else { setArquivosLote(files); setArquivo(null); }
+  };
+
+  // Inicia processamento: 1 arquivo -> fluxo individual (revisão); >1 -> lote.
   const handleProcessar = async () => {
     if (!produtorId) { setErro('Selecione um produtor.'); return; }
+    if (arquivosLote.length > LIMITE_LOTE) {
+      setErro(`É possível importar no máximo ${LIMITE_LOTE} notas fiscais por vez. Selecione até ${LIMITE_LOTE} arquivos.`);
+      return;
+    }
+    if (arquivosLote.length > 1) { setEtapa('lote'); return; }
     if (!arquivo) { setErro('Selecione um arquivo.'); return; }
-    setErro('');
-    setProcessando(true);
-
+    setErro(''); setProcessando(true);
     try {
-      const isXML = arquivo.name.toLowerCase().endsWith('.xml');
-      const { file_url } = await base44.integrations.Core.UploadFile({ file: arquivo });
-
-      if (isXML) {
-        const text = await arquivo.text();
-        const extraido = parseXMLNFe(text);
-        setDados({ ...extraido, arquivo_url: file_url });
-        setEtapa('revisao');
-      } else {
-        // PDF: extrai texto e usa LLM
-        const extracted = await base44.integrations.Core.ExtractDataFromUploadedFile({
-          file_url,
-          json_schema: { type: 'object', properties: { texto: { type: 'string' } } }
-        });
-        const textoNota = extracted?.output?.texto || JSON.stringify(extracted?.output || '');
-
-        const resultado = await base44.integrations.Core.InvokeLLM({
-          prompt: `Extraia os dados da nota fiscal abaixo e retorne um JSON com os campos: numero (string), fornecedor_nome (string), fornecedor_cnpj (string, apenas dígitos), data_emissao (string YYYY-MM-DD), valor_total (number), itens (array de objetos com: produto_nome, quantidade, unidade_medida, preco_unitario, preco_total). Se não encontrar algum campo, use null. Nota fiscal:\n\n${textoNota}`,
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              numero: { type: 'string' },
-              fornecedor_nome: { type: 'string' },
-              fornecedor_cnpj: { type: 'string' },
-              data_emissao: { type: 'string' },
-              valor_total: { type: 'number' },
-              itens: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    produto_nome: { type: 'string' },
-                    quantidade: { type: 'number' },
-                    unidade_medida: { type: 'string' },
-                    preco_unitario: { type: 'number' },
-                    preco_total: { type: 'number' }
-                  }
-                }
-              }
-            }
-          }
-        });
-        setDados({ ...resultado, arquivo_url: file_url });
-        setEtapa('revisao');
-      }
+      const extraido = await extrairDadosArquivo(arquivo);
+      setDados(extraido);
+      setEtapa('revisao');
     } catch (e) {
       setErro('Erro ao processar arquivo: ' + e.message);
-    } finally {
-      setProcessando(false);
-    }
+    } finally { setProcessando(false); }
   };
 
   const handleSalvar = async () => {
-    setEtapa('salvando');
-    setErro('');
-    let notaCriada = null;
+    setEtapa('salvando'); setErro('');
     try {
       const numeroNota = String(dados?.numero || '').trim();
       if (!produtorId) throw new Error('Selecione o produtor.');
       if (!numeroNota) throw new Error('O número da nota não foi identificado. Confira o arquivo antes de salvar.');
-
-      const existentes = await base44.entities.BaseNotasFiscais.filter({
-        produtor_id: produtorId,
-        numero_nota: numeroNota,
-      });
-      const cnpj = String(dados?.fornecedor_cnpj || '').replace(/\D/g, '');
-      const duplicada = (existentes || []).some(nota => {
-        const cnpjExistente = String(nota.fornecedor_cnpj || '').replace(/\D/g, '');
-        return !cnpj || !cnpjExistente || cnpj === cnpjExistente;
-      });
-      if (duplicada) throw new Error(`A nota ${numeroNota} já foi importada para este produtor.`);
-
-      notaCriada = await base44.entities.BaseNotasFiscais.create({
-        produtor_id: produtorId,
-        numero_nota: numeroNota,
-        fornecedor_nome: dados.fornecedor_nome || '',
-        fornecedor_cnpj: dados.fornecedor_cnpj || '',
-        data_emissao: dados.data_emissao || null,
-        valor_total: Number(dados.valor_total) || 0,
-        arquivo_url: dados.arquivo_url || '',
-      });
-
-      const itensPayload = (dados.itens || [])
-        .filter(it => String(it.produto_nome || '').trim())
-        .map(it => ({
-          nota_fiscal_id: notaCriada.id,
-          produtor_id: produtorId,
-          produto_nome: String(it.produto_nome || '').trim(),
-          quantidade: Number(it.quantidade) || 0,
-          unidade_medida: String(it.unidade_medida || '').toUpperCase(),
-          preco_unitario: Number(it.preco_unitario) || 0,
-          preco_total: Number(it.preco_total) || 0,
-        }));
-
-      if (itensPayload.length > 0) await base44.entities.BaseItensNotaFiscal.bulkCreate(itensPayload);
-
+      const dup = await verificarDuplicadaBanco(produtorId, dados);
+      if (dup) throw new Error(`A nota ${numeroNota} já foi importada para este produtor.`);
+      await salvarNotaFiscal(produtorId, dados);
       setEtapa('sucesso');
       onImportado?.();
     } catch (e) {
-      if (notaCriada?.id) {
-        try {
-          await base44.entities.BaseNotasFiscais.delete(notaCriada.id);
-        } catch {
-          // Se a compensação falhar, o erro original continua visível para conferência manual.
-        }
-      }
       setErro('Erro ao salvar: ' + (e?.message || String(e)));
       setEtapa('revisao');
     }
   };
 
   const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+  const produtorSel = (produtores || []).find(p => p.id === produtorId);
+  const nomeProdutor = produtorSel ? (produtorSel.nome || produtorSel.codigo_produtor || '—') : '—';
+  const ehLote = arquivosLote.length > 1;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -194,7 +87,7 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
           </DialogTitle>
         </DialogHeader>
 
-        {/* Etapa: Upload */}
+        {/* Etapa: Upload (1 ou vários arquivos) */}
         {etapa === 'upload' && (
           <div className="space-y-4 py-2">
             <div>
@@ -206,30 +99,66 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
                   <option key={p.id} value={p.id}>{p.nome || p.codigo_produtor}</option>
                 ))}
               </select>
+              {produtorId && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Produtor das notas: <strong className="text-foreground">{nomeProdutor}</strong>
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Arquivo XML ou PDF da NF-e</label>
-              <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl p-8 cursor-pointer transition-colors ${arquivo ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/30'}`}>
-                <Upload className={`w-8 h-8 ${arquivo ? 'text-primary' : 'text-muted-foreground'}`} />
-                <span className="text-sm font-medium">{arquivo ? arquivo.name : 'Clique para selecionar XML ou PDF'}</span>
-                <span className="text-xs text-muted-foreground">Suporta NF-e em formato XML ou PDF</span>
-                <input type="file" accept=".xml,.pdf" className="hidden" onChange={e => { setArquivo(e.target.files[0] || null); setErro(''); }} />
+              <label className="block text-sm font-medium mb-1">
+                Arquivo(s) XML ou PDF da NF-e — até {LIMITE_LOTE} por vez
               </label>
+              <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors ${(arquivo || arquivosLote.length > 0) ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/30'}`}>
+                {ehLote ? <Layers className="w-7 h-7 text-primary" /> : <Upload className={`w-7 h-7 ${arquivo ? 'text-primary' : 'text-muted-foreground'}`} />}
+                <span className="text-sm font-medium">
+                  {arquivo ? arquivo.name
+                    : ehLote ? `${arquivosLote.length} arquivos selecionados`
+                    : 'Clique para selecionar XML ou PDF (1 ou vários)'}
+                </span>
+                <span className="text-xs text-muted-foreground">Aceita XML, PDF ou combinação. Até {LIMITE_LOTE} arquivos por vez.</span>
+                <input type="file" accept=".xml,.pdf" multiple className="hidden" onChange={onFilesChange} />
+              </label>
+
+              {ehLote && (
+                <div className="mt-2 border border-border rounded-lg max-h-40 overflow-y-auto">
+                  <ul className="divide-y divide-border/50">
+                    {arquivosLote.map((f, i) => (
+                      <li key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                        <span className="w-6 text-right text-muted-foreground tabular-nums">{i + 1}.</span>
+                        <span className="font-mono truncate">{f.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {erro && <p className="text-sm text-destructive flex items-center gap-1"><AlertCircle className="w-4 h-4" />{erro}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={handleClose}>Cancelar</Button>
-              <Button onClick={handleProcessar} disabled={processando || !arquivo || !produtorId}>
-                {processando ? <><Loader2 className="w-4 h-4 animate-spin" /> Processando…</> : 'Extrair dados'}
+              <Button onClick={handleProcessar} disabled={processando || (!arquivo && arquivosLote.length === 0) || !produtorId}>
+                {processando ? <><Loader2 className="w-4 h-4 animate-spin" /> Processando…</>
+                  : ehLote ? `Processar ${arquivosLote.length} arquivos`
+                  : 'Extrair dados'}
               </Button>
             </div>
           </div>
         )}
 
-        {/* Etapa: Revisão */}
+        {/* Etapa: Lote (vários arquivos) */}
+        {etapa === 'lote' && (
+          <ImportarLoteNotasFiscal
+            produtorId={produtorId}
+            arquivos={arquivosLote}
+            onConcluido={() => { onImportado?.(); handleClose(); }}
+            onCancelar={() => setEtapa('upload')}
+          />
+        )}
+
+        {/* Etapa: Revisão (individual) */}
         {etapa === 'revisao' && dados && (
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3 bg-muted/20 rounded-xl p-4 text-sm">
@@ -279,7 +208,7 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
           </div>
         )}
 
-        {/* Etapa: Salvando */}
+        {/* Etapa: Salvando (individual) */}
         {etapa === 'salvando' && (
           <div className="flex flex-col items-center gap-4 py-10">
             <Loader2 className="w-10 h-10 animate-spin text-primary" />
@@ -287,7 +216,7 @@ export default function ImportarNotaFiscal({ open, onClose, produtores, onImport
           </div>
         )}
 
-        {/* Etapa: Sucesso */}
+        {/* Etapa: Sucesso (individual) */}
         {etapa === 'sucesso' && (
           <div className="flex flex-col items-center gap-4 py-10">
             <CheckCircle className="w-12 h-12 text-green-600" />
