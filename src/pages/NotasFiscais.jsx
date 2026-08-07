@@ -59,10 +59,11 @@ export default function NotasFiscais() {
   // Filtros ativos (cada filtro é independente e opcional).
   const produtorAtivo = produtorFiltro !== 'todos';
   const periodoAtivo = !!(dataInicial || dataFinal);
+  const itemFiltroAtivo = buscaProduto.trim() !== '' || categoriaFiltro !== 'todos';
 
-  // Notas Importadas: filtradas SOMENTE por produtor e período (data de emissão).
-  // Filtros de item (nome/categoria) NÃO fazem a tabela de notas desaparecer.
-  const notasFiltradas = useMemo(() => {
+  // Notas candidatas: produtor + período (data de emissão). Usada também para
+  // restringir os itens ao período (via nota_fiscal_id) quando há filtro de data.
+  const notasCandidatas = useMemo(() => {
     return notas.filter(n => {
       if (produtorAtivo && n.produtor_id !== produtorFiltro) return false;
       const data = n.data_emissao;
@@ -72,7 +73,7 @@ export default function NotasFiscais() {
     });
   }, [notas, produtorAtivo, produtorFiltro, dataInicial, dataFinal]);
 
-  const notasIdsSet = useMemo(() => new Set(notasFiltradas.map(n => n.id)), [notasFiltradas]);
+  const notasIdsSet = useMemo(() => new Set(notasCandidatas.map(n => n.id)), [notasCandidatas]);
 
   // Banco de Preços / Itens: filtrados por produtor, nome, categoria e período
   // (este último via nota_fiscal_id -- única situação onde a nota é exigida).
@@ -88,6 +89,20 @@ export default function NotasFiscais() {
       return true;
     });
   }, [itens, produtorAtivo, produtorFiltro, periodoAtivo, notasIdsSet, buscaProduto, categoriaFiltro, catalogoCategorias]);
+
+  // Notas relacionadas aos itens filtrados (item -> nota_fiscal_id).
+  const idsNotasComItensFiltrados = useMemo(() => {
+    const s = new Set();
+    itensFiltrados.forEach(i => { if (i.nota_fiscal_id) s.add(i.nota_fiscal_id); });
+    return s;
+  }, [itensFiltrados]);
+
+  // Notas exibidas (Notas Importadas): produtor + período; e, quando há filtro
+  // de item (nome/categoria), somente as notas que possuem ao menos um item filtrado.
+  const notasFiltradas = useMemo(() => {
+    if (!itemFiltroAtivo) return notasCandidatas;
+    return notasCandidatas.filter(n => idsNotasComItensFiltrados.has(n.id));
+  }, [itemFiltroAtivo, notasCandidatas, idsNotasComItensFiltrados]);
 
   // Média ponderada pela quantidade comprada; evita distorção entre notas pequenas e grandes.
   const tabelaPrecos = useMemo(() => consolidarPrecosItens(itensFiltrados), [itensFiltrados]);
