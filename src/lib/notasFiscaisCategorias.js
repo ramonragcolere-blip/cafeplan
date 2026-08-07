@@ -87,19 +87,59 @@ export function montarCatalogoCategorias(fertilizantes = [], fontesSimples = [])
   return lista;
 }
 
-// Classifica um produto pelo nome usando a lista montada do catálogo.
-// Correspondência por prefixo com separador de palavra permite reconhecer
-// descrições de NF que trazem embalagem/volume após o nome do produto:
-//   "PRIORI XTRA 1L" -> "priori xtra"  (Fungicida)
-//   "TUTOR 1KG"      -> "tutor"        (...)
-//   "VERTIMEC 84 1L" -> "vertimec 84" (ou "vertimec", o mais específico)
+// Prefixos de categoria que podem aparecer explicitamente no início da
+// descrição do produto na NF (ex.: "Fungicida ORKESTRA SC 5 L").
+// A ordem importa: prefixos de múltiplas palavras devem vir antes dos de
+// palavra única (ex.: "fertilizante foliar" antes de "fertilizante").
+const PREFIXOS_CATEGORIA = [
+  ['fertilizante foliar', 'Nutrição foliar'],
+  ['nutricao foliar', 'Nutrição foliar'],
+  ['fungicida', 'Fungicida'],
+  ['inseticida', 'Inseticida'],
+  ['herbicida', 'Herbicida'],
+  ['acaricida', 'Acaricida'],
+  ['adjuvante', 'Adjuvante'],
+  ['corretivo', 'Corretivo'],
+  ['adubo', 'Adubo/Fertilizante'],
+  ['fertilizante', 'Adubo/Fertilizante'],
+];
+
+// Detecta categoria explícita no início da descrição normalizada
+// (ignora maiúsculas/minúsculas e acentos, pois `desc` já está normalizada).
+function categoriaExplicita(desc) {
+  for (const [prefix, cat] of PREFIXOS_CATEGORIA) {
+    if (desc === prefix || desc.startsWith(prefix + ' ')) return cat;
+  }
+  return null;
+}
+
+// Verifica se o nome normalizado do produto cadastrado aparece na descrição
+// como palavras inteiras (limites de palavra), em qualquer posição.
+// NÃO exige que o nome cadastrado esteja no início da descrição.
+function contemPalavra(desc, cn) {
+  if (!cn) return false;
+  if (desc === cn) return true;
+  if (desc.startsWith(cn + ' ')) return true;
+  if (desc.endsWith(' ' + cn)) return true;
+  if (desc.includes(' ' + cn + ' ')) return true;
+  return false;
+}
+
+// Classifica um produto pelo nome.
+// 1) Primeiro detecta categoria explícita no início da descrição da NF
+//    (ex.: "Fungicida ORKESTRA SC 5 L" -> Fungicida), ignorando
+//    maiúsculas/minúsculas e acentos.
+// 2) Caso contrário, consulta o catálogo (FertilizanteFormulado/FonteSimples)
+//    por correspondência de palavras inteiras em qualquer posição, priorizando
+//    nomes mais específicos/longos para evitar falsos positivos.
 // Produtos não encontrados em nenhuma base caem em "Outros".
 export function classificarProduto(nome, catalogoLista = []) {
   const desc = normalizarNome(nome);
   if (!desc) return 'Outros';
+  const explicita = categoriaExplicita(desc);
+  if (explicita) return explicita;
   for (const c of catalogoLista) {
-    const cn = c.nomeNorm;
-    if (desc === cn || desc.startsWith(cn + ' ')) return c.categoria;
+    if (contemPalavra(desc, c.nomeNorm)) return c.categoria;
   }
   return 'Outros';
 }
