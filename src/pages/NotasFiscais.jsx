@@ -6,12 +6,18 @@ import { FileText, Plus, TrendingUp, Package, Filter, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ImportarNotaFiscal from '@/components/notas/ImportarNotaFiscal';
 import { consolidarPrecosItens } from '@/lib/notasFiscais';
+import { montarCatalogoCategorias, classificarProduto } from '@/lib/notasFiscaisCategorias';
+import PainelFiltrosNotas from '@/components/notas/PainelFiltrosNotas';
 
 const fmtR = (v) => v != null ? `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 
 export default function NotasFiscais() {
   const [modalAberto, setModalAberto] = useState(false);
   const [produtorFiltro, setProdutorFiltro] = useState('todos');
+  const [buscaProduto, setBuscaProduto] = useState('');
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todos');
+  const [dataInicial, setDataInicial] = useState('');
+  const [dataFinal, setDataFinal] = useState('');
 
   const { data: produtores = [] } = useQuery({
     queryKey: ['produtores', 'completo'],
@@ -28,23 +34,73 @@ export default function NotasFiscais() {
     queryFn: () => base44.entities.BaseItensNotaFiscal.list('-created_date', 10000),
   });
 
+  // Catálogos para classificar categoria dos itens pelo nome do produto
+  const { data: fertilizantesCatalogo = [] } = useQuery({
+    queryKey: ['fertilizantes_formulados', 'catalogo_notas'],
+    queryFn: () => base44.entities.FertilizanteFormulado.list(undefined, 5000),
+  });
+  const { data: fontesSimplesCatalogo = [] } = useQuery({
+    queryKey: ['fontes_simples', 'catalogo_notas'],
+    queryFn: () => base44.entities.FonteSimples.list(undefined, 5000),
+  });
+
   const handleImportado = () => {
     refetchNotas();
     refetchItens();
   };
 
-  // Filtragem por produtor
-  const notasFiltradas = useMemo(() =>
-    produtorFiltro === 'todos' ? notas : notas.filter(n => n.produtor_id === produtorFiltro),
-    [notas, produtorFiltro]
+  // Catálogo: mapa nome -> categoria para classificar itens por nome do produto
+  const catalogoCategorias = useMemo(
+    () => montarCatalogoCategorias(fertilizantesCatalogo, fontesSimplesCatalogo),
+    [fertilizantesCatalogo, fontesSimplesCatalogo]
   );
-  const itensFiltrados = useMemo(() =>
-    produtorFiltro === 'todos' ? itens : itens.filter(i => i.produtor_id === produtorFiltro),
-    [itens, produtorFiltro]
-  );
+
+  // Período ativo quando há data inicial ou final informada
+  const periodoAtivo = !!(dataInicial || dataFinal);
+
+  // Filtragem de notas por produtor e período (data de emissão)
+  const notasFiltradas = useMemo(() => {
+    return notas.filter(n => {
+      if (produtorFiltro !== 'todos' && n.produtor_id !== produtorFiltro) return false;
+      const data = n.data_emissao;
+      if (dataInicial && (!data || data < dataInicial)) return false;
+      if (dataFinal && (!data || data > dataFinal)) return false;
+      return true;
+    });
+  }, [notas, produtorFiltro, dataInicial, dataFinal]);
+
+  // IDs das notas que passaram nos filtros (restringe itens ao período quando ativo)
+  const notasIdsSet = useMemo(() => new Set(notasFiltradas.map(n => n.id)), [notasFiltradas]);
+
+  // Filtragem de itens por produtor, período (via nota), nome do produto e categoria
+  const itensFiltrados = useMemo(() => {
+    const termo = buscaProduto.trim().toLowerCase();
+    return itens.filter(i => {
+      if (produtorFiltro !== 'todos' && i.produtor_id !== produtorFiltro) return false;
+      if (periodoAtivo && i.nota_fiscal_id && !notasIdsSet.has(i.nota_fiscal_id)) return false;
+      if (termo && !String(i.produto_nome || '').toLowerCase().includes(termo)) return false;
+      if (categoriaFiltro !== 'todos' && classificarProduto(i.produto_nome, catalogoCategorias) !== categoriaFiltro) return false;
+      return true;
+    });
+  }, [itens, produtorFiltro, periodoAtivo, notasIdsSet, buscaProduto, categoriaFiltro, catalogoCategorias]);
 
   // Média ponderada pela quantidade comprada; evita distorção entre notas pequenas e grandes.
   const tabelaPrecos = useMemo(() => consolidarPrecosItens(itensFiltrados), [itensFiltrados]);
+
+  const temFiltroAtivo =
+    produtorFiltro !== 'todos' ||
+    buscaProduto.trim() !== '' ||
+    categoriaFiltro !== 'todos' ||
+    dataInicial !== '' ||
+    dataFinal !== '';
+
+  const limparFiltros = () => {
+    setProdutorFiltro('todos');
+    setBuscaProduto('');
+    setCategoriaFiltro('todos');
+    setDataInicial('');
+    setDataFinal('');
+  };
 
   const produtorNome = (id) => {
     const p = produtores.find(x => x.id === id);
@@ -86,6 +142,19 @@ export default function NotasFiscais() {
           </Button>
         </div>
       </div>
+
+      <PainelFiltrosNotas
+        buscaProduto={buscaProduto}
+        setBuscaProduto={setBuscaProduto}
+        categoriaFiltro={categoriaFiltro}
+        setCategoriaFiltro={setCategoriaFiltro}
+        dataInicial={dataInicial}
+        setDataInicial={setDataInicial}
+        dataFinal={dataFinal}
+        setDataFinal={setDataFinal}
+        onLimpar={limparFiltros}
+        temFiltroAtivo={temFiltroAtivo}
+      />
 
       {/* Cards resumo */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
