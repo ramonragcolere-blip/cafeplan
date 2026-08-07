@@ -478,3 +478,45 @@ export function filtrarDrillDown(aplicacoes, { mes = null, mesIndex = null, prod
     return true;
   });
 }
+
+// Base de custo CUMULATIVA (média ponderada de TODAS as compras, sem limite de
+// data). Mesma fonte de construirAplicacoes (construirBaseCusto + mesmas
+// regras de resolução de insumo e chave), porém sem o filtro histórico até a
+// data da saída. Usada para valorizar o SALDO ATUAL do estoque.
+export function baseCustoCumulativa({ itens = [], notas = [], fertilizantes = [], fontes = [] } = {}) {
+  const fertMap = {}; (fertilizantes || []).forEach((f) => { fertMap[f.id] = f; });
+  const fonteMap = {}; (fontes || []).forEach((f) => { fonteMap[f.id] = f; });
+  const idx = construirInsumosIndex(fertilizantes, fontes);
+  const resolverItem = (item) => {
+    if (item.insumo_id) {
+      if (item.insumo_tipo === 'fonte' && fonteMap[item.insumo_id]) return { tipo: 'fonte', id: item.insumo_id, record: fonteMap[item.insumo_id] };
+      if (item.insumo_tipo === 'formulado' && fertMap[item.insumo_id]) return { tipo: 'fert', id: item.insumo_id, record: fertMap[item.insumo_id] };
+    }
+    return matchInsumo(item.produto_nome, idx);
+  };
+  const chaveDe = (ins, nome) => (ins ? `${ins.tipo}_${ins.id}` : `nf_${normalizarNome(nome)}`);
+  return construirBaseCusto({ itens, notas, resolverItem, chaveDe });
+}
+
+// Valor Atual em Estoque — produto por produto: saldo físico (do Controle de
+// Estoque, construirEstoque) × custo médio ponderado CUMULATIVO das entradas.
+// Saldo <= 0 não entra. Produtos com saldo mas sem custo calculável são
+// excluídos da soma e contados em semCusto. NÃO respeita filtro de data
+// (estoque é saldo atual, não movimento do período).
+export function calcularValorAtualEstoque({
+  estoqueRows = [], itens = [], notas = [], fertilizantes = [], fontes = [],
+} = {}) {
+  const itensPorChave = baseCustoCumulativa({ itens, notas, fertilizantes, fontes });
+  let valor = 0; let semCusto = 0;
+  (estoqueRows || []).forEach((row) => {
+    const saldo = Number(row.saldo) || 0;
+    if (saldo <= 0) return; // sem estoque físico => não valoriza
+    const arr = itensPorChave[`${row.produtor_id}||${row.produto_chave}`] || [];
+    const validos = arr.filter((e) => e.unit === row.unidade);
+    const sumQ = validos.reduce((s, e) => s + e.qtdBase, 0);
+    const sumP = validos.reduce((s, e) => s + e.precoTotal, 0);
+    if (sumQ <= 0 || sumP <= 0) { semCusto += 1; return; } // sem preço => não inventa
+    valor += (sumP / sumQ) * saldo;
+  });
+  return { valor: Math.round(valor * 100) / 100, semCusto };
+}
