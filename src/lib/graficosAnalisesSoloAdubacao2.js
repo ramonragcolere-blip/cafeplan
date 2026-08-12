@@ -83,6 +83,13 @@ function formatarValor(valor, unidade) {
   return unidade ? `${txt} ${unidade}` : txt;
 }
 
+// Formata área em hectares (2 casas, vírgula). Retorna '' quando ausente.
+function formatarAreaHa(area) {
+  const n = numero(area);
+  if (n == null || !Number.isFinite(n)) return '';
+  return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ha`;
+}
+
 function faixa(label) {
   return { adequado: label };
 }
@@ -282,7 +289,8 @@ export function montarComparacaoTalhoesSafraAtual({
       const valorReal = arredondar(analise?.[info.key], 2);
       const classificacao = classificarNutrienteSoloAdubacao2(info.key, valorReal);
       const indiceAdequacao = calcularIndiceAdequacaoSolo(info.key, valorReal);
-      const detalhe = `${talhao.nome || 'Talhão'} · ${info.label}: ${formatarValor(valorReal, info.unidade)} · índice ${indiceAdequacao != null ? `${indiceAdequacao}%` : '—'} · ${classificacao.classificacao}`;
+      const areaFmt = formatarAreaHa(talhao.area_ha);
+      const detalhe = `${talhao.nome || 'Talhão'}${areaFmt ? ` · Área: ${areaFmt}` : ''} · ${info.label}: ${formatarValor(valorReal, info.unidade)} · índice ${indiceAdequacao != null ? `${indiceAdequacao}%` : '—'} · ${classificacao.classificacao}`;
       return {
         talhaoId: talhao.id,
         talhaoNome: talhao.nome || talhao.id,
@@ -309,7 +317,7 @@ export function montarComparacaoTalhoesSafraAtual({
     modo: 'todos_talhoes',
     safra,
     profundidade,
-    talhoes: (talhoes || []).map(talhao => ({ id: talhao.id, nome: talhao.nome || talhao.id })),
+    talhoes: (talhoes || []).map(talhao => ({ id: talhao.id, nome: talhao.nome || talhao.id, area_ha: talhao.area_ha ?? null })),
     series,
   };
 }
@@ -436,10 +444,15 @@ export function gerarSvgComparacaoTalhoesSolo(comparacao = {}, opcoes = {}) {
     if (layoutAmplo) {
       const linhasNome = quebrarNomeTalhao(talhao.nome);
       const yBase = plot.y + plot.h + 16;
-      return linhasNome.map((linha, k) => {
+      const nomeSvg = linhasNome.map((linha, k) => {
         const y = yBase + k * 13;
         return `<text x="${x}" y="${y}" font-size="10.5" text-anchor="end" fill="#374151" transform="rotate(-32 ${x} ${y})">${escaparSvg(linha)}</text>`;
       }).join('');
+      const areaFmt = formatarAreaHa(talhao.area_ha);
+      if (!areaFmt) return nomeSvg;
+      const yArea = yBase + linhasNome.length * 13;
+      const areaSvg = `<text x="${x}" y="${yArea}" font-size="9" text-anchor="end" fill="#6b7280" transform="rotate(-32 ${x} ${yArea})">${escaparSvg(areaFmt)}</text>`;
+      return nomeSvg + areaSvg;
     }
     return `<text x="${x}" y="${plot.y + plot.h + 20}" font-size="10" text-anchor="middle" fill="#374151">${escaparSvg(talhao.nome)}</text>`;
   }).join('');
