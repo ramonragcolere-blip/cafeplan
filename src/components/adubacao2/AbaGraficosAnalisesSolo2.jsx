@@ -86,7 +86,12 @@ export default function AbaGraficosAnalisesSolo2({ talhoes = [], analises020 = [
 
   const svgAdequacao = useMemo(() => gerarSvgAdequacaoSolo(adequacao), [adequacao]);
   const svgEvolucao = useMemo(() => gerarSvgEvolucaoSolo(serie), [serie]);
-  const svgComparacaoTalhoes = useMemo(() => gerarSvgComparacaoTalhoesSolo(comparacaoTalhoes), [comparacaoTalhoes]);
+  // Largura dinâmica por talhão para "Todos os talhões": ~105px/talhão, mínimo 1100.
+  const larguraGraficoComparacao = Math.max(1100, (talhoes?.length || 1) * 105);
+  const svgComparacaoTalhoes = useMemo(
+    () => gerarSvgComparacaoTalhoesSolo(comparacaoTalhoes, { largura: larguraGraficoComparacao, altura: 410 }),
+    [comparacaoTalhoes, larguraGraficoComparacao]
+  );
   const talhao = talhoes.find(t => t.id === talhaoId);
 
   const alternarSafra = (safra) => {
@@ -206,7 +211,7 @@ export default function AbaGraficosAnalisesSolo2({ talhoes = [], analises020 = [
             <p className="text-xs text-muted-foreground">Safra {safraAtual} · {profundidade} cm · Índice de adequação</p>
           </div>
           <div className="overflow-x-auto p-3">
-            <div className="min-w-[680px]" dangerouslySetInnerHTML={{ __html: svgComparacaoTalhoes }} />
+            <div className="w-full" style={{ minWidth: `${larguraGraficoComparacao}px` }} dangerouslySetInnerHTML={{ __html: svgComparacaoTalhoes }} />
           </div>
         </section>
       ) : (

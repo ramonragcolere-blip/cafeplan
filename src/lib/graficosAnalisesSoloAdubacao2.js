@@ -376,12 +376,36 @@ export function gerarSvgEvolucaoSolo(serie = {}, opcoes = {}) {
   </svg>`;
 }
 
+// Quebra nomes longos em até 2 linhas (balanceado por palavras), para não
+// cortar em ... nem virar 3/4 linhas. Cada linha <= 16 chars normalmente.
+function quebrarNomeTalhao(nome) {
+  const s = String(nome ?? '').trim();
+  if (s.length <= 16) return [s];
+  const palavras = s.split(/\s+/);
+  let acc = '';
+  const linhas = [];
+  for (const p of palavras) {
+    const cand = acc ? `${acc} ${p}` : p;
+    if (cand.length <= 16) acc = cand;
+    else { if (acc) linhas.push(acc); acc = p; }
+  }
+  if (acc) linhas.push(acc);
+  if (linhas.length <= 2) return linhas;
+  return [linhas[0], linhas.slice(1).join(' ')];
+}
+
+// layout_amplo (largura >= 1000): usa largura/altura dinâmicas, nomes inclinados
+// (-32°) e quebrados, legenda horizontal e mais área de plot. No formato antigo
+// (<= 1000, ex.: 680x300) mantém o layout original — não afeta outros gráficos.
 export function gerarSvgComparacaoTalhoesSolo(comparacao = {}, opcoes = {}) {
   const talhoes = Array.isArray(comparacao.talhoes) ? comparacao.talhoes : [];
   const series = Array.isArray(comparacao.series) ? comparacao.series : [];
   const largura = opcoes.largura || 720;
   const altura = opcoes.altura || 320;
-  const plot = { x: 58, y: 48, w: largura - 96, h: altura - 118 };
+  const layoutAmplo = largura >= 1000;
+  const plot = layoutAmplo
+    ? { x: 118, y: 52, w: largura - 118 - 38, h: altura - 208 }
+    : { x: 58, y: 48, w: largura - 96, h: altura - 118 };
   const maxIndice = Math.max(160, ...series.flatMap(serie => serie.pontos.map(ponto => numero(ponto.indiceAdequacao) || 0)));
   const escalaMax = Math.min(220, Math.ceil(maxIndice / 20) * 20);
   const xTalhao = indice => talhoes.length <= 1 ? plot.x + plot.w / 2 : plot.x + (plot.w / (talhoes.length - 1)) * indice;
@@ -390,31 +414,53 @@ export function gerarSvgComparacaoTalhoesSolo(comparacao = {}, opcoes = {}) {
     if (valor == null) return null;
     return plot.y + plot.h - (clamp(valor, 0, escalaMax) / escalaMax) * plot.h;
   };
-  const linhas = series.map(serie => {
+  const linhas = series.map((serie, serieIdx) => {
     const coords = serie.pontos.map((ponto, indice) => ({
       ...ponto,
       x: Math.round(xTalhao(indice)),
       y: yIndice(ponto.indiceAdequacao),
     }));
     const polyline = coords.filter(ponto => ponto.y != null).map(ponto => `${ponto.x},${Math.round(ponto.y)}`).join(' ');
+    const offTexto = layoutAmplo ? (serieIdx % 2) * 12 : 0;
     const pontosSvg = coords.map(ponto => ponto.y == null ? '' : `
       <circle cx="${ponto.x}" cy="${Math.round(ponto.y)}" r="4" fill="${ponto.corClassificacao}" stroke="#ffffff" stroke-width="1.5">
         <title>${escaparSvg(ponto.detalhe)}</title>
       </circle>
-      <text x="${ponto.x}" y="${Math.round(ponto.y) - 8}" font-size="9" text-anchor="middle" fill="#111827">${escaparSvg(ponto.valorFormatado)}</text>`).join('');
+      <text x="${ponto.x}" y="${Math.round(ponto.y) - 8 - offTexto}" font-size="9" text-anchor="middle" fill="#111827">${escaparSvg(ponto.valorFormatado)}</text>`).join('');
     return `
       ${polyline ? `<polyline points="${polyline}" fill="none" stroke="${serie.cor}" stroke-width="2"/>` : ''}
       ${pontosSvg}`;
   }).join('');
   const labelsTalhoes = talhoes.map((talhao, indice) => {
     const x = Math.round(xTalhao(indice));
+    if (layoutAmplo) {
+      const linhasNome = quebrarNomeTalhao(talhao.nome);
+      const yBase = plot.y + plot.h + 16;
+      return linhasNome.map((linha, k) => {
+        const y = yBase + k * 13;
+        return `<text x="${x}" y="${y}" font-size="10.5" text-anchor="end" fill="#374151" transform="rotate(-32 ${x} ${y})">${escaparSvg(linha)}</text>`;
+      }).join('');
+    }
     return `<text x="${x}" y="${plot.y + plot.h + 20}" font-size="10" text-anchor="middle" fill="#374151">${escaparSvg(talhao.nome)}</text>`;
   }).join('');
-  const legendasSeries = series.map((serie, indice) => {
-    const x = 18 + (indice % 4) * 150;
-    const y = altura - 42 + Math.floor(indice / 4) * 14;
-    return `<line x1="${x}" y1="${y - 3}" x2="${x + 16}" y2="${y - 3}" stroke="${serie.cor}" stroke-width="2"/><text x="${x + 22}" y="${y}" font-size="10" fill="#374151">${escaparSvg(serie.label)}</text>`;
-  }).join('');
+  let legendasSeries;
+  if (layoutAmplo) {
+    let x = 18;
+    const y = altura - 24;
+    legendasSeries = series.map(serie => {
+      const larguraItem = 22 + serie.label.length * 6.2 + 16;
+      let xItem = x;
+      if (xItem + larguraItem > largura - 18) { xItem = 18; x = 18 + larguraItem; } else { x = xItem + larguraItem; }
+      return `<line x1="${xItem}" y1="${y - 3}" x2="${xItem + 16}" y2="${y - 3}" stroke="${serie.cor}" stroke-width="2"/><text x="${xItem + 22}" y="${y}" font-size="10" fill="#374151">${escaparSvg(serie.label)}</text>`;
+    }).join('');
+  } else {
+    legendasSeries = series.map((serie, indice) => {
+      const x = 18 + (indice % 4) * 150;
+      const y = altura - 42 + Math.floor(indice / 4) * 14;
+      return `<line x1="${x}" y1="${y - 3}" x2="${x + 16}" y2="${y - 3}" stroke="${serie.cor}" stroke-width="2"/><text x="${x + 22}" y="${y}" font-size="10" fill="#374151">${escaparSvg(serie.label)}</text>`;
+    }).join('');
+  }
+  const legendaHeading = layoutAmplo ? '' : `<text x="16" y="${altura - 58}" font-size="11" font-weight="700" fill="#111827">Legenda</text>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${largura}" height="${altura}" viewBox="0 0 ${largura} ${altura}" role="img">
     <rect width="100%" height="100%" fill="#ffffff"/>
     <text x="16" y="22" font-size="14" font-weight="700" fill="#111827">Comparação Nutricional entre Talhões</text>
@@ -427,7 +473,7 @@ export function gerarSvgComparacaoTalhoesSolo(comparacao = {}, opcoes = {}) {
     <text x="8" y="${plot.y + plot.h}" font-size="10" fill="#6b7280">0%</text>
     ${linhas}
     ${labelsTalhoes}
-    <text x="16" y="${altura - 58}" font-size="11" font-weight="700" fill="#111827">Legenda</text>
+    ${legendaHeading}
     ${legendasSeries}
   </svg>`;
 }
