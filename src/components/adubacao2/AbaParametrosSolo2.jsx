@@ -60,7 +60,14 @@ export default function AbaParametrosSolo2({ talhoes = [], analises020 = [], ana
   }, [analises020, analises2040, talhaoId, profundidade]);
 
   const erros = useMemo(() => validarParametros(nutrientes), [nutrientes]);
-  const podeSalvar = erros.length === 0 && !!codigoProdutor;
+
+  // Motivo de bloqueio do salvamento — sempre visível, nunca silencioso.
+  const motivoBloqueio = useMemo(() => {
+    if (!codigoProdutor) return 'Selecione um produtor no cabeçalho do Adubação 2.0 antes de salvar.';
+    if (erros.length > 0) return `Corrija ${erros.length} inconsistência(s): ${erros.map(e => e.nome).join(', ')}.`;
+    return '';
+  }, [codigoProdutor, erros]);
+  const podeSalvar = !motivoBloqueio;
 
   const handleChange = useCallback((key, campo, valor) => {
     setNutrientes((prev) => prev.map((n) => {
@@ -92,10 +99,27 @@ export default function AbaParametrosSolo2({ talhoes = [], analises020 = [], ana
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['parametros_solo', codigoProdutor] });
-      toast({ title: 'Parâmetros salvos', description: 'Configuração de interpretação do solo persistida.' });
+      toast({ title: 'Parâmetros salvos com sucesso!', description: 'Configuração de interpretação do solo persistida.' });
     },
-    onError: () => toast({ title: 'Erro ao salvar', variant: 'destructive' }),
+    onError: (err) => toast({
+      title: 'Erro ao salvar parâmetros',
+      description: String(err?.message || err || 'Falha na API.'),
+      variant: 'destructive',
+    }),
   });
+
+  // Clique sempre responde: se bloqueado, mostra o motivo; senão, salva.
+  const handleSalvar = () => {
+    if (!podeSalvar) {
+      toast({
+        title: 'Não foi possível salvar',
+        description: motivoBloqueio || 'Verifique os campos e tente novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    salvarMutation.mutate();
+  };
 
   const handleRestaurarPadrao = () => {
     setNutrientes(montarNutrientesPadrao(profundidade));
@@ -143,15 +167,16 @@ export default function AbaParametrosSolo2({ talhoes = [], analises020 = [], ana
 
       {/* Ações */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {erros.length > 0 && (
-          <p className="text-xs text-red-600">Corrija {erros.length} inconsistência(s) antes de salvar.</p>
+        {motivoBloqueio && (
+          <p className="text-xs text-red-600 font-medium">
+            {motivoBloqueio}
+          </p>
         )}
         <div className="flex gap-2 ml-auto">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestaurarPadrao}>
             <RotateCcw className="w-4 h-4" /> Restaurar Padrão
           </Button>
-          <Button size="sm" className="gap-1.5" disabled={!podeSalvar || salvarMutation.isPending}
-            onClick={() => salvarMutation.mutate()}>
+          <Button size="sm" className="gap-1.5" disabled={salvarMutation.isPending} onClick={handleSalvar}>
             <Save className="w-4 h-4" /> {salvarMutation.isPending ? 'Salvando...' : 'Salvar Parâmetros'}
           </Button>
         </div>
