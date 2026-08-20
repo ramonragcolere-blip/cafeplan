@@ -92,20 +92,68 @@ export default function AbaParametrosSolo2({ talhoes = [], analises020 = [], ana
         talhao_nome: talhoes.find((t) => t.id === talhaoId)?.nome || '',
         safra: safra || '',
         profundidade,
-        nutrientes,
+        nutrientes: nutrientes.map((n) => ({
+          key: n.key,
+          nome: n.nome,
+          unidade_escolhida: n.unidade_escolhida,
+          minimo: n.minimo,
+          ideal: n.ideal,
+          maximo: n.maximo,
+        })),
       };
-      if (existente?.id) return base44.entities.ParametrosSolo.update(existente.id, payload);
-      return base44.entities.ParametrosSolo.create(payload);
+
+      // Verificação do payload — garante que dados não estão vazios/nulos.
+      console.group('[Adubação via Solo] Salvando parâmetros');
+      console.log('Payload enviado:', payload);
+      if (!payload.codigo_produtor) throw new Error('Código do produtor ausente.');
+      if (!payload.profundidade) throw new Error('Profundidade ausente.');
+      if (!Array.isArray(payload.nutrientes) || payload.nutrientes.length === 0) {
+        throw new Error('Lista de nutrientes vazia.');
+      }
+
+      try {
+        let resultado;
+        if (existente?.id) {
+          console.log('Atualizando registro existente:', existente.id);
+          resultado = await base44.entities.ParametrosSolo.update(existente.id, payload);
+        } else {
+          console.log('Criando novo registro...');
+          resultado = await base44.entities.ParametrosSolo.create(payload);
+        }
+        console.log('Resposta da API:', resultado);
+        if (!resultado?.id) throw new Error('A API não retornou um id válido.');
+        console.log('Salvo com id:', resultado.id);
+        return resultado;
+      } catch (erro) {
+        console.error('Falha ao persistir ParametrosSolo:', erro, payload);
+        throw erro;
+      } finally {
+        console.groupEnd();
+      }
     },
-    onSuccess: () => {
+    onSuccess: (resultado) => {
+      // Atualiza o cache imediatamente para refletir os dados recém-salvos.
+      queryClient.setQueryData(['parametros_solo', codigoProdutor], (atuais = []) => {
+        const lista = Array.isArray(atuais) ? atuais : [];
+        const idx = lista.findIndex((p) => p.id === resultado.id);
+        if (idx >= 0) {
+          const next = [...lista];
+          next[idx] = { ...next[idx], ...resultado };
+          return next;
+        }
+        return [...lista, resultado];
+      });
       queryClient.invalidateQueries({ queryKey: ['parametros_solo', codigoProdutor] });
-      toast({ title: 'Parâmetros salvos com sucesso!', description: 'Configuração de interpretação do solo persistida.' });
+      toast({ title: 'Parâmetros salvos com sucesso!', description: `Registro ${resultado.id.slice(0,8)} persistido.` });
     },
-    onError: (err) => toast({
-      title: 'Erro ao salvar parâmetros',
-      description: String(err?.message || err || 'Falha na API.'),
-      variant: 'destructive',
-    }),
+    onError: (err) => {
+      console.error('[Adubação via Solo] onError do mutation:', err);
+      toast({
+        title: 'Erro ao salvar parâmetros',
+        description: String(err?.message || err || 'Falha na API.'),
+        variant: 'destructive',
+      });
+    },
   });
 
   // Clique sempre responde: se bloqueado, mostra o motivo; senão, salva.
