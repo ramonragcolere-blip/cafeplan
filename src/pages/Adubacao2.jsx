@@ -19,6 +19,7 @@ import AbaPlanejamento2 from '@/components/adubacao2/AbaPlanejamento2';
 import AbaCalagem2 from '@/components/adubacao2/AbaCalagem2';
 import AbaGessagem2 from '@/components/adubacao2/AbaGessagem2';
 import AbaResumoGeral2 from '@/components/adubacao2/AbaResumoGeral2';
+import AbaParametrosSolo2 from '@/components/adubacao2/AbaParametrosSolo2';
 import { consolidarPlanejamentosPorTalhao, criarMarcacoesPadrao } from '@/lib/planejamentoAdubacao2';
 import { TODOS_ELEMENTOS_GRID } from '@/components/adubacao2/PainelTalhaoHelpers';
 import {
@@ -57,6 +58,7 @@ const ABAS = [
   { id: 'planejamento', label: 'Planejamento' },
   { id: 'compras',      label: 'Consolidação de Compras' },
   { id: 'resumo',       label: 'Resumo Geral' },
+  { id: 'parametros_solo', label: 'Adubação via Solo' },
 ];
 
 export class Adubacao2ErrorBoundary extends React.Component {
@@ -1460,6 +1462,17 @@ export function Adubacao2Conteudo() {
             precosAtuais={precosExterno}
           />
         </div>
+      )}
+
+      {/* ── Aba: Adubação via Solo ── */}
+      {abaAtiva === 'parametros_solo' && (
+        <AbaParametrosSolo2
+          talhoes={talhoes}
+          analises020={analisesProdutorTodasSafras}
+          analises2040={analises2040Historicas}
+          produtor={produtor}
+          safra={safra}
+        />
       )}
 
       {/* Modal agrupado 0-20 cm */}
